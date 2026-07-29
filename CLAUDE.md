@@ -86,7 +86,9 @@ for those, so keep pushes small.
   (`feat(config)!: rename INZSH_SALAH_LAT`).
 - `dev` is the development trunk; `main` is for release cycles only. Branch per issue off
   `dev`: `m<n>-<short-slug>` (e.g. `m2-rank-sort`). PR to `dev` with `Closes #N`, milestone
-  set, description near-empty. Never push to `main` or `dev` directly.
+  set (CI-enforced), and labels — `area/*` and `type/test|docs` auto-apply from paths; set
+  `type/feat`/`type/fix` by hand (`gh pr create --milestone --label`). Description
+  near-empty. Never push to `main` or `dev` directly.
 - `docs/configuration.md` updates in the **same PR** as any knob it adds or changes; golden
   files update in the same PR as any visual change.
 

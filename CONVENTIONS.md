@@ -86,8 +86,10 @@ cuts from `dev`.
 ## Issues and pull requests
 
 - **Issues**: describe the work briefly. Link the milestone and any related issue. Nothing else.
-- **Pull requests**: a good title does the work. Link the issue with `Closes #N` and set the
-  milestone. The description stays near-empty.
+- **Pull requests**: a good title does the work. Link the issue with `Closes #N`, set the
+  milestone, and label it — `area/*` and `type/test`/`type/docs` auto-apply from changed
+  paths; set `type/feat` or `type/fix` by hand. Milestone and issue link are CI-enforced.
+  The description stays near-empty.
 
 Both should stand on their own. If an issue needs paragraphs of background, it is under-specified
 — tighten the scope rather than adding prose.
