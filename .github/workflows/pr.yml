@@ -17,6 +17,8 @@ jobs:
           sync-labels: false
 
   hygiene:
+    # bot PRs (dependabot) carry no milestone or issue — exempt
+    if: ${{ !endsWith(github.actor, '[bot]') }}
     runs-on: ubuntu-latest
     steps:
       - name: Require a milestone
