@@ -1,0 +1,61 @@
+name: ci
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+
+# Fail fast, cheapest first — CI is the only feedback loop for jobs that
+# can't run natively on the dev machine (zsh 5.8, installer tests, full parity).
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install zsh
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+      - name: zsh -n over all zsh sources
+        run: |
+          set -e
+          found=0
+          while IFS= read -r f; do
+            found=1
+            zsh -n "$f" || exit 1
+            echo "ok: $f"
+          done < <(find . -path ./.git -prune -o \( -name '*.zsh' -o -name '*.zsh-theme' \) -print)
+          [ "$found" = 1 ] || echo "no zsh sources yet"
+
+  test:
+    needs: syntax
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install zsh (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+      - name: Install ShellSpec
+        run: |
+          git clone --depth 1 https://github.com/shellspec/shellspec.git "$HOME/.shellspec-src"
+          echo "$HOME/.shellspec-src" >> "$GITHUB_PATH"
+      - name: L1 unit + L2 render
+        run: shellspec test/unit test/render
+
+  # zsh floor — 5.8 isn't available natively on the dev machine, so this job
+  # is the only feedback loop for it. Matrix widens as the suite grows (M2+).
+  zsh-floor:
+    needs: syntax
+    runs-on: ubuntu-latest
+    container: zshusers/zsh:5.8
+    steps:
+      - name: Install job deps
+        run: apt-get update -qq && apt-get install -y -qq git
+      - uses: actions/checkout@v4
+      - name: Install ShellSpec
+        run: git clone --depth 1 https://github.com/shellspec/shellspec.git /opt/shellspec
+      - name: L1 unit + L2 render under zsh 5.8
+        run: /opt/shellspec/shellspec test/unit test/render
