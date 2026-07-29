@@ -1,0 +1,39 @@
+#!/usr/bin/env zsh
+# Commit-msg: one line, no body, Conventional Commits with project scopes.
+# Activated via `git config core.hooksPath tools/hooks` (make setup).
+emulate -L zsh
+setopt no_unset
+
+local msg_file=$1
+
+# content lines: comments stripped, blanks dropped
+local -a lines
+lines=(${(f)"$(grep -v '^#' "$msg_file" | grep -v '^[[:space:]]*$' || true)"})
+
+# merges, reverts and autosquash commits pass through
+if (( $#lines )) && [[ $lines[1] == (Merge|Revert|fixup!|squash!)* ]]; then
+  exit 0
+fi
+
+if (( $#lines != 1 )); then
+  print -u2 -- "commit-msg: exactly one line, no body (found $#lines content lines)"
+  exit 1
+fi
+
+local msg=$lines[1]
+
+if (( ${#msg} > 72 )); then
+  print -u2 -- "commit-msg: keep it under 72 characters (${#msg})"
+  exit 1
+fi
+
+local types='feat|fix|test|docs|chore|build|ci|perf|refactor'
+local scopes='engine|tokens|segments|salah|ui|install|docs'
+if [[ ! $msg =~ "^(${types})(\((${scopes})\))?!?: [^ ].*$" ]]; then
+  print -u2 -- "commit-msg: expected '<type>[(scope)][!]: subject'"
+  print -u2 -- "  types:  ${types//|/ · }"
+  print -u2 -- "  scopes: ${scopes//|/ · }"
+  exit 1
+fi
+
+exit 0
