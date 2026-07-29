@@ -53,7 +53,11 @@ jobs:
     container: zshusers/zsh:5.8
     steps:
       - name: Install job deps
-        run: apt-get update -qq && apt-get install -y -qq git
+        # the 5.8 image is debian buster (EOL) — its repos live on archive.debian.org now
+        run: |
+          printf 'deb http://archive.debian.org/debian buster main\ndeb http://archive.debian.org/debian-security buster/updates main\n' > /etc/apt/sources.list
+          apt-get -o Acquire::Check-Valid-Until=false update -qq
+          apt-get install -y -qq git
       - uses: actions/checkout@v4
       - name: Install ShellSpec
         run: git clone --depth 1 https://github.com/shellspec/shellspec.git /opt/shellspec
