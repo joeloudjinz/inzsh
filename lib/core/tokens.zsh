@@ -20,7 +20,8 @@
 #     their own; they are roles and get their own mapping in the role layer below.
 #
 # The palette is pure data. The role layer under it is pure parameter work — one function,
-# run once at the end of this file, so sourcing yields a ready `_inzsh_role`.
+# run once at the end of this file, so sourcing yields a ready `_inzsh_role`. Below it sits
+# the per-segment resolver every segment calls at draw time.
 
 typeset -gA _inzsh_palette
 _inzsh_palette=(
@@ -218,6 +219,50 @@ _inzsh_tokens_resolve() {
   for role key in "${(@Pkv)table}"; do
     _inzsh_role[$role]=${_inzsh_palette[$key]}
   done
+}
+
+# ---------------------------------------------------------------------------------------
+# Per-segment colour. The one place a segment asks "what colour am I?", so the precedence
+# lives here rather than being re-derived in every segment:
+#
+#   INZSH_<SEGMENT>_BG / _FG  →  role  →  fallback role  →  nothing (status 1)
+#
+#   _inzsh_seg_color DIR bg surface-soft surface
+#   [[ -n $REPLY ]] && segment+="%K{$REPLY}"
+#
+# SEGMENT is the uppercase config name fragment (DIR, HOST, SALAH); the channel is `bg` or
+# `fg`. The answer comes back in REPLY — this runs on the render path, so no command
+# substitution and no forks, parameter operations only.
+#
+# An override that is set and non-empty is used verbatim: anything zsh's `%F{...}` accepts is
+# the user's business — truecolor hex, a named colour, a 256 index — and the theme does not
+# police it beyond non-emptiness. An override that is SET BUT EMPTY counts as UNSET: an
+# `INZSH_DIR_BG=` left behind in someone's zshrc must fall through to the role rather than
+# blank the segment.
+#
+# When neither role exists the result is an empty REPLY and status 1 — the caller decides what
+# to do with that. A missing role must never reach the prompt as a broken escape.
+_inzsh_seg_color() {
+  emulate -L zsh
+
+  typeset -g REPLY=
+
+  local var=INZSH_${(U)1}_${(U)2}
+  local override=${(P)var}
+  if [[ -n $override ]]; then
+    REPLY=$override
+    return 0
+  fi
+
+  local role
+  for role in "$3" "$4"; do
+    if [[ -n $role && -n ${_inzsh_role[$role]+set} ]]; then
+      REPLY=${_inzsh_role[$role]}
+      return 0
+    fi
+  done
+
+  return 1
 }
 
 _inzsh_tokens_resolve
