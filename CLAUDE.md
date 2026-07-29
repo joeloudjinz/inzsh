@@ -36,7 +36,8 @@ Reference behaviour and concepts only; write the implementation from understandi
 
 **Colour:**
 - Hex values exist only in the token layer (`lib/core/tokens.zsh`, `tokens-256.zsh`). Nowhere
-  else — not presets, not segments, not tests.
+  else — not presets, not segments, not tests. One deliberate exception: the token spec's
+  transcription spot-checks, which pin palette values and structurally need a second copy.
 - Use semantic roles (`positive-text`, `negative`, `on-accent`), never raw ramp names.
 - Colour is never the only signal — every state also carries a glyph (`✓ i ✕ ! · —`).
 - Separator glyphs live in the token layer, not in segment code.
