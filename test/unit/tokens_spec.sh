@@ -1,6 +1,6 @@
 Include lib/core/tokens.zsh
 
-# The transcription checklist. Every solid-hex token in .claude/docs/ds-colors.css that a
+# The transcription checklist. Every solid-hex token in the design system's colors.css that a
 # terminal can render, written out by hand so a dropped or renamed ramp fails here rather
 # than at draw time. Deliberately excluded: the two rgba() highlight-wash tokens (no alpha
 # in a terminal cell) and the web-only utility tokens (board-bg, badge-aa-*, surface-card).
