@@ -17,9 +17,10 @@
 #   --board-bg, --badge-aa-bg, --badge-aa-fg, and --surface-card's #FFFFFF — web-app
 #     chrome (canvas behind cards, contrast badges). No prompt analogue.
 #   The var()-only semantic aliases (--surface, --text-body, --positive, …) carry no hex of
-#     their own; they are roles and get their own mapping in the role layer.
+#     their own; they are roles and get their own mapping in the role layer below.
 #
-# Pure data. Sourcing this file defines one variable and runs nothing else.
+# The palette is pure data. The role layer under it is pure parameter work — one function,
+# run once at the end of this file, so sourcing yields a ready `_inzsh_role`.
 
 typeset -gA _inzsh_palette
 _inzsh_palette=(
@@ -95,3 +96,128 @@ _inzsh_palette=(
   hair-light          '#E4D8BE'  # --hair-light  divider on cream
   hair-dark           '#333C58'  # --hair-dark   divider on navy
 )
+
+# ---------------------------------------------------------------------------------------
+# Role layer. Everything downstream reads `_inzsh_role[negative]`, never a ramp name — roles
+# survive a palette change, ramps may not.
+#
+# Two registers, transcribed from the design system's colors.css: `light` is its `:root`
+# semantic-alias block (warm/personal), `dark` its `.theme-dark` overrides (sharp/technical).
+# Both tables map a role to a PALETTE KEY, never to a hex value — the one-transcription-point
+# rule holds inside this file too, below the palette.
+#
+# Two DS roles are deliberately absent: --surface-card (web chrome — a raised card behind
+# content, no prompt analogue) and --accent-wash (an rgba() marker highlight; a terminal cell
+# has no alpha channel to composite against).
+
+typeset -gA _inzsh_roles_light
+_inzsh_roles_light=(
+  surface        cream          # --surface
+  surface-soft   cream-soft     # --surface-soft
+  text-strong    choc-ink       # --text-strong
+  text-body      choc           # --text-body
+  text-muted     choc-soft      # --text-muted
+  accent         caramel        # --accent       the one saturated brand colour, both registers
+  on-accent      cream          # --on-accent
+
+  # Five slots per state: fill, on-fill, text on surface, tinted background, border/ring.
+  positive       sage           # --positive
+  positive-text  sage-deep      # --positive-text  raw sage is AA-large only on cream
+  on-positive    cream-bright   # --on-positive
+  positive-wash  sage-wash      # --positive-wash
+  positive-edge  sage-edge      # --positive-edge
+  info           ink-blue       # --info
+  info-text      ink-blue       # --info-text
+  on-info        cream-bright   # --on-info
+  info-wash      ink-blue-wash  # --info-wash
+  info-edge      ink-blue-edge  # --info-edge
+  negative       madder         # --negative
+  negative-text  madder         # --negative-text
+  on-negative    cream-bright   # --on-negative
+  negative-wash  madder-wash    # --negative-wash
+  negative-edge  madder-edge    # --negative-edge
+  caution        ochre          # --caution
+  caution-text   ochre          # --caution-text
+  on-caution     cream-bright   # --on-caution
+  caution-wash   ochre-wash     # --caution-wash
+  caution-edge   ochre-edge     # --caution-edge
+  neutral        choc-soft      # --neutral
+  neutral-text   choc-soft      # --neutral-text
+  on-neutral     cream-bright   # --on-neutral
+  neutral-wash   putty-wash     # --neutral-wash
+  neutral-edge   putty-line     # --neutral-edge
+
+  inactive-fill  putty-fill     # --inactive-fill
+  inactive-text  putty-text     # --inactive-text
+  inactive-edge  putty-hair     # --inactive-edge
+  focus-ring     ink-blue       # --focus-ring
+  hairline       hair-light     # --hairline
+)
+
+typeset -gA _inzsh_roles_dark
+_inzsh_roles_dark=(
+  surface        navy                # --surface
+  surface-soft   navy-soft           # --surface-soft
+  text-strong    cream               # --text-strong
+  text-body      cream               # --text-body
+  text-muted     cream-muted         # --text-muted
+  accent         caramel             # --accent     unchanged from light, by design
+  on-accent      choc                # --on-accent
+
+  positive       sage-bright         # --positive
+  positive-text  sage-bright         # --positive-text
+  on-positive    navy-deep           # --on-positive
+  positive-wash  sage-wash-dark      # --positive-wash
+  positive-edge  sage-edge-dark      # --positive-edge
+  info           ink-blue-bright     # --info
+  info-text      ink-blue-bright     # --info-text
+  on-info        navy-deep           # --on-info
+  info-wash      ink-blue-wash-dark  # --info-wash
+  info-edge      ink-blue-edge-dark  # --info-edge
+  negative       madder-bright       # --negative
+  negative-text  madder-bright       # --negative-text
+  on-negative    navy-deep           # --on-negative
+  negative-wash  madder-wash-dark    # --negative-wash
+  negative-edge  madder-edge-dark    # --negative-edge
+  caution        ochre-bright        # --caution
+  caution-text   ochre-bright        # --caution-text
+  on-caution     navy-deep           # --on-caution
+  caution-wash   ochre-wash-dark     # --caution-wash
+  caution-edge   ochre-edge-dark     # --caution-edge
+  neutral        cream-muted         # --neutral
+  neutral-text   cream-muted         # --neutral-text
+  on-neutral     navy-deep           # --on-neutral
+  neutral-wash   slate-wash          # --neutral-wash
+  neutral-edge   slate-line          # --neutral-edge
+
+  inactive-fill  slate-fill          # --inactive-fill
+  inactive-text  slate-text          # --inactive-text
+  inactive-edge  slate-hair          # --inactive-edge
+  focus-ring     ink-blue-bright     # --focus-ring
+  hairline       hair-dark           # --hairline
+)
+
+# The active register. Dark is the default because the sharp preset is. Set only when unset,
+# so re-sourcing this file — bundling, reloading, a second plugin manager pass — never
+# discards a register the user or a preset already chose.
+(( ${+_inzsh_register} )) || typeset -g _inzsh_register=dark
+
+# Rebuild `_inzsh_role` (role → hex) from the active register's table and the palette.
+# Parameter operations only: no subprocesses, no forks — this may run on the render path.
+# An unrecognised register falls back to dark; configuration may never break the render.
+_inzsh_tokens_resolve() {
+  emulate -L zsh
+
+  local table=_inzsh_roles_dark
+  [[ $_inzsh_register == light ]] && table=_inzsh_roles_light
+
+  typeset -gA _inzsh_role
+  _inzsh_role=()
+
+  local role key
+  for role key in "${(@Pkv)table}"; do
+    _inzsh_role[$role]=${_inzsh_palette[$key]}
+  done
+}
+
+_inzsh_tokens_resolve
