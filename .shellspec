@@ -1,0 +1,4 @@
+--shell zsh
+--require spec_helper
+--helperdir test
+--default-path test/unit
