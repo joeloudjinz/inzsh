@@ -3,6 +3,8 @@
 # Source:     the Joe Inz design system's tokens/colors.css, transcribed 2026-07-29.
 # Rule:       hex values exist here and nowhere else — not in presets, not in segments, not
 #             in tests. Everything downstream reads semantic roles, never these ramp names.
+#             `tokens-256.zsh` is the one sibling: the same keys at 256 and 8 colours, which
+#             is still the token layer and still not hex.
 # On change:  when the design system moves, re-pull ds-colors.css, re-transcribe this file,
 #             and re-run the colour audit. Nothing else in the tree gets edited for a
 #             palette change.
@@ -203,21 +205,48 @@ _inzsh_roles_dark=(
 # discards a register the user or a preset already chose.
 (( ${+_inzsh_register} )) || typeset -g _inzsh_register=dark
 
-# Rebuild `_inzsh_role` (role → hex) from the active register's table and the palette.
-# Parameter operations only: no subprocesses, no forks — this may run on the render path.
-# An unrecognised register falls back to dark; configuration may never break the render.
+# Rebuild `_inzsh_role` (role → colour value) from the active register's table and whichever
+# palette the terminal can actually draw. Parameter operations only: no subprocesses, no forks
+# — this may run on the render path. An unrecognised register falls back to dark;
+# configuration may never break the render.
+#
+# Two independent choices, and only two:
+#
+#   register  which role table names the palette KEY   — light or dark
+#   depth     which palette turns that key into a VALUE — truecolor, 256 or 8
+#
+# They compose rather than multiply: the register picks a key, the depth picks a table, and
+# there is one loop underneath both. A degraded prompt is the same prompt with a different
+# lookup, never a second code path — anything a 256-colour terminal does differently from a
+# truecolor one is a bug we would only ever find on somebody else's machine.
+#
+# Load order: `lib/core/detect.zsh` sets `_inzsh_color_depth` and `lib/core/tokens-256.zsh`
+# defines the reduced tables, and the entry point sources both before this file, so the
+# resolve at the end of it already knows the depth. Neither is required. Each of the three
+# files is independently sourceable, and this one alone still resolves — a missing depth, an
+# unrecognised one, or a depth whose table has not been loaded all mean truecolor. Degrading
+# is a feature; failing to degrade must never cost anyone their prompt.
 _inzsh_tokens_resolve() {
   emulate -L zsh
 
   local table=_inzsh_roles_dark
   [[ $_inzsh_register == light ]] && table=_inzsh_roles_light
 
+  local values=_inzsh_palette
+  case $_inzsh_color_depth in
+    (256) (( ${+_inzsh_palette_256} )) && values=_inzsh_palette_256 ;;
+    (8)   (( ${+_inzsh_palette_8} ))   && values=_inzsh_palette_8   ;;
+  esac
+  local -A palette=("${(@Pkv)values}")
+
   typeset -gA _inzsh_role
   _inzsh_role=()
 
+  # The truecolor value is the last resort for a key the reduced table happens to be missing.
+  # It is the wrong depth, which shows; an empty value is a broken escape, which does not.
   local role key
   for role key in "${(@Pkv)table}"; do
-    _inzsh_role[$role]=${_inzsh_palette[$key]}
+    _inzsh_role[$role]=${palette[$key]:-${_inzsh_palette[$key]}}
   done
 }
 
