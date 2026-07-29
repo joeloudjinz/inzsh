@@ -8,6 +8,11 @@ on:
 # Fail fast, cheapest first — CI is the only feedback loop for jobs that
 # can't run natively on the dev machine (zsh 5.8, installer tests, full parity).
 
+# ${(m)#…} width accounting counts bytes, not cells, outside a UTF-8 locale —
+# pin one so every job measures the same thing (the 5.8 container defaults to C).
+env:
+  LC_ALL: C.UTF-8
+
 jobs:
   syntax:
     runs-on: ubuntu-latest
