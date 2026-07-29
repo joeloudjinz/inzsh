@@ -21,16 +21,22 @@ jobs:
     if: ${{ !endsWith(github.actor, '[bot]') }}
     runs-on: ubuntu-latest
     steps:
-      - name: Require a milestone
-        if: github.event.pull_request.milestone == null
-        run: |
-          echo "::error::Set a milestone on this PR (M0–M9)."
-          exit 1
-      - name: Require a linked issue
+      # Query the live PR rather than the event payload — gh pr create applies the
+      # milestone after creation, so the opened snapshot can carry milestone: null.
+      - name: Require a milestone and linked issue
         env:
-          TEXT: ${{ github.event.pull_request.title }} ${{ github.event.pull_request.body }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUM: ${{ github.event.pull_request.number }}
         run: |
-          echo "$TEXT" | grep -qiE '(clos(e|es|ed)|fix(es|ed)?|resolv(e|es|ed)) #[0-9]+' || {
+          pr=$(gh api "repos/$REPO/pulls/$NUM")
+          milestone=$(echo "$pr" | jq -r '.milestone.title // ""')
+          if [ -z "$milestone" ]; then
+            echo "::error::Set a milestone on this PR (M1–M9)."
+            exit 1
+          fi
+          text=$(echo "$pr" | jq -r '(.title // "") + " " + (.body // "")')
+          echo "$text" | grep -qiE '(clos(e|es|ed)|fix(es|ed)?|resolv(e|es|ed)) #[0-9]+' || {
             echo "::error::Link the issue with 'Closes #N' in the PR body."
             exit 1
           }
