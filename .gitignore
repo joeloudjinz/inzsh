@@ -1,0 +1,34 @@
+# Tooling
+.claude/
+.venv/
+.venv-*/
+__pycache__/
+*.py[cod]
+node_modules/
+
+# Local config
+.env
+.env.*
+.envrc
+*.local
+local.zsh
+.inzshrc
+
+# Test & build artifacts
+test/**/*.actual
+test/**/*.tmp
+.render-check.json
+coverage/
+dist/
+*.frames/
+vhs-*.mp4
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Logs
+*.log
