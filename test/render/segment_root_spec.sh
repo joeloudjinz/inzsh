@@ -58,10 +58,10 @@ Describe 'the root segment'
   # ------------------------------------------------------------------------------------------
   Describe 'registration'
     Describe 'the maps it fills'
-      # $1 the map, $2 what ROOT must be worth in it. Rank 1 is the leftmost block on the left
-      # prompt: whatever else the row says, this is read first.
+      # $1 the map, $2 what ROOT must be worth in it. The lowest positive rank shipped, so this
+      # is the leftmost block on the left prompt: whatever else the row says, it is read first.
       Parameters
-        _inzsh_segment_defaults    1
+        _inzsh_segment_defaults    10
         _inzsh_segment_fg_role     on-negative
         _inzsh_segment_importance  1
       End
@@ -90,7 +90,7 @@ Describe 'the root segment'
         print -r -- "${seen[*]}"
       }
       When call ranked
-      The output should eq '1 1 6 0 1'
+      The output should eq '10 10 6 0 10'
     End
 
     It 'registers a foreground role the token layer actually carries, in both registers'
@@ -348,12 +348,12 @@ Describe 'the root segment'
     End
 
     It 'sits at the left edge, ahead of every other segment, when it is drawn'
-      # Rank 1 is not decoration: a warning read after the directory and the branch has already
-      # been read too late.
+      # The lowest shipped rank is not decoration: a warning read after the directory and the
+      # branch has already been read too late.
       first() {
         _inzsh_segment_text=(DIR dir GIT git)
         _inzsh_segment_root_build 0
-        local INZSH_DIR_RANK=4 INZSH_GIT_RANK=6
+        local INZSH_DIR_RANK=40 INZSH_GIT_RANK=60
         _inzsh_rank_split ROOT DIR GIT
         print -r -- "${_inzsh_left[*]}"
       }

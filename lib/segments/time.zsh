@@ -25,7 +25,7 @@ typeset -gA _inzsh_segment_defaults
 typeset -gA _inzsh_segment_fg_role
 typeset -gA _inzsh_segment_importance
 
-_inzsh_segment_defaults[TIME]=-2
+_inzsh_segment_defaults[TIME]=-10
 _inzsh_segment_fg_role[TIME]=text-muted
 _inzsh_segment_importance[TIME]=3
 

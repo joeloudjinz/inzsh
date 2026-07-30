@@ -34,7 +34,7 @@ typeset -gA _inzsh_segment_fg_role _inzsh_segment_importance
 # The registration. Rank 3 puts the host after the user and before the directory, which reads
 # as `user host dir` — the address, narrowing. `text-muted` because it is context and not the
 # subject of the line; importance 3 sits it at the bottom of the ramp for the same reason.
-_inzsh_segment_defaults[HOST]=3
+_inzsh_segment_defaults[HOST]=30
 _inzsh_segment_fg_role[HOST]=text-muted
 _inzsh_segment_importance[HOST]=3
 

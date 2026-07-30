@@ -27,7 +27,7 @@
 # is only what lets a spec — or a bundle sourced out of order — load this segment on its own.
 typeset -gA _inzsh_segment_defaults _inzsh_segment_fg_role _inzsh_segment_importance
 
-_inzsh_segment_defaults[DIR]=4
+_inzsh_segment_defaults[DIR]=40
 _inzsh_segment_fg_role[DIR]=text-body
 _inzsh_segment_importance[DIR]=1
 

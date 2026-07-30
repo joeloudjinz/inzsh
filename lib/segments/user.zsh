@@ -38,7 +38,7 @@ typeset -gA _inzsh_segment_fg_role _inzsh_segment_importance
 # The registration. Rank 2 puts the user after the root marker and before the host, so the left
 # prompt reads `user host dir` — who, where, what. `text-muted` and importance 3 because it is
 # context: true almost always, worth reading only when it is not what you expected.
-_inzsh_segment_defaults[USER]=2
+_inzsh_segment_defaults[USER]=20
 _inzsh_segment_fg_role[USER]=text-muted
 _inzsh_segment_importance[USER]=3
 
@@ -72,12 +72,16 @@ _inzsh_segment_user_build() {
   # stale `INZSH_DIR_BG=` left behind in a zshrc.
   expected=${${expected##[[:space:]]#}%%[[:space:]]#}
 
+  # Shown by default, on any session. The earlier reading — hide locally, because your own
+  # username tells you nothing you did not know — is true of the information and wrong about
+  # the prompt: the name is part of the shape people recognise, and a block that appears only
+  # over SSH makes the prompt jump. `INZSH_DEFAULT_USER` is how you say "not this one", and
+  # then the segment is a difference detector on every session rather than only some.
+  #
+  # Quoted on the right: this is an equality test, not a match. An `INZSH_DEFAULT_USER=*`
+  # would otherwise equal every user alive and hide the segment permanently.
   if [[ -n $expected ]]; then
-    # Quoted on the right: this is an equality test, not a match. An `INZSH_DEFAULT_USER=*`
-    # would otherwise equal every user alive and hide the segment permanently.
     [[ $name != "$expected" ]] || return 0
-  else
-    [[ -n $marker ]] || return 0
   fi
 
   # Per cent doubled — the fragment is spliced into PROMPT and expanded there, so a user called

@@ -39,13 +39,13 @@ inzsh_spec_user() {
 Describe 'the user segment'
   # --------------------------------------------------------------------------------------------
   Describe 'registration'
-    It 'registers rank 2, a muted foreground and the bottom of the importance ramp'
+    It 'registers rank 20, a muted foreground and the bottom of the importance ramp'
       registered() {
         _inzsh_rank_of USER
         print -r -- "$REPLY ${_inzsh_segment_fg_role[USER]} ${_inzsh_segment_importance[USER]}"
       }
       When call registered
-      The output should eq '2 text-muted 3'
+      The output should eq '20 text-muted 3'
     End
 
     It 'registers a foreground role the token layer actually carries'
@@ -85,7 +85,7 @@ Describe 'the user segment'
         ' inzsh-user-idempotent "$SHELLSPEC_PROJECT_ROOT"
       }
       When call twice
-      The output should eq '1 2 1 text-muted 1 3 keep'
+      The output should eq '1 20 1 text-muted 1 3 keep'
       The stderr should eq ''
     End
 
@@ -109,7 +109,7 @@ Describe 'the user segment'
     # the text map.
     Parameters
       ''     joe        'ssh'  '[joe]'
-      ''     joe        ''     '[]'
+      ''     joe        ''     '[joe]'
       joe    joe        ''     '[]'
       joe    joe        'ssh'  '[]'
       joe    root       ''     '[root]'
@@ -157,7 +157,7 @@ Describe 'the user segment'
 
         typeset -g INZSH_DEFAULT_USER=
         _inzsh_segment_user_build root '' ''
-        [[ ${_inzsh_segment_text[USER]} == '' ]]   || wrong+=marker-arg
+        [[ ${_inzsh_segment_text[USER]} == root ]] || wrong+=name-arg
 
         print -r -- "${wrong[*]}"
       }
@@ -193,7 +193,9 @@ Describe 'the user segment'
       The output should eq '[root]'
     End
 
-    It 'falls back to the SSH rule when no default user is configured'
+    It 'shows on every session when no default user is configured'
+      # The name is part of the shape people recognise, so it is drawn whether or not the
+      # session is remote. A block that appeared only over SSH would make the prompt jump.
       unconfigured() {
         local remote local_
         inzsh_spec_user '' joe ssh >/dev/null
@@ -203,17 +205,18 @@ Describe 'the user segment'
         print -r -- "ssh=[$remote] local=[$local_]"
       }
       When call unconfigured
-      The output should eq 'ssh=[joe] local=[]'
+      The output should eq 'ssh=[joe] local=[joe]'
     End
 
-    Describe 'either SSH variable is enough on its own'
-      # `SSH_CONNECTION` is what sshd sets; `SSH_TTY` survives setups that scrub the former. The
-      # build reads the two concatenated, so this is the table that says so.
+    Describe 'the session kind does not decide'
+      # `SSH_CONNECTION` is what sshd sets and `SSH_TTY` survives setups that scrub it, but
+      # neither is the question any more: with no configured default the name is drawn either
+      # way. The table stays so a rule that started reading them again would fail here.
       Parameters
         connection shown
         tty        shown
         both       shown
-        neither    hidden
+        neither    shown
       End
 
       It "reads $1 as $2"
@@ -266,8 +269,9 @@ Describe 'the user segment'
     End
 
     It 'reads a set-but-empty INZSH_DEFAULT_USER as no configuration at all'
-      # `INZSH_DEFAULT_USER=` left behind in a zshrc must fall through to the SSH rule, the same
-      # way an `INZSH_DIR_BG=` falls through to the role. Empty means "no opinion" everywhere.
+      # `INZSH_DEFAULT_USER=` left behind in a zshrc must read as no configuration, the same
+      # way an `INZSH_DIR_BG=` falls through to the role. Empty means "no opinion" everywhere,
+      # and with no opinion the name is drawn.
       emptied() {
         local remote local_
         inzsh_spec_user '' joe ssh >/dev/null
@@ -277,7 +281,7 @@ Describe 'the user segment'
         print -r -- "ssh=[$remote] local=[$local_]"
       }
       When call emptied
-      The output should eq 'ssh=[joe] local=[]'
+      The output should eq 'ssh=[joe] local=[joe]'
     End
 
     It 'clears the fragment it wrote at an earlier prompt'

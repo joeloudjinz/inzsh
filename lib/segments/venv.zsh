@@ -38,7 +38,7 @@ typeset -gA _inzsh_segment_fg_role _inzsh_segment_importance
 # property of the place rather than of the machine. `info-text` because that is what it is —
 # information about the tooling, not a state that can be good or bad — and importance 2, the
 # middle of the ramp: it is absent most of the time, and when it is there it is worth reading.
-_inzsh_segment_defaults[VENV]=5
+_inzsh_segment_defaults[VENV]=60
 _inzsh_segment_fg_role[VENV]=info-text
 _inzsh_segment_importance[VENV]=2
 

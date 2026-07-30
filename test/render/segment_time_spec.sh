@@ -93,16 +93,19 @@ Describe 'the clock segment'
         print -r -- "${got[*]}"
       }
       When call registered
-      The output should eq 'rank=-2 role=text-muted importance=3'
+      The output should eq 'rank=-10 role=text-muted importance=3'
     End
 
-    It 'is read by the engine as the second segment from the right edge'
-      # -1 is the rightmost, so -2 sits one place inward, and the render order for the two of them
-      # is most-negative-first. The rank is a DEFAULT: a user's `INZSH_TIME_RANK` outranks it.
+    It 'is read by the engine as the segment hard against the right edge'
+      # Negative ranks count inward from the right edge, and the clock is the innermost thing
+      # shipped on that side, so it sits hard against it. The rank is a DEFAULT: a user's
+      # `INZSH_TIME_RANK` outranks it.
       ranked() {
         _inzsh_rank_of TIME
         local shipped=$REPLY
-        local INZSH_RETVAL_RANK=-1
+        # A companion further out, so "hard against the edge" is demonstrated rather than
+        # asserted: render order on the right runs most-negative first, so the clock lands last.
+        local INZSH_RETVAL_RANK=-20
         _inzsh_rank_split TIME RETVAL
         local order="right=${_inzsh_right[*]}"
         local INZSH_TIME_RANK=2
@@ -110,7 +113,7 @@ Describe 'the clock segment'
         print -r -- "$shipped $order moved=${_inzsh_left[*]}"
       }
       When call ranked
-      The output should eq '-2 right=TIME RETVAL moved=TIME'
+      The output should eq '-10 right=RETVAL TIME moved=TIME'
     End
 
     It 'registers once however many times it is sourced'
@@ -125,7 +128,7 @@ Describe 'the clock segment'
         ' inzsh-time-twice "$SHELLSPEC_PROJECT_ROOT"
       }
       When call twice
-      The output should eq '1 1 1 -2'
+      The output should eq '1 1 1 -10'
       The stderr should eq ''
     End
 

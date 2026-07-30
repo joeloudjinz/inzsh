@@ -63,7 +63,7 @@ Describe 'the dir segment'
     Describe 'the maps it fills'
       # $1 the map, $2 what DIR must be worth in it.
       Parameters
-        _inzsh_segment_defaults    4
+        _inzsh_segment_defaults    40
         _inzsh_segment_fg_role     text-body
         _inzsh_segment_importance  1
       End
@@ -94,7 +94,7 @@ Describe 'the dir segment'
         print -r -- "${seen[*]}"
       }
       When call ranked
-      The output should eq '4 4 9 0 4'
+      The output should eq '40 40 9 0 40'
     End
 
     It 'registers a foreground role the token layer actually carries'

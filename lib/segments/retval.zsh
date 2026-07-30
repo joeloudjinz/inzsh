@@ -31,7 +31,7 @@ typeset -gA _inzsh_segment_defaults
 typeset -gA _inzsh_segment_fg_role
 typeset -gA _inzsh_segment_importance
 
-_inzsh_segment_defaults[RETVAL]=-1
+_inzsh_segment_defaults[RETVAL]=70
 _inzsh_segment_fg_role[RETVAL]=negative
 _inzsh_segment_importance[RETVAL]=1
 
