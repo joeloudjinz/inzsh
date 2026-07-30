@@ -90,25 +90,44 @@ Describe 'the entry point'
       The stderr should eq ''
     End
 
-    # The renderer lands later in M2. Until it does, sourcing the theme must leave the user's
-    # prompt alone rather than half-drawing one: an entry point that assigns PROMPT before there
-    # is anything to draw is how a theme ships a broken prompt. The precmd hook is the one thing
-    # that must be in place early — exit-status capture cannot be retrofitted after the fact —
-    # so exactly one hook is expected, and nothing else may move.
-    It 'installs only the precmd hook and assigns no PROMPT'
+    # Sourcing installs BEHAVIOUR, not a string. PROMPT is assigned by `_inzsh_render` from
+    # inside precmd, because the values have to be current — a prompt computed once at source
+    # time is wrong by the second command. So the entry point itself must still leave PROMPT
+    # where it found it, and the hooks are what it puts in place.
+    #
+    # Registration order is the assertion that matters: `_inzsh_precmd` captures `$?` and
+    # `$pipestatus` on its first line, and precmd functions run in the order they were
+    # registered, so anything ahead of it would cost the exit status the retval segment shows.
+    It 'installs its hooks in order and assigns no PROMPT at source time'
       quiescent() {
         zsh -f -i -c '
           local before=$PROMPT
           source "$1"
           local -a moved=()
           [[ $PROMPT == $before ]] || moved+=PROMPT
-          [[ ${precmd_functions[*]} == _inzsh_precmd ]] || moved+=precmd:${precmd_functions[*]}
-          [[ -z ${preexec_functions[*]} ]] || moved+=preexec:${preexec_functions[*]}
+          [[ ${precmd_functions[*]} == "_inzsh_precmd _inzsh_title_precmd" ]] ||
+            moved+=precmd:${precmd_functions[*]}
+          [[ ${preexec_functions[*]} == _inzsh_title_preexec ]] ||
+            moved+=preexec:${preexec_functions[*]}
           print -r -- "${moved[*]}"
         ' inzsh-entry-quiescent "$(inzsh_spec_theme)"
       }
       When call quiescent
       The output should eq ''
+    End
+
+    # The other half of the same contract: once precmd runs, the theme owns the prompt. Without
+    # this the example above passes for a theme that never draws anything at all.
+    It 'draws the prompt once precmd has run'
+      draws() {
+        zsh -f -i -c '
+          source "$1"
+          _inzsh_render
+          [[ -n $PROMPT ]] && print -r -- drawn || print -r -- empty
+        ' inzsh-entry-draws "$(inzsh_spec_theme)"
+      }
+      When call draws
+      The output should eq 'drawn'
     End
 
     # Plugin managers source a theme twice more often than anyone would like: a reload, a second

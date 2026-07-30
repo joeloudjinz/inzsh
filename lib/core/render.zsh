@@ -414,3 +414,75 @@ _inzsh_render_build() {
 
   return 0
 }
+
+# ---------------------------------------------------------------------------------------
+# The draw. This is the function `lib/core/hooks.zsh` dispatches to on every precmd — the name
+# is the contract, and until this file defined one the dispatch was a deliberate no-op.
+#
+# Order matters and is not arbitrary:
+#   1. every registered segment builds its own text, from state injected by its caller;
+#   2. the width filter drops whoever does not fit THIS terminal, before ranks are read, so a
+#      hidden segment never reaches the sorter and never spends a surface;
+#   3. the rank sort decides side and order over exactly the survivors;
+#   4. each side is assembled, and only then is a prompt parameter assigned.
+#
+# `_inzsh_rank_split` answers in `reply`, which `_inzsh_layout_filter` also uses, so the
+# survivors are copied out before the split runs. Getting that wrong loses the filter's answer.
+_inzsh_render() {
+  emulate -L zsh
+  setopt extended_glob
+
+  [[ -o interactive ]] || return 0
+
+  local segment builder
+  for segment in ${(k)_inzsh_segment_defaults}; do
+    builder=_inzsh_segment_${(L)segment}_build
+    (( ${+functions[$builder]} )) && $builder
+  done
+
+  local -a candidates
+  candidates=(${(ok)_inzsh_segment_defaults})
+  _inzsh_layout_filter "${COLUMNS:-0}" "${candidates[@]}"
+
+  local -a survivors
+  survivors=("${reply[@]}")
+  _inzsh_rank_split "${survivors[@]}"
+
+  _inzsh_render_build right
+  local right=$REPLY
+  local -i right_width=$_inzsh_render_width
+
+  _inzsh_render_build left
+  local left=$REPLY
+  local -i left_width=$_inzsh_render_width
+
+  # The path is the one segment that shortens instead of vanishing, so it absorbs whatever
+  # overrun is left after everything else has taken its width. Measured rather than guessed: the
+  # budget is the terminal minus the right prompt minus every other block on the left, and one
+  # column spare so the cursor is never flush against the edge. Below one column there is no
+  # useful path left, and the segment's own ladder answers empty — which is the honest result.
+  #
+  # Re-assembling the left side is the second and last pass. The numbers the ladder chooses are
+  # placeholders until they are tuned on a real terminal.
+  local -i cols=${COLUMNS:-0}
+  if (( cols > 0 && left_width + right_width > cols )) &&
+     [[ -n ${_inzsh_segment_text[DIR]-} ]]; then
+    _inzsh_width "${_inzsh_segment_text[DIR]}"
+    local -i dir_width=$REPLY
+    local -i budget=$(( cols - right_width - (left_width - dir_width) - 1 ))
+    (( budget < 0 )) && budget=0
+    _inzsh_segment_dir_build "" "$budget"
+    _inzsh_render_build left
+    left=$REPLY
+  fi
+
+  # A prompt is the one thing that may never come back empty. Every segment can legitimately
+  # be absent at once — a clean directory at a narrow width with nothing to report — and a
+  # blank PROMPT reads as a broken shell rather than a calm one. `%#` is zsh's own marker and
+  # costs one column.
+  [[ -n $left ]] && left+=' '
+  typeset -g PROMPT=${left:-'%# '}
+  typeset -g RPROMPT=$right
+
+  return 0
+}

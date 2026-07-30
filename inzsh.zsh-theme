@@ -30,12 +30,30 @@ source $_inzsh_theme_root/lib/core/tokens.zsh
 source $_inzsh_theme_root/lib/core/layout.zsh
 source $_inzsh_theme_root/lib/core/engine.zsh
 source $_inzsh_theme_root/lib/core/render.zsh
+source $_inzsh_theme_root/lib/core/prompts.zsh
 source $_inzsh_theme_root/lib/core/hooks.zsh
 
-_inzsh_hooks_install
+# The segments, listed rather than globbed. A glob would load whatever happens to be in the
+# directory in whatever order the filesystem answers; the load is a contract, so it is written
+# down. Each registers its rank, role and importance and defines its build function — none of
+# them draws anything at load time. They come after `render.zsh` and `engine.zsh`, whose
+# associations they write into.
+source $_inzsh_theme_root/lib/segments/root.zsh
+source $_inzsh_theme_root/lib/segments/user.zsh
+source $_inzsh_theme_root/lib/segments/host.zsh
+source $_inzsh_theme_root/lib/segments/dir.zsh
+source $_inzsh_theme_root/lib/segments/venv.zsh
+source $_inzsh_theme_root/lib/segments/retval.zsh
+source $_inzsh_theme_root/lib/segments/time.zsh
 
-# Still no PROMPT assignment — the renderer lands later in M2. The precmd hook is installed now
-# because exit-status capture has to be in place before anything draws: a theme that adds it
-# afterwards has already lost the status it needed. Until a renderer exists the hook captures
-# and returns, so sourcing this file leaves the user's prompt exactly as it found it;
-# `tools/render.zsh` draws the demonstration prompt instead.
+# Hooks first: precmd functions run in registration order, and only the first one sees an
+# untouched `$?` and `$pipestatus`. `_inzsh_precmd` captures both on its first line, so anything
+# registered ahead of it would cost the exit status the retval segment exists to show.
+_inzsh_hooks_install
+_inzsh_prompts_install
+_inzsh_title_install
+
+# PROMPT is not assigned here. `_inzsh_precmd` calls `_inzsh_render`, which assigns it before
+# each prompt is drawn — the values have to be current, and a value computed once at source time
+# would be wrong by the second command. Sourcing this file therefore installs behaviour rather
+# than a string, and the first prompt after it is the first one the theme draws.
