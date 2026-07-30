@@ -186,8 +186,18 @@ typeset -g _inzsh_render_width=0
 # — the token layer has no glyph table yet. Separator glyphs belong to the token layer and both of
 # these move there when it grows one. Until then no segment may carry its own; these two variables
 # are the stand-in for that rule, not an exception to it.
-typeset -g _inzsh_sep_left=$'\ue0b0'
-typeset -g _inzsh_sep_right=$'\ue0b2'
+#
+# Written as raw bytes rather than `\ue0b0`. A `\u` escape is resolved when the file is PARSED,
+# so outside a multibyte locale zsh refuses the line and the whole file is lost \u2014 the same trap
+# `lib/core/layout.zsh` fell into with its ellipsis. Bytes parse anywhere, and in a UTF-8 locale
+# these three are the character. Where multibyte is unavailable a Nerd Font glyph cannot draw
+# either, so the filled separator degrades to a thin ASCII divider rather than a mystery box.
+typeset -g _inzsh_sep_left=$'\xee\x82\xb0'
+typeset -g _inzsh_sep_right=$'\xee\x82\xb2'
+if [[ ${_inzsh_multibyte-1} == 0 ]] || (( ${#_inzsh_sep_left} != 1 )); then
+  _inzsh_sep_left='|'
+  _inzsh_sep_right='|'
+fi
 
 # `%K{value}` or `%F{value}` for channel $1 (`K` or `F`) and colour $2, in REPLY. An EMPTY value
 # resets the channel instead — `%k` / `%f`. That case is real: `_inzsh_seg_color` answers empty
