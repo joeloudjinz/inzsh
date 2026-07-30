@@ -81,6 +81,37 @@ jobs:
             exit 1
           }
 
+  # The render budget. CLAUDE.md calls it CI-enforced, and this is the enforcement.
+  #
+  # There is no renderer yet — segments land at M3 — so the suite benchmarks the machinery a
+  # warm render runs through (token resolution, the rank sort, surfaces, layout arithmetic,
+  # config) rather than the prompt. Today's numbers are a FLOOR on the render cost, not the
+  # render cost, and the job is honest about that in its own output. It is gated regardless:
+  # the budgets are real measurements with a stated multiplier, and a regression in this layer
+  # is a regression in the render whether or not the render exists yet.
+  perf:
+    needs: syntax
+    runs-on: ubuntu-latest
+    # The suite itself takes about two seconds; this is a wedge guard, not a budget.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install zsh
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+      - name: Render budget benchmarks
+        # Non-zero exit on a breach is the gate. `tee` keeps the numbers in the log even when
+        # the step fails, because the interesting part of a failed budget is by how much.
+        run: |
+          set -o pipefail
+          make perf 2>&1 | tee perf.log
+      - name: Guard against a silent skip
+        # Same reasoning as the ui job: a green job that measured nothing is worse than no job.
+        run: |
+          grep -Eq '^perf: [1-9][0-9]* cases ran' perf.log || {
+            echo "::error::make perf reported no cases — the suite skipped instead of running"
+            exit 1
+          }
+
   # zsh floor — 5.8 isn't available natively on the dev machine, so this job
   # is the only feedback loop for it. Matrix widens as the suite grows (M2+).
   zsh-floor:
