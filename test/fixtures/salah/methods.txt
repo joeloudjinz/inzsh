@@ -1,0 +1,22 @@
+# The calculation methods the theme ships — INPUT to test/unit/salah_methods_spec.sh.
+#
+# PROVENANCE
+#
+# Transcribed from `https://api.aladhan.com/v1/methods`, which publishes the parameters each
+# authority states for itself, fetched once by hand at the time this file was written. It is the
+# second copy of the numbers in `lib/salah/methods.zsh` and it is meant to be: a table of
+# constants with only one copy has nothing to be checked against, and the whole value of these
+# rows is that they came from somewhere else.
+#
+# FORMAT — `name | id | fajr angle | isha angle or interval | the authority's full name`
+#
+# The isha column is either a bare number, meaning a depression angle in degrees, or a number
+# followed by `min`, meaning minutes after maghrib. Both forms are first-class in the code and
+# both are exercised by the oracle matrix.
+
+MWL       | 3  | 18   | 17     | Muslim World League
+ISNA      | 2  | 15   | 15     | Islamic Society of North America
+UMMALQURA | 4  | 18.5 | 90 min | Umm al-Qura University, Makkah
+EGYPTIAN  | 5  | 19.5 | 17.5   | Egyptian General Authority of Survey
+KARACHI   | 1  | 18   | 18     | University of Islamic Sciences, Karachi
+ALGERIA   | 19 | 18   | 17     | Ministry of Religious Affairs and Wakfs, Algeria
