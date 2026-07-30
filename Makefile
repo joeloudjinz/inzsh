@@ -5,7 +5,8 @@ SHELLSPEC ?= shellspec
 PYTHON ?= ./.venv/bin/python
 COLS ?= 80
 
-.PHONY: help setup test test-ui render render-matrix grid demo watch golden-update bundle doctor
+.PHONY: help setup test test-ui perf render render-matrix grid demo watch
+.PHONY: golden-update bundle doctor
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*## "}{printf "  %-14s %s\n", $$1, $$2}'
@@ -25,6 +26,13 @@ test-ui: ## L3 terminal-grid tests (pty + pyte); needs the python venv
 	else \
 	  print -- "make test-ui: no python venv — run 'make setup' first (skipped)"; \
 	fi
+
+# Deliberately not part of `make test`: a benchmark on a laptop that is compiling something
+# else measures the something else. It is its own target and its own CI job, and the CI job is
+# where a breach is a verdict. `zsh -f` for the same reason every other harness uses it — the
+# suite must not measure somebody's zshrc.
+perf: ## render budget benchmarks, gated against declared budgets
+	@zsh -f test/perf/bench.zsh
 
 # The M1 demonstration prompt, not the engine — there are no segments yet. Always a subshell:
 # work in progress is never sourced into the shell you are typing into.
