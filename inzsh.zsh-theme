@@ -17,13 +17,18 @@
 # preset loader need the same answer, and computing it twice invites the two to disagree.
 typeset -g _inzsh_theme_root=${${(%):-%x}:A:h}
 
-# Dependency order, strictly downward. Detection answers how many colours we have; the reduced
-# palettes must exist before the token layer's end-of-file resolve chooses between them; the
-# token layer builds the roles; the render core is the surface machinery over them. No file in
-# this list sources another, so this is the whole load and its order is the whole contract.
+# Dependency order, strictly downward. Detection answers how many colours we have; config is the
+# defaults-and-validation registry everything above it reads through; the reduced palettes must
+# exist before the token layer's end-of-file resolve chooses between them; the token layer builds
+# the roles; layout and the engine are pure arithmetic over them; the render core is the surface
+# machinery; hooks close the loop. No file in this list sources another, so this is the whole
+# load and its order is the whole contract.
 source $_inzsh_theme_root/lib/core/detect.zsh
+source $_inzsh_theme_root/lib/core/config.zsh
 source $_inzsh_theme_root/lib/core/tokens-256.zsh
 source $_inzsh_theme_root/lib/core/tokens.zsh
+source $_inzsh_theme_root/lib/core/layout.zsh
+source $_inzsh_theme_root/lib/core/engine.zsh
 source $_inzsh_theme_root/lib/core/render.zsh
 source $_inzsh_theme_root/lib/core/hooks.zsh
 
