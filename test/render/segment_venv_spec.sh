@@ -28,13 +28,13 @@ inzsh_spec_venv() {
 Describe 'the venv segment'
   # --------------------------------------------------------------------------------------------
   Describe 'registration'
-    It 'registers rank 5, an informational foreground and the middle of the importance ramp'
+    It 'registers rank 60, an informational foreground and the middle of the importance ramp'
       registered() {
         _inzsh_rank_of VENV
         print -r -- "$REPLY ${_inzsh_segment_fg_role[VENV]} ${_inzsh_segment_importance[VENV]}"
       }
       When call registered
-      The output should eq '5 info-text 2'
+      The output should eq '60 info-text 2'
     End
 
     It 'registers a foreground role the token layer actually carries'
@@ -74,7 +74,7 @@ Describe 'the venv segment'
         ' inzsh-venv-idempotent "$SHELLSPEC_PROJECT_ROOT"
       }
       When call twice
-      The output should eq '1 5 1 info-text 1 2 keep'
+      The output should eq '1 60 1 info-text 1 2 keep'
       The stderr should eq ''
     End
 

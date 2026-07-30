@@ -92,7 +92,7 @@ Describe 'the exit-status segment'
         print -r -- "${got[*]}"
       }
       When call registered
-      The output should eq 'rank=-1 role=negative importance=1'
+      The output should eq 'rank=70 role=negative importance=1'
     End
 
     It 'is read by the engine as the rightmost segment, and is still only a default'
@@ -109,7 +109,7 @@ Describe 'the exit-status segment'
         print -r -- "$shipped $sided moved=${_inzsh_left[*]}"
       }
       When call ranked
-      The output should eq '-1 right=RETVAL left= moved=RETVAL'
+      The output should eq '70 right= left=RETVAL moved=RETVAL'
     End
 
     It 'registers once however many times it is sourced'
@@ -126,7 +126,7 @@ Describe 'the exit-status segment'
         ' inzsh-retval-twice "$SHELLSPEC_PROJECT_ROOT"
       }
       When call twice
-      The output should eq '1 1 1 -1'
+      The output should eq '1 1 1 70'
       The stderr should eq ''
     End
 

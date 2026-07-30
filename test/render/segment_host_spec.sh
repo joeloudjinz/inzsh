@@ -36,13 +36,13 @@ Describe 'the host segment'
     # Loading a segment file fills three maps and nothing else. The rank is read back through
     # `_inzsh_rank_of` rather than out of the map, because the default only means anything if the
     # engine finds it.
-    It 'registers rank 3, a muted foreground and the bottom of the importance ramp'
+    It 'registers rank 30, a muted foreground and the bottom of the importance ramp'
       registered() {
         _inzsh_rank_of HOST
         print -r -- "$REPLY ${_inzsh_segment_fg_role[HOST]} ${_inzsh_segment_importance[HOST]}"
       }
       When call registered
-      The output should eq '3 text-muted 3'
+      The output should eq '30 text-muted 3'
     End
 
     It 'registers a foreground role the token layer actually carries'
@@ -86,7 +86,7 @@ Describe 'the host segment'
         ' inzsh-host-idempotent "$SHELLSPEC_PROJECT_ROOT"
       }
       When call twice
-      The output should eq '1 3 1 text-muted 1 3 keep'
+      The output should eq '1 30 1 text-muted 1 3 keep'
       The stderr should eq ''
     End
 

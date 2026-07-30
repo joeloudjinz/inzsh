@@ -47,7 +47,7 @@
 # anything. The maps belong to `lib/core/engine.zsh` and `lib/core/render.zsh`.
 typeset -gA _inzsh_segment_defaults _inzsh_segment_fg_role _inzsh_segment_importance
 
-_inzsh_segment_defaults[ROOT]=1
+_inzsh_segment_defaults[ROOT]=10
 _inzsh_segment_fg_role[ROOT]=on-negative
 _inzsh_segment_importance[ROOT]=1
 
