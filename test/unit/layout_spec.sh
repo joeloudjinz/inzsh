@@ -972,9 +972,11 @@ Describe 'path truncation'
 
   Describe 'a component with nowhere left to go'
     It 'cuts a single very long component rather than giving up on it'
+      Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
       # The full path is 34 columns and the basename 32, so there is no ellipsis rung between
       # them: one component means the ladder is the root marker, the bare name, and then the
-      # name itself cut down.
+      # name itself cut down. The column arithmetic assumes the one-column ellipsis, so this
+      # reads differently where the marker degrades to three ASCII dots.
       long() {
         local HOME=/spec/home
         local -a seen=()
@@ -1163,9 +1165,11 @@ Describe 'path truncation'
     End
 
     It 'draws its marker from one place'
+      Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
       # The ellipsis is the truncation marker, not a separator, so it lives here rather than in
       # the token layer — for now. Pinned so that the literals in the tables above have a stated
-      # source rather than being a second transcription.
+      # source rather than being a second transcription. Outside a multibyte locale the marker
+      # is deliberately three ASCII dots instead, so the width it pins is not one.
       marker() {
         _inzsh_width "$_inzsh_layout_ellipsis"
         print -r -- "[$_inzsh_layout_ellipsis] $REPLY"

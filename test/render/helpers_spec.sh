@@ -16,7 +16,15 @@ Describe 'L2 render helpers'
     The output should eq '3'
   End
 
+  # Outside a multibyte locale zsh counts bytes rather than cells, so these three glyphs
+  # measure nine. That is the locale's answer, not a defect in the helper.
+  inzsh_spec_bytes_not_cells() {
+    local sample=$'é'
+    (( ${#sample} != 1 ))
+  }
+
   It 'measures multibyte glyphs by display width'
+    Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
     When call inzsh_test_visible_width '·✓✕'
     The output should eq '3'
   End
