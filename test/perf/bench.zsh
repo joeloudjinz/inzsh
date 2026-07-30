@@ -211,6 +211,16 @@ _inzsh_bench_case_config_get() {
   _inzsh_config_get INZSH_COLOR_DEPTH
 }
 
+# The other shape. A singleton is a hash hit; a family name has to be matched against the
+# registered patterns, and that walk is what every per-segment override in a render goes
+# through — colour twice per segment, then rank, then MINCOLS. Timed on its own so a registry
+# that grows a dozen families says so here rather than in `render-prompt`.
+_inzsh_bench_case_config_get_family() {
+  _inzsh_config_get INZSH_DIR_BG
+  _inzsh_config_get INZSH_DIR_RANK
+  _inzsh_config_get INZSH_DIR_MINCOLS
+}
+
 _inzsh_bench_case_config_resolve() {
   local segment
   for segment in "${_inzsh_bench_segments[@]}"; do
@@ -353,6 +363,7 @@ typeset -ga _inzsh_bench_table=(
   layout-filter       150   1.000
   truncate-path        80   2.650
   config-get          600   0.320
+  config-get-family   200   0.800
   config-resolve      150   1.450
   render-floor         40   7.200
   render-prompt        40  12.000
