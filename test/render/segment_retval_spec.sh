@@ -463,15 +463,31 @@ Describe 'the exit-status segment'
 
   # --------------------------------------------------------------------------------------------
   Describe 'the glyph'
-    It 'is the multiplication X, spelled as bytes so the file parses in any locale'
-      # Pinned against the byte sequence rather than against the character, for the same reason
-      # the segment spells it that way: a `\u` escape is resolved at parse time and fails outside
-      # a multibyte locale.
+    It 'is the token layers error mark and not a literal of its own'
+      # The segment carries no glyph. `_inzsh_glyph[error]` is where the multiplication X lives,
+      # along with the byte-spelling that lets it parse in any locale and the `x` it degrades to,
+      # and a copy here would be a second thing to keep in step with the design system.
       pinned() {
-        [[ $_inzsh_retval_glyph == $'\xe2\x9c\x95' ]] && print -r -- exact
+        [[ $_inzsh_retval_glyph == ${_inzsh_glyph[error]} ]] && print -r -- from-the-table
       }
       When call pinned
-      The output should eq 'exact'
+      The output should eq 'from-the-table'
+    End
+
+    It 'holds no glyph literal of its own anywhere in the file'
+      # Structural, because the claim is about the TEXT of the file: no byte escape and no
+      # character escape, so the only way a mark reaches this segment is through the table.
+      literals() {
+        setopt local_options extended_glob
+        local line; local -a bad=()
+        while IFS= read -r line; do
+          [[ $line == [[:space:]]#\#* ]] && continue
+          [[ $line == *"\$'"*'\\'[uUx]* ]] && bad+=$line
+        done < "$SHELLSPEC_PROJECT_ROOT/lib/segments/retval.zsh"
+        print -r -- "${#bad}"
+      }
+      When call literals
+      The output should eq '0'
     End
 
     It 'degrades to ASCII where the locale cannot carry it'
@@ -480,6 +496,7 @@ Describe 'the exit-status segment'
       degraded() {
         LC_ALL=C LC_CTYPE= LANG= zsh -f -c '
           source "$1/lib/core/detect.zsh"
+          source "$1/lib/core/tokens.zsh"
           source "$1/lib/core/render.zsh"
           source "$1/lib/segments/retval.zsh"
           _inzsh_segment_retval_build 130

@@ -181,23 +181,115 @@ typeset -gA _inzsh_segment_importance
 # it. Declared here so a caller reading it before the first build gets 0 rather than an error.
 typeset -g _inzsh_render_width=0
 
-# The powerline separators: U+E0B0 for the left prompt and U+E0B2, its mirror, for the right.
-# ONE definition, here, for the same reason `_inzsh_layout_ellipsis` sits in `lib/core/layout.zsh`
-# — the token layer has no glyph table yet. Separator glyphs belong to the token layer and both of
-# these move there when it grows one. Until then no segment may carry its own; these two variables
-# are the stand-in for that rule, not an exception to it.
+# ---------------------------------------------------------------------------------------------
+# Separators
 #
-# Written as raw bytes rather than `\ue0b0`. A `\u` escape is resolved when the file is PARSED,
-# so outside a multibyte locale zsh refuses the line and the whole file is lost \u2014 the same trap
-# `lib/core/layout.zsh` fell into with its ellipsis. Bytes parse anywhere, and in a UTF-8 locale
-# these three are the character. Where multibyte is unavailable a Nerd Font glyph cannot draw
-# either, so the filled separator degrades to a thin ASCII divider rather than a mystery box.
-typeset -g _inzsh_sep_left=$'\xee\x82\xb0'
-typeset -g _inzsh_sep_right=$'\xee\x82\xb2'
-if [[ ${_inzsh_multibyte-1} == 0 ]] || (( ${#_inzsh_sep_left} != 1 )); then
-  _inzsh_sep_left='|'
-  _inzsh_sep_right='|'
-fi
+# The glyphs themselves live in `lib/core/tokens.zsh` — every mark the theme draws does, and the
+# byte-spelling and the locale fallback live there with them. What is left here is the CHOOSING:
+# which pair of them a side is drawn with.
+#
+# Three styles, and `INZSH_SEPARATOR_STYLE` picks one:
+#
+#   arrow    the default. The filled powerline wedges, U+E0B0 and its mirror U+E0B2.
+#   round    the same ribbon with rounded caps, U+E0B4 and U+E0B6.
+#   divider  a thin rule between blocks, U+2502, and no filled boundary at all.
+#
+# `arrow` and `round` are FILLED styles: the boundary IS the colour change, so a separator is
+# only visible while the two blocks it sits between differ, and the surface invariant is the
+# whole reason they do. `divider` draws its own boundary in its own ink and needs no such help,
+# so it is exempt for exactly the reason `flat` is — see `_inzsh_render_surfaces`.
+#
+# NERD FONTS. The powerline glyphs live in the Unicode private-use area: only a Nerd Font draws
+# them, and `_inzsh_nerd_font` answers 1, 0 or `unknown`. The decision here is that 0 resolves
+# the style to `divider`, while 1 AND `unknown` draw the powerline.
+#
+# The asymmetry is deliberate and it follows `lib/core/detect.zsh`, which never INFERS a 0.
+# Nothing inside a shell can prove a font is absent — the tools that could look are forks, on a
+# machine that is not necessarily the one drawing the pixels — so the only way a 0 arrives is
+# `INZSH_NERD_FONT=0`, a user reporting what is on their own screen. Honouring that is honouring
+# a statement rather than a guess. `unknown`, by contrast, is most terminals, and degrading all
+# of them would take the theme's own look away from the majority who do have the font, on the
+# strength of a question this repo deliberately refuses to answer. What to tell the `unknown`
+# user is `doctor`'s business: the policy is detect-and-WARN, and a warning is a diagnostic
+# rather than a downgrade.
+typeset -ga _inzsh_sep_styles
+_inzsh_sep_styles=(arrow round divider)
+
+# The pair the last resolve chose, one per side, and the style it chose them for. Declared with
+# the ASCII values so that a caller reading them before the first resolve gets a drawable
+# boundary rather than nothing; `_inzsh_separators` runs at the foot of this section and again
+# on every build.
+typeset -g _inzsh_sep_left='|'
+typeset -g _inzsh_sep_right='|'
+typeset -g _inzsh_sep_style_resolved=arrow
+
+# Resolve INZSH_SEPARATOR_STYLE into `_inzsh_sep_style_resolved`. Unset, empty, misspelled, wrong
+# case, padded with a stray space — all of it lands on `arrow`, exactly as `_inzsh_surface_mode`
+# lands on `alternate`.
+#
+# `lib/core/config.zsh` owns the knob and validates it, and its answer is preferred because it is
+# the one that knows about registered defaults. The `case` below repeats the enum rather than
+# trusting whatever came back: this file is independently sourceable, and a config layer that
+# never loaded — or one from an older bundle that never registered the knob — would otherwise
+# hand back whatever the variable happened to hold.
+_inzsh_sep_style() {
+  emulate -L zsh
+
+  local want=${INZSH_SEPARATOR_STYLE-}
+  if (( ${+functions[_inzsh_config_get]} )); then
+    _inzsh_config_get INZSH_SEPARATOR_STYLE
+    want=$REPLY
+  fi
+
+  typeset -g _inzsh_sep_style_resolved=arrow
+  case $want in
+    (arrow|round|divider) _inzsh_sep_style_resolved=$want ;;
+  esac
+
+  # A style whose glyphs the terminal cannot draw is not the style that gets drawn.
+  [[ ${_inzsh_nerd_font-unknown} == 0 ]] && _inzsh_sep_style_resolved=divider
+
+  return 0
+}
+
+# `_inzsh_sep_left` and `_inzsh_sep_right` for the resolved style, read from the token layer's
+# glyph table. Parameter operations only — this runs once per build, on the render path.
+#
+# The ASCII defaults are assigned FIRST, and they are what a render core sourced without a token
+# layer draws: a prompt with plain boundaries beats a prompt with none. The rounded pair keeps
+# its mirror even there, which is the one property that style exists for.
+_inzsh_separators() {
+  emulate -L zsh
+
+  _inzsh_sep_style
+
+  local lkey=sep-left rkey=sep-right
+  typeset -g _inzsh_sep_left='|'
+  typeset -g _inzsh_sep_right='|'
+
+  case $_inzsh_sep_style_resolved in
+    (round)
+      lkey=sep-left-round
+      rkey=sep-right-round
+      _inzsh_sep_left=')'
+      _inzsh_sep_right='('
+      ;;
+    (divider)
+      # One glyph, both sides. A thin rule has no point to face, so it does not mirror — which
+      # is itself the difference between a rule and a wedge.
+      lkey=divider
+      rkey=divider
+      ;;
+  esac
+
+  [[ ${(t)_inzsh_glyph} == association* ]] || return 0
+  [[ -n ${_inzsh_glyph[$lkey]} ]] && _inzsh_sep_left=${_inzsh_glyph[$lkey]}
+  [[ -n ${_inzsh_glyph[$rkey]} ]] && _inzsh_sep_right=${_inzsh_glyph[$rkey]}
+
+  return 0
+}
+
+_inzsh_separators
 
 # `%K{value}` or `%F{value}` for channel $1 (`K` or `F`) and colour $2, in REPLY. An EMPTY value
 # resets the channel instead — `%k` / `%f`. That case is real: `_inzsh_seg_color` answers empty
@@ -231,7 +323,19 @@ _inzsh_render_surfaces() {
   emulate -L zsh
 
   _inzsh_surface_assign "$@"
-  _inzsh_surfaces_valid "$_inzsh_surface_mode_resolved" "${reply[@]}" && return 0
+
+  # WHICH invariant applies is a property of the SEPARATOR and not of the surface mode. A filled
+  # boundary is only visible while the two blocks differ; `divider` has no filled boundary at
+  # all, so equal neighbours there are as harmless as they are under `flat`. The style is
+  # therefore resolved here and a `divider` prompt is put to the invariant AS `flat` — the
+  # exemption `_inzsh_surfaces_valid` already grants, asked for the reason it already grants it,
+  # rather than a second exemption bolted onto the predicate. Two copies of a rule is one copy
+  # too many, and the copy that drifts is always the one further from the sentence.
+  _inzsh_sep_style
+  local mode=$_inzsh_surface_mode_resolved
+  [[ $_inzsh_sep_style_resolved == divider ]] && mode=flat
+
+  _inzsh_surfaces_valid "$mode" "${reply[@]}" && return 0
 
   local INZSH_SURFACE_MODE=alternate
   _inzsh_surface_assign "$1"
@@ -261,6 +365,11 @@ _inzsh_render_surfaces() {
 # the ribbon reads as continuous when the ink is the block on the flat side and the background is
 # the block on the point side. The two sides therefore run OPPOSITE WAYS, because their ribbons
 # open at opposite ends.
+#
+# The rule is about the two COLOURS and not about the shape between them, so it is the same rule
+# for all three separator styles: `round` swaps a wedge for a semicircle with its mass on the
+# same side, and `divider` draws a rule that needs no colour change at all but is chained
+# identically so that a style is never a second code path. Only the glyph moves.
 #
 #   LEFT — starts at the left edge, ends in open terminal. The wedge points right (U+E0B0) and
 #   each separator FOLLOWS its block. `>` below is that glyph:
@@ -329,6 +438,11 @@ _inzsh_render_build() {
 
   local -i n=${#visible}
   (( n )) || return 0
+
+  # The style is resolved before the surfaces are, because it decides which invariant they are
+  # held to, and re-read on every build for the same reason the surface mode is: a knob is
+  # whatever the user's shell says right now, and the next prompt is when it takes effect.
+  _inzsh_separators
 
   _inzsh_render_surfaces $n "${importances[@]}"
   local -a surfaces=("${reply[@]}")

@@ -11,6 +11,10 @@
 # `LC_ALL=C` user did not get a plain ellipsis; they got an error on every shell start and no
 # layout functions at all.
 #
+# Every glyph in the repo now lives in one table in `lib/core/tokens.zsh`, so that file is the
+# one this suite watches hardest: a single bad spelling there would take the palette, the roles
+# and every mark the theme draws down together.
+#
 # Two properties, and the fix needs both:
 #
 #   parse   the file loads in ANY locale, silently, with a zero status.
@@ -28,14 +32,22 @@ inzsh_spec_bytes_not_cells() {
 }
 
 Describe 'sourcing under a C locale'
-  # Both files, in both orders. `detect.zsh` answers the locale question and `layout.zsh` acts
-  # on the answer, but neither may depend on the other having been loaded first — a bundle, a
-  # partial source and a spec each pick their own order.
+  # Every file that holds or reads a glyph, alone and in combination, in both orders.
+  # `detect.zsh` answers the locale question, `tokens.zsh` acts on the answer, and `layout.zsh`,
+  # `render.zsh` and `retval.zsh` read the result — but none of them may depend on another having
+  # been loaded first. A bundle, a partial source and a spec each pick their own order.
   Parameters
     'lib/core/layout.zsh'
     'lib/core/detect.zsh'
+    'lib/core/tokens.zsh'
+    'lib/core/render.zsh'
+    'lib/segments/retval.zsh'
     'lib/core/detect.zsh lib/core/layout.zsh'
     'lib/core/layout.zsh lib/core/detect.zsh'
+    'lib/core/detect.zsh lib/core/tokens.zsh'
+    'lib/core/tokens.zsh lib/core/detect.zsh'
+    'lib/core/detect.zsh lib/core/tokens.zsh lib/core/layout.zsh lib/core/render.zsh'
+    'lib/core/tokens.zsh lib/segments/retval.zsh'
   End
 
   It "loads $1 silently and successfully"
@@ -59,6 +71,59 @@ Describe 'sourcing under a C locale'
   End
 End
 
+Describe 'the glyph table'
+  # The table is where all of this now lives, so the two properties are asked of it directly:
+  # it must LOAD in a C locale, and everything it resolves must be drawable in one.
+  It 'resolves every mark to its ASCII stand-in'
+    stood_in() {
+      LC_ALL=C LC_CTYPE= LANG= zsh -f -c '
+        source "$1/lib/core/detect.zsh"
+        source "$1/lib/core/tokens.zsh"
+        local key; local -a wrong=()
+        for key in ${(ko)_inzsh_glyph_utf8}; do
+          [[ ${_inzsh_glyph[$key]} == ${_inzsh_glyph_ascii[$key]} ]] || wrong+=$key
+        done
+        print -r -- "$_inzsh_multibyte ${#_inzsh_glyph} ${wrong[*]}"
+      ' inzsh-locale-glyphs "$SHELLSPEC_PROJECT_ROOT"
+    }
+    When call stood_in
+    The output should eq '0 12 '
+    The stderr should eq ''
+  End
+
+  It 'puts nothing outside ASCII into anything it hands back'
+    # The failure this rules out is mojibake rather than a crash: bytes that survived the parse
+    # and then reached a terminal that cannot show them. Asked of the resolved table byte by
+    # byte, so a single missed fallback is a named key rather than a smudge in a screenshot.
+    seven_bit() {
+      LC_ALL=C LC_CTYPE= LANG= zsh -f -c '
+        setopt extended_glob
+        source "$1/lib/core/detect.zsh"
+        source "$1/lib/core/tokens.zsh"
+        source "$1/lib/core/layout.zsh"
+        source "$1/lib/core/render.zsh"
+        source "$1/lib/segments/retval.zsh"
+        local key; local -a wrong=()
+        for key in ${(ko)_inzsh_glyph}; do
+          [[ ${_inzsh_glyph[$key]} == [[:ascii:]]## ]] || wrong+=glyph:$key
+        done
+        local style
+        for style in arrow round divider; do
+          typeset -g INZSH_SEPARATOR_STYLE=$style
+          _inzsh_separators
+          [[ $_inzsh_sep_left$_inzsh_sep_right == [[:ascii:]]## ]] || wrong+=sep:$style
+        done
+        [[ $_inzsh_layout_ellipsis == [[:ascii:]]## ]] || wrong+=ellipsis
+        [[ $_inzsh_retval_glyph == [[:ascii:]]## ]]    || wrong+=retval
+        print -r -- "${wrong[*]}"
+      ' inzsh-locale-sevenbit "$SHELLSPEC_PROJECT_ROOT"
+    }
+    When call seven_bit
+    The output should eq ''
+    The stderr should eq ''
+  End
+End
+
 Describe 'the truncation marker'
   # The whole point of the fallback. Three dots is not the glyph, but it is legible, it is one
   # byte per column, and it is what a C-locale terminal can actually draw.
@@ -66,6 +131,7 @@ Describe 'the truncation marker'
     ascii() {
       LC_ALL=C LC_CTYPE= LANG= zsh -f -c '
         source "$1/lib/core/detect.zsh"
+        source "$1/lib/core/tokens.zsh"
         source "$1/lib/core/layout.zsh"
         print -r -- "$_inzsh_multibyte [$_inzsh_layout_ellipsis]"
       ' inzsh-locale-c "$SHELLSPEC_PROJECT_ROOT"
@@ -83,6 +149,7 @@ Describe 'the truncation marker'
     glyph() {
       zsh -f -c '
         source "$1/lib/core/detect.zsh"
+        source "$1/lib/core/tokens.zsh"
         source "$1/lib/core/layout.zsh"
         print -r -- "$_inzsh_multibyte [$_inzsh_layout_ellipsis] ${(m)#_inzsh_layout_ellipsis}"
       ' inzsh-locale-utf8 "$SHELLSPEC_PROJECT_ROOT"
@@ -99,6 +166,7 @@ Describe 'the truncation marker'
     overridden() {
       INZSH_MULTIBYTE=0 zsh -f -c '
         source "$1/lib/core/detect.zsh"
+        source "$1/lib/core/tokens.zsh"
         source "$1/lib/core/layout.zsh"
         print -r -- "$_inzsh_multibyte [$_inzsh_layout_ellipsis]"
       ' inzsh-locale-override "$SHELLSPEC_PROJECT_ROOT"
@@ -114,6 +182,7 @@ Describe 'the truncation marker'
     budget() {
       LC_ALL=C LC_CTYPE= LANG= zsh -f -c '
         source "$1/lib/core/detect.zsh"
+        source "$1/lib/core/tokens.zsh"
         source "$1/lib/core/layout.zsh"
         local -a seen=()
         local -i width
@@ -142,6 +211,9 @@ Describe 'parse-time character literals'
   Parameters
     'lib/core/layout.zsh'
     'lib/core/detect.zsh'
+    'lib/core/tokens.zsh'
+    'lib/core/render.zsh'
+    'lib/segments/retval.zsh'
   End
 
   It "holds no locale-dependent literal in $1"

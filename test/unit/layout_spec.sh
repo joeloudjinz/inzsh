@@ -1,3 +1,8 @@
+# The token layer comes first because the truncation marker comes out of its glyph table, exactly
+# as the entry point loads them. What this file does WITHOUT one — degrade to ASCII rather than
+# truncate with nothing — is a separator-and-glyph claim and lives in
+# `test/render/separators_spec.sh`.
+Include lib/core/tokens.zsh
 Include lib/core/layout.zsh
 
 # Layout — width accounting, hiding and truncation. Three mechanisms, one file, and the point of
@@ -1166,16 +1171,18 @@ Describe 'path truncation'
 
     It 'draws its marker from one place'
       Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
-      # The ellipsis is the truncation marker, not a separator, so it lives here rather than in
-      # the token layer — for now. Pinned so that the literals in the tables above have a stated
-      # source rather than being a second transcription. Outside a multibyte locale the marker
-      # is deliberately three ASCII dots instead, so the width it pins is not one.
+      # The marker is `_inzsh_glyph[ellipsis]` and nothing else: every mark the theme draws comes
+      # out of the token layer's one table, so the expectations in the truncation tables above
+      # have a stated source rather than being a second transcription of it. One column wide,
+      # which is the number every rung of the ladder was budgeted against.
       marker() {
         _inzsh_width "$_inzsh_layout_ellipsis"
-        print -r -- "[$_inzsh_layout_ellipsis] $REPLY"
+        print -r -- "$REPLY"
+        [[ $_inzsh_layout_ellipsis == ${_inzsh_glyph[ellipsis]} ]] && print -r -- from-the-table
       }
       When call marker
-      The output should eq '[…] 1'
+      The line 1 of output should eq '1'
+      The line 2 of output should eq 'from-the-table'
     End
   End
 End

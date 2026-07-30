@@ -35,15 +35,18 @@ _inzsh_segment_defaults[RETVAL]=70
 _inzsh_segment_fg_role[RETVAL]=negative
 _inzsh_segment_importance[RETVAL]=1
 
-# The failure glyph, U+2715, spelled as its UTF-8 BYTES rather than as a `\u` escape — that
-# escape is resolved when the file is PARSED, and outside a multibyte locale zsh cannot resolve
-# one and abandons the rest of the file. This is the same trap `lib/core/layout.zsh` fell into
-# with its ellipsis, and the same remedy: bytes parse anywhere, and in a UTF-8 locale these
-# three ARE the character. Where they are not, a lower-case `x` stands in — one byte, one
-# column, and legible on a terminal that would have drawn the glyph as mojibake.
-typeset -g _inzsh_retval_glyph=$'\xe2\x9c\x95'
-if [[ ${_inzsh_multibyte-1} == 0 ]] || (( ${#_inzsh_retval_glyph} != 1 )); then
-  _inzsh_retval_glyph='x'
+# The failure mark. The glyph itself is `_inzsh_glyph[error]` in `lib/core/tokens.zsh`, which is
+# where every mark the theme draws lives, along with the byte-spelling and the locale fallback
+# this file used to carry alone. A segment with a literal of its own would have been the fourth
+# copy of the same lesson, and the rule the copies existed to work around now has one home.
+#
+# Read at source time and guarded, with `x` assigned first. The entry point sources the token
+# layer well above this file, but a retval segment that came up without one must still carry a
+# signal that is not colour: `x` is one byte, one column, and legible on a terminal that would
+# have drawn the glyph as mojibake.
+typeset -g _inzsh_retval_glyph='x'
+if [[ ${(t)_inzsh_glyph} == association* && -n ${_inzsh_glyph[error]} ]]; then
+  _inzsh_retval_glyph=${_inzsh_glyph[error]}
 fi
 
 # The separator between pipeline stages. `|` on purpose: it is what the user typed to build the
