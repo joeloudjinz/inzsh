@@ -5,7 +5,7 @@ SHELLSPEC ?= shellspec
 PYTHON ?= ./.venv/bin/python
 COLS ?= 80
 
-.PHONY: help setup test test-ui render grid demo watch golden-update bundle doctor
+.PHONY: help setup test test-ui render render-matrix grid demo watch golden-update bundle doctor
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*## "}{printf "  %-14s %s\n", $$1, $$2}'
@@ -26,11 +26,20 @@ test-ui: ## L3 terminal-grid tests (pty + pyte); needs the python venv
 	  print -- "make test-ui: no python venv — run 'make setup' first (skipped)"; \
 	fi
 
-render: ## print the prompt as it currently is
-	@echo "make render: nothing to render yet — the token layer lands at M1"
+# The M1 demonstration prompt, not the engine — there are no segments yet. Always a subshell:
+# work in progress is never sourced into the shell you are typing into.
+render: ## print the prompt as it currently is (INZSH_PRESET/_COLOR_DEPTH/_SURFACE_MODE)
+	@zsh -f tools/render.zsh
 
-grid: ## rendered terminal grid, per-cell colours (default COLS=80)
-	@echo "make grid: the L3 pyte runner lands at M1"
+render-matrix: ## both presets at all three colour depths, to stdout and render-out/
+	@zsh -f tools/render-matrix.zsh
+
+grid: ## rendered terminal grid, per-cell colours (default COLS=80); needs the python venv
+	@if [[ -x $(PYTHON) ]]; then \
+	  $(PYTHON) tools/grid.py --cols $(COLS); \
+	else \
+	  print -- "make grid: no python venv — run 'make setup' first (skipped)"; \
+	fi
 
 demo: ## VHS visual render
 	@echo "make demo: tapes land at M8"
