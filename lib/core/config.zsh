@@ -7,6 +7,8 @@
 #   The registry.  Every knob is declared once — name, validator, default — in
 #   `_inzsh_config_defaults` and `_inzsh_config_validators`. A knob that is not in the registry
 #   has no default to fall back to, so declaring it is not paperwork: it is the fallback.
+#   `test/unit/config_registry_spec.sh` reads the tree back and fails on a knob that is read
+#   anywhere and declared nowhere, so "declared once" is a gate rather than a habit.
 #
 #   Validate, then fall back.  A value that fails its validator is not an error and is never
 #   reported; it is simply not used. `INZSH_SURFACE_MODE=chartreuse` draws an `alternate`
@@ -25,14 +27,38 @@
 # counts as UNSET, because an `INZSH_DIR_BG=` left behind in a zshrc must fall through to the
 # role rather than blank the segment. Emptiness means "no opinion" at every level here.
 #
+# Two SHAPES of knob, because the tree has two.
+#
+#   Singletons.  One name, one meaning — `INZSH_SURFACE_MODE`, `INZSH_GIT_TIMEOUT`. Registered
+#   by name with `_inzsh_config_register`.
+#
+#   Families.  `INZSH_<SEGMENT>_RANK` is not a name, it is a SHAPE: every segment that exists
+#   and every segment that ever will has one, and a registry that had to list them would be a
+#   registry a new segment could not join without editing this file. So the PATTERN is
+#   registered — `INZSH_*_RANK` — with one validator and one default, and a concrete name
+#   resolves against it. `INZSH_SALAH_OFFSET_*` is the other one.
+#
+# Where a knob is declared follows where it is read: `lib/core/` knobs are registered at the
+# foot of this file, a segment registers its own beside the code that reads it (see
+# `lib/segments/git.zsh`), and a module that may not call this file at all ships a declaration
+# table this file absorbs — see "Declaration tables" below.
+#
 # No forks: this layer sits on the render path, so it is parameter operations and arithmetic
-# only. The knobs the tree already reads by hand are registered at the foot of this file;
-# `detect.zsh` and `render.zsh` keep their own inline reads until they move over.
+# only.
 
 # The registry. `typeset -gA` on an existing array keeps what is in it, so re-sourcing the
 # theme re-registers over the same entries rather than resetting them.
 typeset -gA _inzsh_config_defaults
 typeset -gA _inzsh_config_validators
+
+# The same pair for families, keyed by the pattern rather than by a name.
+typeset -gA _inzsh_config_family_defaults
+typeset -gA _inzsh_config_family_validators
+
+# The families in the order they are matched: most literal first, so the first pattern that
+# matches a name is the most specific one that could and the walk stops there. Rebuilt on
+# registration, which happens at source time; the render path only ever reads it.
+typeset -ga _inzsh_config_family_order
 
 # --------------------------------------------------------------------------------------------
 # Validators
@@ -104,13 +130,98 @@ _inzsh_config_check() {
   return 1
 }
 
+# --------------------------------------------------------------------------------------------
+# Resolving a name against the registry
+#
+# Every lookup below answers for a family as readily as for a name, so a caller never has to
+# know which shape the knob it is holding has. That is the whole point of resolving the pattern
+# here rather than at each read site: `_inzsh_mincols_of` asks for `INZSH_DIR_MINCOLS` and is
+# answered, without knowing that nothing under that name was ever registered.
+
+# Rebuild `_inzsh_config_family_order`: every registered pattern, longest first. Length is
+# specificity — a pattern carries one wildcard, so the longer one spells more of the name out —
+# and the order is what lets the lookup stop at its first match instead of scanning for a better
+# one. Ties are broken by name, so the walk is deterministic whatever order registration ran in.
+#
+# Called from registration only. The padded key is built and thrown away here rather than on the
+# render path, which is the whole point of keeping the order in a variable.
+_inzsh_config_family_reorder() {
+  emulate -L zsh
+
+  local -a ranked
+  local pattern
+  local -i len
+
+  for pattern in ${(k)_inzsh_config_family_validators}; do
+    len=${#pattern}
+    ranked+=("${(l:4::0:)len} $pattern")
+  done
+
+  typeset -ga _inzsh_config_family_order
+  _inzsh_config_family_order=(${${(O)ranked}#* })
+
+  return 0
+}
+
+# The most specific registered family matching `$1`, in REPLY; empty when none does. The walk
+# is over the ordered list above, so the first hit is the answer.
+_inzsh_config_family_of() {
+  emulate -L zsh
+
+  typeset -g REPLY=
+  local pattern
+
+  for pattern in $_inzsh_config_family_order; do
+    if [[ $1 == ${~pattern} ]]; then
+      typeset -g REPLY=$pattern
+      return 0
+    fi
+  done
+
+  return 0
+}
+
+# The validator spec for knob `$1`, in REPLY: its own if it was registered by name, its
+# family's if it matches one, empty if the registry has never heard of it.
+_inzsh_config_spec_of() {
+  emulate -L zsh
+
+  typeset -g REPLY=${_inzsh_config_validators[$1]-}
+  [[ -n $REPLY ]] && return 0
+
+  _inzsh_config_family_of "$1"
+  [[ -n $REPLY ]] && typeset -g REPLY=${_inzsh_config_family_validators[$REPLY]}
+
+  return 0
+}
+
+# The registered default for knob `$1`, in REPLY, by the same ladder. An empty answer covers
+# both "registered with no default" and "not registered", which read the same to a caller: there
+# is nothing to fall back to.
+_inzsh_config_default_of() {
+  emulate -L zsh
+
+  if (( ${+_inzsh_config_defaults[$1]} )); then
+    typeset -g REPLY=${_inzsh_config_defaults[$1]}
+    return 0
+  fi
+
+  _inzsh_config_family_of "$1"
+  [[ -n $REPLY ]] && typeset -g REPLY=${_inzsh_config_family_defaults[$REPLY]}
+
+  return 0
+}
+
 # Public form of the check: is `$2` a value knob `$1` may take? Status 0 or 1, nothing printed.
 # A knob that was never registered has no opinion, so it validates as `any` — the config system
 # never blocks a value it was not told about.
+#
+# REPLY is clobbered — `_inzsh_config_spec_of` answers there — so read it before validating.
 _inzsh_config_validate() {
   emulate -L zsh
 
-  _inzsh_config_check "${_inzsh_config_validators[$1]-any}" "$2"
+  _inzsh_config_spec_of "$1"
+  _inzsh_config_check "${REPLY:-any}" "$2"
 }
 
 # Declare a knob: `_inzsh_config_register INZSH_SURFACE_MODE 'enum:alternate|ramp|flat' alternate`
@@ -138,11 +249,104 @@ _inzsh_config_register() {
   return 0
 }
 
+# Declare a family: `_inzsh_config_register_family 'INZSH_*_MINCOLS' int:0: 0`
+#
+# The pattern carries exactly one `*`, standing for the part the user chooses — a segment name,
+# a prayer name — and the rest is literal. Everything else is `_inzsh_config_register`'s rules,
+# for the same reasons.
+#
+# `INZSH_*` itself is refused. A family that matches every knob in the theme would silently
+# become the default answer for names nobody declared, which is precisely the invisibility this
+# registry exists to end; a family has to spell out what it is a family OF.
+_inzsh_config_register_family() {
+  emulate -L zsh
+
+  local pattern=$1 spec=$2 default=$3
+
+  [[ $pattern == INZSH_?* && $pattern != *[^A-Z0-9_*]* ]] || return 1
+  [[ ${#${pattern//[^*]/}} == 1 ]] || return 1
+  [[ ${pattern//\*/} != INZSH_ ]] || return 1
+  _inzsh_config_spec_valid "$spec" || return 1
+  [[ -z $default ]] || _inzsh_config_check "$spec" "$default" || return 1
+
+  _inzsh_config_family_validators[$pattern]=$spec
+  _inzsh_config_family_defaults[$pattern]=$default
+  _inzsh_config_family_reorder
+
+  return 0
+}
+
+# --------------------------------------------------------------------------------------------
+# Declaration tables
+#
+# A module that may not call this file still has knobs, and a knob nobody declared is a knob
+# nobody can find. `lib/salah/` is the case: it imports nothing from the engine — that is what
+# lets the prayer maths be tested standalone against a fixture oracle — so it cannot call
+# `_inzsh_config_register` even guardedly.
+#
+# So the declaration is turned around. The module ships a flat array named
+# `_inzsh_<module>_knobs`, three words per knob — name, spec, default, with a name containing a
+# `*` registered as a family — and this file absorbs it wherever both are loaded. The table is
+# DATA: a module that declares one and is sourced on its own is a module carrying an array
+# nothing reads, and NOTHING IN IT NAMES THIS FILE — not even the `_inzsh_config_` prefix, which
+# `test/unit/salah_calc_spec.sh` refuses to find anywhere in `lib/salah/`. Discovery here is by
+# parameter name, so this file names no module either. The coupling is the convention, in both
+# directions, and it is the only thing crossing the line.
+#
+# Absorbing is idempotent, because registration is.
+
+# Absorb the table named `$1`. Status 1 if the name is not a readable table or if any triple in
+# it was refused — a malformed declaration is a bug in the module, and it says so.
+_inzsh_config_absorb() {
+  emulate -L zsh
+  setopt local_options extended_glob
+
+  local table=$1
+  [[ $table == [A-Za-z_][A-Za-z0-9_]# ]] || return 1
+  (( ${+parameters[$table]} )) || return 1
+
+  local -a triples
+  triples=("${(@P)table}")
+  (( ${#triples} && ${#triples} % 3 == 0 )) || return 1
+
+  local -i i failed=0
+  for (( i = 1; i <= ${#triples}; i += 3 )); do
+    if [[ ${triples[i]} == *\** ]]; then
+      _inzsh_config_register_family "${triples[i]}" "${triples[i+1]}" "${triples[i+2]}" ||
+        (( failed++ ))
+    else
+      _inzsh_config_register "${triples[i]}" "${triples[i+1]}" "${triples[i+2]}" || (( failed++ ))
+    fi
+  done
+
+  (( failed == 0 ))
+}
+
+# Absorb every declaration table that exists right now. Called by the entry point once the whole
+# library is loaded, which is the one moment "both are loaded" is guaranteed to be true.
+_inzsh_config_absorb_all() {
+  emulate -L zsh
+
+  local table
+  local -i failed=0
+
+  for table in ${(ko)parameters[(I)_inzsh_*_knobs]}; do
+    _inzsh_config_absorb "$table" || (( failed++ ))
+  done
+
+  (( failed == 0 ))
+}
+
 # --------------------------------------------------------------------------------------------
 # Reading
 
 # The value of knob `$1`, in REPLY. The live variable if it is set, non-empty and valid;
-# otherwise the registered default.
+# otherwise the registered default — its own, or its family's.
+#
+# The name is checked as the VARIABLE it is, not as a knob in the abstract. Callers reading a
+# family build the name from a segment name they were handed, and `${(P)}` on something that
+# cannot spell a variable is an error mid-render. A name that cannot name a variable simply has
+# no value, which is the same guard `_inzsh_mincols_of` already keeps.
 #
 # Never errors and always returns 0: there is no failure mode a prompt could usefully react to,
 # and a caller that has to check a status before drawing is a caller that will forget. A knob
@@ -152,14 +356,37 @@ _inzsh_config_get() {
 
   typeset -g REPLY=
   local knob=$1
-  [[ -n $knob ]] || return 0
 
-  local live=${(P)knob}
-  if [[ -n $live ]] && _inzsh_config_validate "$knob" "$live"; then
-    REPLY=$live
-  else
-    REPLY=${_inzsh_config_defaults[$knob]-}
+  # The identifier test, written without `extended_glob` so that this function needs no
+  # `setopt` at all: not empty, does not start with a digit, holds nothing that is not a name
+  # character. Same set of names, one option-setting call cheaper per read.
+  [[ -n $knob && $knob != [0-9]* && $knob != *[^A-Za-z0-9_]* ]] || return 0
+
+  # Spec and default together, out of ONE lookup. This is the theme's hottest read — every
+  # segment asks it twice for colour alone — and asking `_inzsh_config_validate` and then
+  # `_inzsh_config_default_of` would walk the families twice for an answer that cannot have
+  # changed in between. A knob registered by name is a hash hit and no walk at all.
+  local spec=${_inzsh_config_validators[$knob]-}
+  local default=${_inzsh_config_defaults[$knob]-}
+  if [[ -z $spec ]] && (( ! ${+_inzsh_config_defaults[$knob]} )); then
+    _inzsh_config_family_of "$knob"
+    if [[ -n $REPLY ]]; then
+      spec=${_inzsh_config_family_validators[$REPLY]}
+      default=${_inzsh_config_family_defaults[$REPLY]}
+    fi
   fi
+
+  # `any` is inlined for the same reason: it is what both colour families are, so the common
+  # case must not cost a call to find out that any non-empty value will do.
+  local live=${(P)knob}
+  if [[ -n $live ]]; then
+    if [[ ${spec:-any} == any ]] || _inzsh_config_check "$spec" "$live"; then
+      typeset -g REPLY=$live
+      return 0
+    fi
+  fi
+
+  typeset -g REPLY=$default
 
   return 0
 }
@@ -335,7 +562,7 @@ _inzsh_config_guarded() {
   if _inzsh_config_guard "$invariant" "$candidate" "$@"; then
     typeset -g REPLY=$candidate
   else
-    typeset -g REPLY=${_inzsh_config_defaults[$knob]-}
+    _inzsh_config_default_of "$knob"
   fi
 
   return 0
@@ -348,11 +575,44 @@ _inzsh_config_guard_register separator-visibility _inzsh_config_guard_separators
 _inzsh_config_guard_register exit-code-capture    _inzsh_config_guard_exit_capture
 _inzsh_config_guard_register render-budget        _inzsh_config_guard_budget
 
-# The knobs the tree reads today. `INZSH_COLOR_DEPTH` registers an empty default because nothing
-# set is not a missing answer there — it is the instruction to trust detection.
+# The families. Four of them, and every one is a knob that belongs to a SEGMENT rather than to
+# the theme: whichever segments exist, each has a rank, two colours and a width below which it
+# is not worth drawing. Registering the shape rather than the names is what lets a segment
+# added at M5 arrive configurable without this file moving.
 #
-# `INZSH_SEPARATOR_STYLE` picks which pair of glyphs `lib/core/render.zsh` draws its boundaries
-# with. Its default is a real one: `arrow` is what an unset, empty or misspelled value gives.
+# `INZSH_*_RANK` registers an EMPTY default on purpose. Nothing set is not a missing answer
+# there — the segment's own registration in `_inzsh_segment_defaults` is the default, and the
+# knob's absence is the instruction to use it. `_BG` and `_FG` do the same for the semantic
+# role. `_MINCOLS` is the one with a real default: 0 means "never hide on width alone".
+_inzsh_config_register_family 'INZSH_*_RANK'     int      ''
+_inzsh_config_register_family 'INZSH_*_BG'       any      ''
+_inzsh_config_register_family 'INZSH_*_FG'       any      ''
+_inzsh_config_register_family 'INZSH_*_MINCOLS'  int:0:   0
+
+# The knobs `lib/core/` reads. Segments register their own beside the code that reads them, and
+# `lib/salah/` declares a table this file absorbs, so what is left here is the engine's own.
+#
+# The three detection overrides register an EMPTY default for the reason `INZSH_*_RANK` does:
+# nothing set is not a missing answer, it is the instruction to trust `lib/core/detect.zsh`.
+# `INZSH_SEPARATOR_STYLE`, by contrast, has a real default — `arrow` is what an unset, empty or
+# misspelled value gives.
 _inzsh_config_register INZSH_SURFACE_MODE     'enum:alternate|ramp|flat'   alternate
 _inzsh_config_register INZSH_SEPARATOR_STYLE  'enum:arrow|round|divider'   arrow
 _inzsh_config_register INZSH_COLOR_DEPTH      'enum:truecolor|256|8'       ''
+_inzsh_config_register INZSH_MULTIBYTE        'enum:1|0'                   ''
+_inzsh_config_register INZSH_NERD_FONT        'enum:1|0'                   ''
+
+# The responsive ladder. `lib/core/layout.zsh` restates these three numbers in
+# `_inzsh_ladder_defaults` so that it degrades sensibly when sourced without this file; the two
+# copies are held equal by `test/unit/config_registry_spec.sh`.
+_inzsh_config_register INZSH_LADDER_FULL_COLS   int:0:  120
+_inzsh_config_register INZSH_LADDER_WIDE_COLS   int:0:  80
+_inzsh_config_register INZSH_LADDER_NARROW_COLS int:0:  60
+
+# The secondary prompts and the title, from `lib/core/prompts.zsh`. `INZSH_PS2` and
+# `INZSH_SPROMPT` replace a whole prompt string verbatim, so their default is empty: there is no
+# value that means "the theme's own", there is only not setting them.
+_inzsh_config_register INZSH_PS2          any   ''
+_inzsh_config_register INZSH_SPROMPT      any   ''
+_inzsh_config_register INZSH_TITLE        bool  1
+_inzsh_config_register INZSH_TITLE_FORMAT any   '%d %c'
