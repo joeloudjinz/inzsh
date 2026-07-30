@@ -348,7 +348,11 @@ _inzsh_config_guard_register separator-visibility _inzsh_config_guard_separators
 _inzsh_config_guard_register exit-code-capture    _inzsh_config_guard_exit_capture
 _inzsh_config_guard_register render-budget        _inzsh_config_guard_budget
 
-# The two knobs the tree reads today. `INZSH_COLOR_DEPTH` registers an empty default because
-# nothing set is not a missing answer there — it is the instruction to trust detection.
-_inzsh_config_register INZSH_SURFACE_MODE 'enum:alternate|ramp|flat' alternate
-_inzsh_config_register INZSH_COLOR_DEPTH  'enum:truecolor|256|8'     ''
+# The knobs the tree reads today. `INZSH_COLOR_DEPTH` registers an empty default because nothing
+# set is not a missing answer there — it is the instruction to trust detection.
+#
+# `INZSH_SEPARATOR_STYLE` picks which pair of glyphs `lib/core/render.zsh` draws its boundaries
+# with. Its default is a real one: `arrow` is what an unset, empty or misspelled value gives.
+_inzsh_config_register INZSH_SURFACE_MODE     'enum:alternate|ramp|flat'   alternate
+_inzsh_config_register INZSH_SEPARATOR_STYLE  'enum:arrow|round|divider'   arrow
+_inzsh_config_register INZSH_COLOR_DEPTH      'enum:truecolor|256|8'       ''

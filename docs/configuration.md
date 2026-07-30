@@ -33,7 +33,13 @@ theme falls back to a safe value rather than drawing the broken result:
 
 - **Separators stay visible.** In a filled mode no two adjacent segments share a background.
   A surface assignment that would put equal backgrounds side by side is rejected and the mode
-  degrades to `alternate`, which holds the property by construction.
+  degrades to `alternate`, which holds the property by construction. `flat` and
+  `INZSH_SEPARATOR_STYLE=divider` are the exemptions, and for the same reason: neither draws a
+  filled boundary, so there is none to lose.
+- **Every state carries a glyph as well as a colour.** The marks come from one table in the
+  token layer, each with an ASCII stand-in — `✕` becomes `x`, `…` becomes `...`, a powerline
+  wedge becomes `|` — so a terminal without a UTF-8 locale or a Nerd Font loses the shape and
+  keeps the signal. `INZSH_MULTIBYTE=0` selects the ASCII table outright.
 - **The exit status survives.** `$?` and `$pipestatus` are captured on the first line of the
   prompt hook, above everything else, so no amount of configuration can cost you the status of
   the command you just ran.
@@ -54,6 +60,7 @@ theme falls back to a safe value rather than drawing the broken result:
 | Variable | Values | Default | Effect |
 |---|---|---|---|
 | `INZSH_SURFACE_MODE` | `alternate` · `ramp` · `flat` | `alternate` | How segment backgrounds are assigned. `alternate` swings between the two raised surfaces so every powerline separator stays visible. `ramp` assigns by per-segment importance, bumping equal neighbours apart. `flat` uses one surface for everything (no filled-powerline look). Invalid values fall back to `alternate`. |
+| `INZSH_SEPARATOR_STYLE` | `arrow` · `round` · `divider` | `arrow` | Which glyph draws the boundary between two segments. `arrow` is the filled powerline wedge, `round` the same ribbon with rounded caps, `divider` a thin rule with no filled boundary at all. `arrow` and `round` need a Nerd Font; `divider` needs only box drawing. Invalid values fall back to `arrow`. Setting `INZSH_NERD_FONT=0` resolves any style to `divider`, since the powerline glyphs cannot be drawn without the font. |
 | `INZSH_COLOR_DEPTH` | `truecolor` · `256` · `8` | detected | Overrides colour-depth detection for terminals that misreport. The palette degrades through hand-tuned fallback tables; invalid values are ignored and detection wins. |
 
 ## Responsive breakpoints
