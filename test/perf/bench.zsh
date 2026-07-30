@@ -2,17 +2,18 @@
 # InZsh — the performance suite. One table of named cases: each is timed, reported in
 # milliseconds per iteration, and gated against a budget declared beside it.
 #
-# WHAT THIS MEASURES, AND WHAT IT DOES NOT. There is no renderer yet. Segments land at M3 and
-# the prompt-assembly function is still being written, so nothing here times "the prompt" —
-# a benchmark of a renderer that does not exist would go green forever and rot. What it times
-# is the machinery a warm render will actually spend itself in: token/role resolution, the rank
-# sort, surface assignment, the layout arithmetic and config resolution. `render-floor` chains
-# all of them in the order a render would, over a six-segment prompt.
+# WHAT THIS MEASURES. `render-prompt` is the whole warm prompt: every segment builds its own
+# text, the width filter drops whoever does not fit, ranks decide side and order, both sides
+# assemble and the result is expanded the way a precmd expands it. That row is the one the
+# house budget in `lib/core/config.zsh` — 30 ms — is measured against.
 #
-# So every number below is a FLOOR on the warm render cost, not the warm render cost. The
-# house budget in `lib/core/config.zsh` is 30 ms; what this suite can honestly say today is
-# how much of it the engine has already spent. When the assembly function exists it becomes
-# one more row in `_inzsh_bench_table` and the floor turns into the real figure.
+# The rows under it time the machinery that render spends itself in: token/role resolution, the
+# rank sort, surface assignment, the layout arithmetic, config resolution. They exist so a
+# regression says WHERE, not just THAT. `render-floor` chains them without the segments and is
+# kept as a control: when it moves and `render-prompt` does not, the cost is in the engine.
+#
+# The one thing left out of `render-prompt` is the interactive guard, which returns early in a
+# script. Everything a real draw does after that guard is timed.
 #
 # Run it, never source it: `make perf`, or `zsh -f test/perf/bench.zsh`.
 #
@@ -64,6 +65,12 @@ source $_inzsh_bench_root/lib/core/engine.zsh
 source $_inzsh_bench_root/lib/core/layout.zsh
 source $_inzsh_bench_root/lib/core/config.zsh
 source $_inzsh_bench_root/tools/perf.zsh
+
+# The segments, for the `render-prompt` case. They register at load and compute nothing here.
+for _inzsh_bench_segment in root user host dir venv retval time; do
+  source $_inzsh_bench_root/lib/segments/$_inzsh_bench_segment.zsh
+done
+unset _inzsh_bench_segment
 
 # ------------------------------------------------------------------------------------------
 # The fixture
@@ -254,6 +261,42 @@ _inzsh_bench_row() {
   return 0
 }
 
+# The real prompt. Every step `_inzsh_render` takes, in its order — each segment builds its own
+# text, the width filter drops whoever does not fit, ranks decide side and order, both sides
+# assemble, and the result is expanded the way a precmd expands it. The one thing left out is
+# the interactive guard, which returns early in a script and would measure nothing.
+#
+# `$COLUMNS` is pinned rather than inherited: a benchmark whose answer depends on the width of
+# the window it happened to run in is not a benchmark.
+_inzsh_bench_prep_render_prompt() {
+  typeset -g INZSH_SURFACE_MODE=alternate
+  typeset -g COLUMNS=80
+  typeset -g INZSH_DEFAULT_USER=
+  typeset -g SSH_CONNECTION='198.51.100.1 22 198.51.100.2 22'
+}
+_inzsh_bench_case_render_prompt() {
+  local segment builder
+  for segment in ${(k)_inzsh_segment_defaults}; do
+    builder=_inzsh_segment_${(L)segment}_build
+    (( ${+functions[$builder]} )) && $builder
+  done
+
+  local -a candidates
+  candidates=(${(ok)_inzsh_segment_defaults})
+  _inzsh_layout_filter 80 "${candidates[@]}"
+
+  local -a survivors
+  survivors=("${reply[@]}")
+  _inzsh_rank_split "${survivors[@]}"
+
+  _inzsh_render_build left
+  local left=${(%%)REPLY}
+  _inzsh_render_build right
+  local right=${(%%)REPLY}
+
+  return 0
+}
+
 _inzsh_bench_prep_render_floor() { typeset -g INZSH_SURFACE_MODE=alternate }
 _inzsh_bench_case_render_floor() {
   local -i cols=80
@@ -312,19 +355,18 @@ typeset -ga _inzsh_bench_table=(
   config-get          600   0.320
   config-resolve      150   1.450
   render-floor         40   7.200
+  render-prompt        40  12.000
 )
 
-# WHAT M3 ADDS, so nobody has to reverse-engineer it. One row above — `render-prompt`, an
-# iteration count and a budget — and one `_inzsh_bench_case_render_prompt` that calls the real
-# assembly function and expands the result with `${(%%)…}`, the way a precmd does. Nothing else
-# changes: the warm-up, the statistic, the gate, the CI job and this comment all already apply.
-# `render-floor` stays where it is — a floor that has stopped moving is a useful control — and
-# `_inzsh_bench_headline` moves to the new row, at which point the 30 ms house budget is
-# measured against the prompt instead of against the machinery underneath it.
+# The budget on `render-prompt` is the one number here that was chosen rather than measured
+# from a stable base: it is the same 6× headroom every other row carries, over a first
+# measurement taken the day the renderer landed. It will want revisiting once the segment set
+# stops growing — a budget set against a seven-segment prompt says nothing useful about a
+# twelve-segment one.
 
 # The row the house budget is about. `_inzsh_config_render_budget_ms` in `lib/core/config.zsh`
 # is 30 ms; this is the case measured against it, through the registered guard.
-typeset -g _inzsh_bench_headline=render-floor
+typeset -g _inzsh_bench_headline=render-prompt
 
 # ------------------------------------------------------------------------------------------
 # The runner
@@ -452,7 +494,7 @@ _inzsh_bench_main() {
   _inzsh_bench_fixture
 
   print -r -- "inzsh perf — best of ${_inzsh_bench_reps} repetitions, warm-up discarded"
-  print -r -- 'floor only: there is no renderer yet, so no row below is the whole prompt'
+  print -r -- 'render-prompt is the whole warm prompt; the rows under it locate a regression'
   print -r -- ''
   printf '%-20s %7s %11s %11s %11s %8s  %s\n' \
     case iters 'best ms/it' 'med ms/it' 'budget/it' 'used' 'verdict'
@@ -515,7 +557,7 @@ _inzsh_bench_main() {
   if (( ${+_inzsh_bench_headline_ms} )); then
     _inzsh_bench_prep_render_floor
     if _inzsh_config_guard render-budget '' _inzsh_bench_case_render_floor; then
-      printf 'perf: %s at %.5f ms, %.2f%% of the %d ms house budget (floor, not the render)\n' \
+      printf 'perf: %s at %.5f ms, %.2f%% of the %d ms house budget\n' \
         "$_inzsh_bench_headline" "$_inzsh_bench_headline_ms" \
         "$(( _inzsh_bench_headline_ms / _inzsh_config_render_budget_ms * 100.0 ))" \
         "$_inzsh_config_render_budget_ms"
