@@ -50,6 +50,37 @@ jobs:
       - name: L1 unit + L2 render
         run: shellspec test/unit test/render
 
+  # L3 terminal grid — pty + pyte. `make test-ui` skips itself when the venv is
+  # absent, so this job builds one and then *proves* the suite ran: a green job
+  # that silently tested nothing is worse than no job at all.
+  ui:
+    needs: syntax
+    runs-on: ubuntu-latest
+    # pty renders can wedge; fail fast rather than burn the default 360 minutes.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install zsh
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install pinned L3 deps into .venv
+        # .venv is exactly where the Makefile's default PYTHON ?= ./.venv/bin/python looks
+        run: |
+          python3 -m venv .venv
+          ./.venv/bin/pip install --quiet --requirement test/ui/requirements.txt
+      - name: L3 terminal grid
+        run: |
+          set -o pipefail
+          make test-ui 2>&1 | tee ui.log
+      - name: Guard against a silent skip
+        run: |
+          grep -Eq '^Ran [1-9][0-9]* tests?' ui.log || {
+            echo "::error::make test-ui reported no tests — the L3 suite skipped instead of running"
+            exit 1
+          }
+
   # zsh floor — 5.8 isn't available natively on the dev machine, so this job
   # is the only feedback loop for it. Matrix widens as the suite grows (M2+).
   zsh-floor:
