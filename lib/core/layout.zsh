@@ -37,21 +37,20 @@
 # never overflows the row. Locale capability is detected once, in `lib/core/detect.zsh`; this
 # file does not repeat the question.
 
-# The truncation marker. Internal for now: the token layer has no glyph table yet, and when it
-# grows one — separator glyphs live there, not in the code that draws with them — this moves.
+# The truncation marker. The glyph itself is `_inzsh_glyph[ellipsis]` in `lib/core/tokens.zsh`,
+# which is where every mark the theme draws now lives — including the byte-spelling and the
+# locale fallback this file used to carry alone. The lesson it learned the hard way is written
+# down there: a character escape is resolved when a file is PARSED, and under `LC_ALL=C` the one
+# that used to sit on this line failed with `character not in range` and took every function
+# below it down with it.
 #
-# Spelled as its UTF-8 BYTES rather than as a `\u` escape. That escape is a character literal
-# resolved when the file is PARSED, and outside a multibyte locale zsh cannot resolve one: under
-# `LC_ALL=C` this line failed with `character not in range` and took the whole file down with
-# it, every function below included. Byte escapes parse in any locale, and in a UTF-8 one these
-# three bytes ARE the character.
-#
-# Outside one they are three bytes that would draw as mojibake, so ASCII stands in. The locale
-# answer is the one `lib/core/detect.zsh` already worked out; sourced on its own, this file asks
-# zsh the narrower question it actually cares about \u2014 is the assembled marker one character?
-typeset -g _inzsh_layout_ellipsis=$'\xe2\x80\xa6'
-if [[ ${_inzsh_multibyte-1} == 0 ]] || (( ${#_inzsh_layout_ellipsis} != 1 )); then
-  _inzsh_layout_ellipsis='...'
+# Read at source time and guarded. The entry point sources the token layer above this file, but
+# this file stays independently sourceable and a layout layer that came up without one must
+# still truncate: three ASCII dots are not the glyph, but they are legible, one byte per column,
+# and drawable in any locale.
+typeset -g _inzsh_layout_ellipsis='...'
+if [[ ${(t)_inzsh_glyph} == association* && -n ${_inzsh_glyph[ellipsis]} ]]; then
+  _inzsh_layout_ellipsis=${_inzsh_glyph[ellipsis]}
 fi
 
 # Display width of a literal string, nothing stripped. The one place `${(m)#...}` is spelled

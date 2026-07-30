@@ -1,4 +1,5 @@
-# InZsh — token layer. The single transcription point for colour in this repo.
+# InZsh — token layer. The single transcription point for colour in this repo, and — since the
+# glyph table at the foot of it — for every mark the theme draws as well.
 #
 # Source:     the Joe Inz design system's tokens/colors.css, transcribed 2026-07-29.
 # Rule:       hex values exist here and nowhere else — not in presets, not in segments, not
@@ -23,7 +24,8 @@
 #
 # The palette is pure data. The role layer under it is pure parameter work — one function,
 # run once at the end of this file, so sourcing yields a ready `_inzsh_role`. Below it sits
-# the per-segment resolver every segment calls at draw time.
+# the per-segment resolver every segment calls at draw time, and below that the glyph table,
+# which follows exactly the same shape: two source tables, one resolve, one ready map.
 
 typeset -gA _inzsh_palette
 _inzsh_palette=(
@@ -294,4 +296,112 @@ _inzsh_seg_color() {
   return 1
 }
 
+# ---------------------------------------------------------------------------------------
+# Glyphs. The token layer's other table: every mark the theme draws, keyed by the ROLE it
+# plays rather than by the shape it has, so that no engine file and no segment carries a
+# literal of its own.
+#
+# It exists because three files had already learned the same lesson separately — the
+# separators in `lib/core/render.zsh`, the ellipsis in `lib/core/layout.zsh` and the failure
+# mark in `lib/segments/retval.zsh` — and a fourth separator style would have made a fourth
+# copy. Separator glyphs live in the token layer; so, now, does everything else.
+#
+# EVERY VALUE IS SPELLED AS RAW UTF-8 BYTES, and never as a `\u` escape. That escape is
+# resolved when the file is PARSED: outside a multibyte locale zsh cannot resolve one, fails
+# with `character not in range`, and abandons the rest of the file — every function in it
+# included. Byte escapes parse in any locale, and in a UTF-8 one the bytes ARE the character.
+# This has already cost this repo two files. It does not get a third chance.
+#
+# ORIENTATION, which is the opposite of what the codepoint names suggest and is the one thing
+# in this table that can be got backwards. A separator cell carries two colours: the ink fills
+# the side the glyph's mass sits on, and the cell's own background shows through the rest. The
+# LEFT prompt's separator FOLLOWS its block, so its ink must sit on the LEFT of the cell —
+# U+E0B0, the wedge pointing right, and U+E0B4, the half circle bulging right (flat edge on
+# the left). The right prompt mirrors: its separator PRECEDES its block, the ink sits on the
+# RIGHT, and that is U+E0B2 and U+E0B6. So `sep-left-round` is the RIGHT half circle. The keys
+# are named for the SIDE THEY ARE DRAWN ON rather than for their own shape, which is what
+# stops the pair from being swapped by someone reading the codepoint chart.
+typeset -gA _inzsh_glyph_utf8
+_inzsh_glyph_utf8=(
+  # --- Separators: private-use area, drawn only by a Nerd Font ---
+  sep-left         $'\xee\x82\xb0'  # U+E0B0  filled wedge, points right, ink on the left
+  sep-right        $'\xee\x82\xb2'  # U+E0B2  its mirror, points left, ink on the right
+  sep-left-round   $'\xee\x82\xb4'  # U+E0B4  right half circle: flat edge left, ink left
+  sep-right-round  $'\xee\x82\xb6'  # U+E0B6  left half circle: flat edge right, ink right
+
+  # --- Rules and markers: ordinary Unicode, drawn by any font with box drawing ---
+  divider          $'\xe2\x94\x82'  # U+2502  box drawings light vertical
+  ellipsis         $'\xe2\x80\xa6'  # U+2026  horizontal ellipsis — the truncation marker
+
+  # --- The design system's sanctioned state marks ---
+  ok               $'\xe2\x9c\x93'  # U+2713  check mark
+  info             'i'              # the DS mark is the letter itself, already ASCII
+  error            $'\xe2\x9c\x95'  # U+2715  multiplication x
+  warn             '!'              # already ASCII
+  dot              $'\xc2\xb7'      # U+00B7  middle dot — a separator inside a segment's text
+  dash             $'\xe2\x80\x94'  # U+2014  em dash — "nothing to report", not "zero"
+)
+
+# The parallel fallback, one entry per key above, for a terminal that cannot carry the glyph.
+#
+# Colour is never the only signal in this theme, so a mark that degrades to nothing takes the
+# whole signal with it. Every fallback therefore still says what its glyph said: `x` for the
+# failure mark and `v` for its opposite — the same two-mark vocabulary, one column each — and a
+# plain rule for a separator, because a boundary that a font cannot draw is still a boundary.
+#
+# The rounded pair keeps its MIRROR here, `)` on the left and `(` on the right, so the one
+# property that style exists for survives the degradation even though its shape does not.
+typeset -gA _inzsh_glyph_ascii
+_inzsh_glyph_ascii=(
+  sep-left         '|'
+  sep-right        '|'
+  sep-left-round   ')'
+  sep-right-round  '('
+  divider          '|'
+  ellipsis         '...'
+  ok               'v'
+  info             'i'
+  error            'x'
+  warn             '!'
+  dot              '.'
+  dash             '-'
+)
+
+# Rebuild `_inzsh_glyph` (role → the mark to draw) from whichever of the two tables the
+# terminal can actually show. Parameter operations only: no subprocesses, no forks.
+#
+# Two independent ways to fail, and both land on ASCII:
+#
+#   the locale says so     `_inzsh_multibyte` is 0 — `lib/core/detect.zsh` worked that out, and
+#                          a user who can see their own screen may have said it with
+#                          `INZSH_MULTIBYTE=0`.
+#   the bytes say so       the value did not become ONE character. That is the narrower
+#                          question this file actually cares about, and it is asked of the
+#                          value itself, so a token layer sourced without a detect layer still
+#                          answers it correctly rather than assuming.
+#
+# A key with no fallback is a theme bug rather than a user one, and it costs a legible mark
+# rather than the prompt: `?` is visibly wrong, an empty string is invisibly wrong.
+_inzsh_glyphs_resolve() {
+  emulate -L zsh
+
+  typeset -gA _inzsh_glyph
+  _inzsh_glyph=()
+
+  local -i multibyte=1
+  [[ ${_inzsh_multibyte-1} == 0 ]] && multibyte=0
+
+  local key value
+  for key value in "${(@kv)_inzsh_glyph_utf8}"; do
+    if (( multibyte )) && (( ${#value} == 1 )); then
+      _inzsh_glyph[$key]=$value
+    else
+      _inzsh_glyph[$key]=${_inzsh_glyph_ascii[$key]:-'?'}
+    fi
+  done
+
+  return 0
+}
+
 _inzsh_tokens_resolve
+_inzsh_glyphs_resolve
