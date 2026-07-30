@@ -105,10 +105,16 @@ Describe 'the entry point'
           source "$1"
           local -a moved=()
           [[ $PROMPT == $before ]] || moved+=PROMPT
-          [[ ${precmd_functions[*]} == "_inzsh_precmd _inzsh_title_precmd" ]] ||
-            moved+=precmd:${precmd_functions[*]}
+          local want="_inzsh_precmd _inzsh_title_precmd _inzsh_git_async_precmd"
+          [[ ${precmd_functions[*]} == $want ]] || moved+=precmd:${precmd_functions[*]}
           [[ ${preexec_functions[*]} == _inzsh_title_preexec ]] ||
             moved+=preexec:${preexec_functions[*]}
+          # The two the git worker registers. Asserted because "nothing else may move" is only
+          # a claim if every array a theme can register into is named.
+          [[ ${chpwd_functions[*]} == _inzsh_git_async_chpwd ]] ||
+            moved+=chpwd:${chpwd_functions[*]}
+          [[ ${zshexit_functions[*]} == _inzsh_git_async_exit ]] ||
+            moved+=zshexit:${zshexit_functions[*]}
           print -r -- "${moved[*]}"
         ' inzsh-entry-quiescent "$(inzsh_spec_theme)"
       }

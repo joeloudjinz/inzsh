@@ -43,6 +43,8 @@ source $_inzsh_theme_root/lib/segments/user.zsh
 source $_inzsh_theme_root/lib/segments/host.zsh
 source $_inzsh_theme_root/lib/segments/dir.zsh
 source $_inzsh_theme_root/lib/segments/venv.zsh
+source $_inzsh_theme_root/lib/segments/git.zsh
+source $_inzsh_theme_root/lib/segments/git-async.zsh
 source $_inzsh_theme_root/lib/segments/retval.zsh
 source $_inzsh_theme_root/lib/segments/time.zsh
 
@@ -52,6 +54,11 @@ source $_inzsh_theme_root/lib/segments/time.zsh
 _inzsh_hooks_install
 _inzsh_prompts_install
 _inzsh_title_install
+
+# The one background worker in the theme. Installed after the prompt hooks because it registers
+# a precmd of its own, and the status capture has to stay first. It draws nothing itself: it
+# fills a cache the git segment reads, and repaints when a fresh answer arrives.
+_inzsh_git_async_install
 
 # PROMPT is not assigned here. `_inzsh_precmd` calls `_inzsh_render`, which assigns it before
 # each prompt is drawn — the values have to be current, and a value computed once at source time

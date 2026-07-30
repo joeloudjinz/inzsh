@@ -340,6 +340,8 @@ _inzsh_glyph_utf8=(
   warn             '!'              # already ASCII
   dot              $'\xc2\xb7'      # U+00B7  middle dot — a separator inside a segment's text
   dash             $'\xe2\x80\x94'  # U+2014  em dash — "nothing to report", not "zero"
+  ahead            $'\xe2\x86\x91'  # U+2191  up arrow — commits this side does not share
+  behind           $'\xe2\x86\x93'  # U+2193  down arrow — commits the other side has
 )
 
 # The parallel fallback, one entry per key above, for a terminal that cannot carry the glyph.
@@ -365,6 +367,8 @@ _inzsh_glyph_ascii=(
   warn             '!'
   dot              '.'
   dash             '-'
+  ahead            '+'              # what git's own branch.ab line prints
+  behind           '-'
 )
 
 # Rebuild `_inzsh_glyph` (role → the mark to draw) from whichever of the two tables the

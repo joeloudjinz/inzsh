@@ -21,6 +21,7 @@ inzsh_spec_glyph_keys=(
   sep-left sep-right sep-left-round sep-right-round
   divider ellipsis
   ok info error warn dot dash
+  ahead behind
 )
 
 # The design system's sanctioned state marks, by role. Colour is never the only signal in this
@@ -42,6 +43,8 @@ inzsh_spec_glyph_ascii=(
   warn            '!'
   dot             '.'
   dash            '-'
+  ahead           '+'
+  behind          '-'
 )
 
 # The suite's own locale is the one UTF-8 locale this machine is known to have, and a real
@@ -264,7 +267,7 @@ Describe 'the glyph table'
         ' inzsh-glyph-ascii "$SHELLSPEC_PROJECT_ROOT"
       }
       When call degraded
-      The output should eq '12 '
+      The output should eq '14 '
       The stderr should eq ''
     End
 
