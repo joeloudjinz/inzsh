@@ -25,7 +25,12 @@ source $_inzsh_theme_root/lib/core/detect.zsh
 source $_inzsh_theme_root/lib/core/tokens-256.zsh
 source $_inzsh_theme_root/lib/core/tokens.zsh
 source $_inzsh_theme_root/lib/core/render.zsh
+source $_inzsh_theme_root/lib/core/hooks.zsh
 
-# No PROMPT assignment and no `add-zsh-hook precmd` — the renderer and its hooks land at M2.
-# Sourcing this file today loads the palette and the surface machinery and leaves the user's
-# prompt exactly as it found it; `tools/render.zsh` draws the M1 demonstration prompt instead.
+_inzsh_hooks_install
+
+# Still no PROMPT assignment — the renderer lands later in M2. The precmd hook is installed now
+# because exit-status capture has to be in place before anything draws: a theme that adds it
+# afterwards has already lost the status it needed. Until a renderer exists the hook captures
+# and returns, so sourcing this file leaves the user's prompt exactly as it found it;
+# `tools/render.zsh` draws the demonstration prompt instead.
