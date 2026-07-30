@@ -853,23 +853,38 @@ Describe 'render assembly'
   End
 
   # ------------------------------------------------------------------------------------------
-  Describe 'the dormant dispatch'
-    # `lib/core/hooks.zsh` runs `_inzsh_render` before every prompt the moment a function of that
-    # exact name exists. There are no segments until M3, so such a function would draw an EMPTY
-    # prompt over the user's real one. These examples are the tripwire: sourcing the render core
-    # must define no `_inzsh_render` and assign no PROMPT.
-    It 'defines no function called _inzsh_render'
-      dormant() {
+  Describe 'the live dispatch'
+    # `lib/core/hooks.zsh` calls `_inzsh_render` before every prompt. It was dormant while there
+    # were no segments — a function of that name would have drawn an EMPTY prompt over the
+    # user's real one — and the segments are what made defining it safe.
+    It 'defines the function the prompt hook dispatches to'
+      dispatch() {
         zsh -f -c '
           source "$1/lib/core/render.zsh"
-          local -a live=()
-          (( ${+functions[_inzsh_render]} ))       && live+=_inzsh_render
-          (( ${+functions[_inzsh_render_build]} )) || live+=missing-builder
-          print -r -- "${live[*]}"
-        ' inzsh-render-dormant "$SHELLSPEC_PROJECT_ROOT"
+          local -a missing=()
+          (( ${+functions[_inzsh_render]} ))       || missing+=_inzsh_render
+          (( ${+functions[_inzsh_render_build]} )) || missing+=_inzsh_render_build
+          print -r -- "${missing[*]}"
+        ' inzsh-render-dispatch "$SHELLSPEC_PROJECT_ROOT"
       }
-      When call dormant
+      When call dispatch
       The output should eq ''
+      The stderr should eq ''
+    End
+
+    # The guard that outlives the dormancy: a non-interactive shell must never be drawn into.
+    # Scripts and `ssh host command` get no escapes, so the draw returns before touching PROMPT.
+    It 'draws nothing in a non-interactive shell'
+      quiet() {
+        zsh -f -c '
+          source "$1/lib/core/render.zsh"
+          local before="${PROMPT-unset}"
+          _inzsh_render
+          [[ ${PROMPT-unset} == $before ]] && print -r -- untouched || print -r -- "$PROMPT"
+        ' inzsh-render-noninteractive "$SHELLSPEC_PROJECT_ROOT"
+      }
+      When call quiet
+      The output should eq 'untouched'
       The stderr should eq ''
     End
 
@@ -891,22 +906,24 @@ Describe 'render assembly'
       The stderr should eq ''
     End
 
-    # Structural, and deliberately so: the rule is about the TEXT of the file, not about what
-    # sourcing it happens to do today. An assignment guarded by a condition that is false right
-    # now is still an assignment waiting to fire.
-    It 'contains no PROMPT or RPROMPT assignment anywhere in the render core'
+    # Structural, and deliberately so: the rule is about the TEXT of the file. Exactly two
+    # assignments may exist — PROMPT and RPROMPT, both inside `_inzsh_render` — and `PS1` may
+    # not be touched at all. A third assignment, or one that appeared in the builder rather
+    # than the draw, would mean the prompt is being written from somewhere that does not know
+    # whether the shell is interactive.
+    It 'assigns the prompt in one place and never touches PS1'
       grepped() {
         setopt local_options extended_glob
         local line bare; local -a found=()
         while IFS= read -r line; do
           bare=${line##[[:space:]]#}
           [[ -z $bare || $bare == \#* ]] && continue
-          [[ $bare == *((|R)PROMPT|PS1)=* ]] && found+=$bare
+          [[ $bare == *((|R)PROMPT|PS1)=* ]] && found+=${bare%%=*}
         done < "$SHELLSPEC_PROJECT_ROOT/lib/core/render.zsh"
         print -r -- "${found[*]}"
       }
       When call grepped
-      The output should eq ''
+      The output should eq 'typeset -g PROMPT typeset -g RPROMPT'
     End
   End
 End
