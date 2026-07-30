@@ -62,7 +62,7 @@ jobs:
         run: |
           printf 'deb http://archive.debian.org/debian buster main\ndeb http://archive.debian.org/debian-security buster/updates main\n' > /etc/apt/sources.list
           apt-get -o Acquire::Check-Valid-Until=false update -qq
-          apt-get install -y -qq git
+          apt-get install -y -qq git ncurses-term
       - uses: actions/checkout@v7
       - name: Install ShellSpec
         run: git clone --depth 1 https://github.com/shellspec/shellspec.git /opt/shellspec
