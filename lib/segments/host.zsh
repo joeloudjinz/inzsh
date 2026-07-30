@@ -38,6 +38,14 @@ _inzsh_segment_defaults[HOST]=30
 _inzsh_segment_fg_role[HOST]=text-muted
 _inzsh_segment_importance[HOST]=3
 
+# The knob, registered where it is read — a segment carries its own declaration, so a segment
+# added later arrives configurable without anything in `lib/core/` moving. `1` and `0` and
+# nothing else: this is a three-state question written as two, where not setting it is the
+# third state and means "decide from the session".
+if (( ${+functions[_inzsh_config_register]} )); then
+  _inzsh_config_register INZSH_HOST_ALWAYS 'enum:1|0' 0
+fi
+
 # `_inzsh_segment_host_build [hostname] [ssh-marker]` — writes `_inzsh_segment_text[HOST]`.
 #
 # Both arguments are the injection seam: absent means "read the live shell parameter", present
@@ -70,8 +78,13 @@ _inzsh_segment_host_build() {
   [[ -n $name ]] || return 0
 
   local always=0
-  case ${INZSH_HOST_ALWAYS-} in
-    (1|0) always=$INZSH_HOST_ALWAYS ;;
+  local value=${INZSH_HOST_ALWAYS-}
+  if (( ${+functions[_inzsh_config_get]} )); then
+    _inzsh_config_get INZSH_HOST_ALWAYS
+    value=$REPLY
+  fi
+  case $value in
+    (1|0) always=$value ;;
   esac
 
   [[ $always == 1 || -n $marker ]] || return 0

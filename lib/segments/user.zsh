@@ -42,6 +42,13 @@ _inzsh_segment_defaults[USER]=20
 _inzsh_segment_fg_role[USER]=text-muted
 _inzsh_segment_importance[USER]=3
 
+# The knob, registered where it is read. `any` because a username is whatever the system says
+# it is, and empty because there is no name that means "no expectation" — not setting it is how
+# that is said, which is the registry's "empty means unset" rule rather than a special case.
+if (( ${+functions[_inzsh_config_register]} )); then
+  _inzsh_config_register INZSH_DEFAULT_USER any ''
+fi
+
 # `_inzsh_segment_user_build [username] [default-user] [ssh-marker]` — writes
 # `_inzsh_segment_text[USER]`.
 #
@@ -61,8 +68,20 @@ _inzsh_segment_user_build() {
   _inzsh_segment_text[USER]=
 
   local name=${1-$USERNAME}
-  local expected=${2-$INZSH_DEFAULT_USER}
   local marker=${3-${SSH_CONNECTION}${SSH_TTY}}
+
+  # The seam first, the knob second. An argument that is PRESENT — even empty — is the caller
+  # speaking, and the configuration is not consulted at all; absent, the knob is read through
+  # the registry where it is loaded.
+  local expected
+  if (( $# >= 2 )); then
+    expected=$2
+  elif (( ${+functions[_inzsh_config_get]} )); then
+    _inzsh_config_get INZSH_DEFAULT_USER
+    expected=$REPLY
+  else
+    expected=${INZSH_DEFAULT_USER-}
+  fi
 
   name=${${name##[[:space:]]#}%%[[:space:]]#}
   [[ -n $name ]] || return 0

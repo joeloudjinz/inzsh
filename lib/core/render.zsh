@@ -41,12 +41,23 @@ _inzsh_surface_cycle=(surface-soft hairline surface)
 # Resolve INZSH_SURFACE_MODE into `_inzsh_surface_mode_resolved`. Unset, empty, misspelled,
 # wrong case, padded with a stray space — all of it lands on `alternate`. A prompt with an
 # unreadable mode name in the config still draws, and draws legibly.
+#
+# `lib/core/config.zsh` owns the knob and its answer is preferred, exactly as in
+# `_inzsh_sep_style` below and for the same reason: it is the one that knows about registered
+# defaults. The `case` repeats the enum rather than trusting whatever came back, because this
+# file is independently sourceable.
 _inzsh_surface_mode() {
   emulate -L zsh
 
-  case ${INZSH_SURFACE_MODE-} in
-    (alternate|ramp|flat) typeset -g _inzsh_surface_mode_resolved=${INZSH_SURFACE_MODE} ;;
-    (*)                   typeset -g _inzsh_surface_mode_resolved=alternate ;;
+  local want=${INZSH_SURFACE_MODE-}
+  if (( ${+functions[_inzsh_config_get]} )); then
+    _inzsh_config_get INZSH_SURFACE_MODE
+    want=$REPLY
+  fi
+
+  typeset -g _inzsh_surface_mode_resolved=alternate
+  case $want in
+    (alternate|ramp|flat) typeset -g _inzsh_surface_mode_resolved=$want ;;
   esac
 }
 

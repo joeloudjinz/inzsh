@@ -34,6 +34,14 @@ _inzsh_segment_importance[TIME]=3
 # the retry after a user's format produced nothing usable.
 typeset -g _inzsh_time_format_default='%H:%M'
 
+# The knob, registered where it is read, with that same default. `any` on purpose: `strftime` is
+# the only authority on what a format means and the set of conversions is the C library's, so a
+# registry that policed it would refuse formats that work on the machine it is running on. The
+# validation this segment does is on the RESULT, below, which is the only honest place for it.
+if (( ${+functions[_inzsh_config_register]} )); then
+  _inzsh_config_register INZSH_TIME_FORMAT any "$_inzsh_time_format_default"
+fi
+
 # `_inzsh_time_render <format> <epoch>` → REPLY, empty when the format produced nothing this
 # segment is willing to draw.
 #
@@ -95,6 +103,10 @@ _inzsh_segment_time_build() {
   [[ $epoch == (|-)<-> ]] || return 0
 
   local format=${INZSH_TIME_FORMAT:-$_inzsh_time_format_default}
+  if (( ${+functions[_inzsh_config_get]} )); then
+    _inzsh_config_get INZSH_TIME_FORMAT
+    format=${REPLY:-$_inzsh_time_format_default}
+  fi
 
   if ! _inzsh_time_render "$format" "$epoch"; then
     _inzsh_time_render "$_inzsh_time_format_default" "$epoch" || return 0

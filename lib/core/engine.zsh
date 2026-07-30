@@ -71,12 +71,24 @@ _inzsh_rank_of() {
   local -i rank=0
   local candidate
 
+  # The user's word. `INZSH_*_RANK` is registered as a FAMILY in `lib/core/config.zsh` — one
+  # pattern, one validator, one default for every segment there will ever be — so the read goes
+  # through the registry where it is loaded and the rank grammar is stated in one place. The
+  # family's default is empty, which is what keeps the rest of the ladder below reachable: a
+  # registry that answered 0 here would hide every segment whose knob had a typo in it, rather
+  # than falling through to what the segment shipped with.
+  local configured=${(P)var}
+  if (( ${+functions[_inzsh_config_get]} )); then
+    _inzsh_config_get "$var"
+    configured=$REPLY
+  fi
+
   # The ladder, quoted so that it is always exactly three candidates long: an unset variable or
   # an unregistered default arrives as the empty string and is rejected by the grammar like any
   # other non-rank, rather than vanishing from the list. Quoting also keeps a value with a
   # space in it — ` 2` — whole, so the grammar gets to reject it; `emulate -L zsh` already
   # rules out word splitting, and this does not depend on that staying true.
-  for candidate in "${(P)var}" "$2" "${_inzsh_segment_defaults[$segment]}"; do
+  for candidate in "$configured" "$2" "${_inzsh_segment_defaults[$segment]}"; do
     if _inzsh_rank_valid "$candidate"; then
       rank=$candidate
       REPLY=$rank

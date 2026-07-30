@@ -60,8 +60,19 @@ _inzsh_detect_color_depth() {
 
   # The user's word, if it is one of the three we understand. Anything else falls through to
   # detection — an ignored override leaves a working prompt, an obeyed typo does not.
-  case $INZSH_COLOR_DEPTH in
-    (truecolor|256|8) _inzsh_color_depth=$INZSH_COLOR_DEPTH; return 0 ;;
+  #
+  # `lib/core/config.zsh` owns the knob and its registered default is empty, so an unreadable
+  # override arrives here as the empty string and falls through exactly as it always did. The
+  # `case` still names the three: this file is independently sourceable and is sourced by the
+  # entry point right after the config layer, so it must answer the same either way.
+  local want=${INZSH_COLOR_DEPTH-}
+  if (( ${+functions[_inzsh_config_get]} )); then
+    _inzsh_config_get INZSH_COLOR_DEPTH
+    want=$REPLY
+  fi
+
+  case $want in
+    (truecolor|256|8) _inzsh_color_depth=$want; return 0 ;;
   esac
 
   # Truecolor is advertised, never discovered. Lowercased because the value is written by
@@ -114,8 +125,15 @@ _inzsh_detect_multibyte() {
   typeset -g _inzsh_multibyte
 
   # For a terminal that lies, or a locale whose name does not spell its codeset the usual way.
-  case $INZSH_MULTIBYTE in
-    (1|0) _inzsh_multibyte=$INZSH_MULTIBYTE; return 0 ;;
+  # Read through the registry where it is loaded, for the reason given above the colour depth.
+  local want=${INZSH_MULTIBYTE-}
+  if (( ${+functions[_inzsh_config_get]} )); then
+    _inzsh_config_get INZSH_MULTIBYTE
+    want=$REPLY
+  fi
+
+  case $want in
+    (1|0) _inzsh_multibyte=$want; return 0 ;;
   esac
 
   local name=${LC_ALL:-${LC_CTYPE:-${LANG:-}}}
@@ -158,8 +176,14 @@ _inzsh_detect_nerd_font() {
 
   typeset -g _inzsh_nerd_font
 
-  case $INZSH_NERD_FONT in
-    (1|0) _inzsh_nerd_font=$INZSH_NERD_FONT; return 0 ;;
+  local want=${INZSH_NERD_FONT-}
+  if (( ${+functions[_inzsh_config_get]} )); then
+    _inzsh_config_get INZSH_NERD_FONT
+    want=$REPLY
+  fi
+
+  case $want in
+    (1|0) _inzsh_nerd_font=$want; return 0 ;;
   esac
 
   # Three places a terminal writes its own name, most direct first. `TERM_PROGRAM` is the usual

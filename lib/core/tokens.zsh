@@ -273,13 +273,28 @@ _inzsh_tokens_resolve() {
 #
 # When neither role exists the result is an empty REPLY and status 1 — the caller decides what
 # to do with that. A missing role must never reach the prompt as a broken escape.
+#
+# `INZSH_*_BG` and `INZSH_*_FG` are registered as FAMILIES in `lib/core/config.zsh` — one
+# validator and one default for every segment that exists and every one that will — so the
+# override is read through the registry where it is loaded. It answers `any`, which is this
+# function's own rule already: non-empty is used verbatim, empty is no opinion. What the
+# registry adds is that a segment name which cannot spell a variable comes back with nothing
+# instead of reaching `${(P)}`, and that the shape is declared somewhere a reader can find it.
 _inzsh_seg_color() {
   emulate -L zsh
 
   typeset -g REPLY=
 
   local var=INZSH_${(U)1}_${(U)2}
-  local override=${(P)var}
+  local override
+  if (( ${+functions[_inzsh_config_get]} )); then
+    _inzsh_config_get "$var"
+    override=$REPLY
+    typeset -g REPLY=
+  else
+    override=${(P)var}
+  fi
+
   if [[ -n $override ]]; then
     REPLY=$override
     return 0
