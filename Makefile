@@ -5,7 +5,7 @@ SHELLSPEC ?= shellspec
 PYTHON ?= ./.venv/bin/python
 COLS ?= 80
 
-.PHONY: help setup test test-ui perf render render-matrix grid demo watch
+.PHONY: help setup test test-ui spec-guard perf render render-matrix grid demo watch
 .PHONY: golden-update bundle doctor
 
 help: ## list targets
@@ -15,11 +15,15 @@ setup: ## install the native toolchain
 	@zsh tools/setup.zsh
 
 test: ## everything runnable locally
+	@zsh tools/spec-guard.zsh
 	@$(SHELLSPEC) test/unit test/render
 	@$(MAKE) --no-print-directory test-ui
 
 # Skips rather than fails when the venv is absent — CI doesn't build one yet, and
 # wiring L3 into CI happens with the M1 gate.
+spec-guard: ## refuse a spec file that defines no examples
+	@zsh tools/spec-guard.zsh
+
 test-ui: ## L3 terminal-grid tests (pty + pyte); needs the python venv
 	@if [[ -x $(PYTHON) ]]; then \
 	  $(PYTHON) -m unittest discover -s test/ui -p 'test_*.py' -v; \
