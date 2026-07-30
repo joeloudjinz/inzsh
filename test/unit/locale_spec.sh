@@ -87,7 +87,7 @@ Describe 'the glyph table'
       ' inzsh-locale-glyphs "$SHELLSPEC_PROJECT_ROOT"
     }
     When call stood_in
-    The output should eq '0 12 '
+    The output should eq '0 14 '
     The stderr should eq ''
   End
 
