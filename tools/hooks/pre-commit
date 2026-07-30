@@ -27,14 +27,28 @@ if (( $+commands[gitleaks] )); then
   fi
 fi
 
-# coordinate-looking pairs — examples must use neutral data (Mecca placeholder)
-local coord_pattern='[0-9]{1,2}\.[0-9]{4,}[, ]+ *-?[0-9]{1,3}\.[0-9]{4,}'
-local hits
-hits=$(git diff --cached -U0 -- . | grep -E '^\+' | grep -E "$coord_pattern" | grep -Fv '21.4225' || true)
-if [[ -n $hits ]]; then
-  print -u2 -- "pre-commit: possible real coordinates staged — use the Mecca placeholder (21.4225, 39.8262):"
-  print -u2 -- "$hits"
-  exit 1
+# Coordinate-looking pairs. Documentation, defaults and examples must use neutral data, so
+# anything that looks like a real position is refused there and the Mecca placeholder is the
+# one exception.
+#
+# The prayer-time test data is exempt by path. Latitude is the input the calculation is a
+# function of: polar no-solution cases need a real polar latitude, a DST-boundary case needs a
+# city that observes DST, and an oracle row is only evidence if it names the place it came
+# from. Substituting a placeholder there would not anonymise the tests, it would delete them.
+# The exemption is deliberately narrow — it covers the salah fixtures and their specs, and
+# nothing else in the tree.
+local -a coord_paths
+coord_paths=(${staged:#(test/fixtures/salah/*|test/unit/salah_*_spec.sh)})
+if (( $#coord_paths )); then
+  local coord_pattern='[0-9]{1,2}\.[0-9]{4,}[, ]+ *-?[0-9]{1,3}\.[0-9]{4,}'
+  local hits
+  hits=$(git diff --cached -U0 -- $coord_paths | grep -E '^\+' | grep -E "$coord_pattern" |
+    grep -Fv '21.4225' || true)
+  if [[ -n $hits ]]; then
+    print -u2 -- "pre-commit: possible real coordinates staged — use the Mecca placeholder (21.4225, 39.8262):"
+    print -u2 -- "$hits"
+    exit 1
+  fi
 fi
 
 exit 0
