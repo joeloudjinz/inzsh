@@ -90,17 +90,19 @@ Describe 'the entry point'
       The stderr should eq ''
     End
 
-    # The renderer lands at M2. Until it does, sourcing the theme must leave the user's prompt
-    # alone rather than half-drawing one: an entry point that assigns PROMPT before there is
-    # anything to draw is how a theme ships a broken prompt.
-    It 'assigns no PROMPT and registers no hook — both are M2'
+    # The renderer lands later in M2. Until it does, sourcing the theme must leave the user's
+    # prompt alone rather than half-drawing one: an entry point that assigns PROMPT before there
+    # is anything to draw is how a theme ships a broken prompt. The precmd hook is the one thing
+    # that must be in place early — exit-status capture cannot be retrofitted after the fact —
+    # so exactly one hook is expected, and nothing else may move.
+    It 'installs only the precmd hook and assigns no PROMPT'
       quiescent() {
         zsh -f -i -c '
           local before=$PROMPT
           source "$1"
           local -a moved=()
           [[ $PROMPT == $before ]] || moved+=PROMPT
-          [[ -z ${precmd_functions[*]} ]] || moved+=precmd:${precmd_functions[*]}
+          [[ ${precmd_functions[*]} == _inzsh_precmd ]] || moved+=precmd:${precmd_functions[*]}
           [[ -z ${preexec_functions[*]} ]] || moved+=preexec:${preexec_functions[*]}
           print -r -- "${moved[*]}"
         ' inzsh-entry-quiescent "$(inzsh_spec_theme)"
