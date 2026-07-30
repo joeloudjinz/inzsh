@@ -39,7 +39,20 @@
 
 # The truncation marker. Internal for now: the token layer has no glyph table yet, and when it
 # grows one — separator glyphs live there, not in the code that draws with them — this moves.
-typeset -g _inzsh_layout_ellipsis=$'\u2026'
+#
+# Spelled as its UTF-8 BYTES rather than as a `\u` escape. That escape is a character literal
+# resolved when the file is PARSED, and outside a multibyte locale zsh cannot resolve one: under
+# `LC_ALL=C` this line failed with `character not in range` and took the whole file down with
+# it, every function below included. Byte escapes parse in any locale, and in a UTF-8 one these
+# three bytes ARE the character.
+#
+# Outside one they are three bytes that would draw as mojibake, so ASCII stands in. The locale
+# answer is the one `lib/core/detect.zsh` already worked out; sourced on its own, this file asks
+# zsh the narrower question it actually cares about \u2014 is the assembled marker one character?
+typeset -g _inzsh_layout_ellipsis=$'\xe2\x80\xa6'
+if [[ ${_inzsh_multibyte-1} == 0 ]] || (( ${#_inzsh_layout_ellipsis} != 1 )); then
+  _inzsh_layout_ellipsis='...'
+fi
 
 # Display width of a literal string, nothing stripped. The one place `${(m)#...}` is spelled
 # out, so the locale caveat above has a single home. Answer in REPLY.
