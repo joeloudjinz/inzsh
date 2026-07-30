@@ -46,6 +46,8 @@ theme falls back to a safe value rather than drawing the broken result:
 |---|---|---|---|
 | `INZSH_<SEGMENT>_BG` | anything `%K{…}` accepts — a hex value, a named colour, a 256 index | the segment's background role | Pins one segment's background, ahead of the palette, at every colour depth. `<SEGMENT>` is the segment's name in capitals, e.g. `INZSH_DIR_BG`. Not validated beyond non-emptiness: a colour you typed for your own terminal is your business. |
 | `INZSH_<SEGMENT>_FG` | anything `%F{…}` accepts | the segment's foreground role | The same, for the text colour. Colour is never the only signal in this theme, so an override here cannot make a state unreadable — the glyph still says what the colour said. |
+| `INZSH_<SEGMENT>_RANK` | an integer, optional leading `+`/`-` | the segment's own default | One number places a segment and decides whether it appears at all. Positive puts it in the left prompt counting out from the left edge (`1` is leftmost); negative puts it in the right prompt counting in from the right edge (`-1` is rightmost); `0` hides it. Ranks need not be contiguous — `1`, `4` and `10` order exactly as they read. Anything unreadable falls back to the default. |
+| `INZSH_<SEGMENT>_MINCOLS` | non-negative integer | `0` | The terminal width below which this segment is dropped. `0` means never drop it on width alone. Rank is *position*, `MINCOLS` is *priority*: the segment nearest the edge is not necessarily the one you want to lose first, so the two stay independent. |
 
 ## Engine
 
@@ -53,3 +55,24 @@ theme falls back to a safe value rather than drawing the broken result:
 |---|---|---|---|
 | `INZSH_SURFACE_MODE` | `alternate` · `ramp` · `flat` | `alternate` | How segment backgrounds are assigned. `alternate` swings between the two raised surfaces so every powerline separator stays visible. `ramp` assigns by per-segment importance, bumping equal neighbours apart. `flat` uses one surface for everything (no filled-powerline look). Invalid values fall back to `alternate`. |
 | `INZSH_COLOR_DEPTH` | `truecolor` · `256` · `8` | detected | Overrides colour-depth detection for terminals that misreport. The palette degrades through hand-tuned fallback tables; invalid values are ignored and detection wins. |
+
+## Responsive breakpoints
+
+The prompt adapts to the terminal width in four steps — `full`, `wide`, `narrow`, `minimal` —
+and each variable below is the narrowest width that still counts as that step. Below the last
+one the prompt is `minimal`. Hiding and shortening are different mechanisms: a path shortens
+progressively (`~/a/b/c` → `…/b/c` → `…/c`) rather than disappearing, while `MINCOLS` decides
+what disappears.
+
+The defaults are deliberate placeholders, to be tuned against real segment widths once the
+segments exist.
+
+| Variable | Values | Default | Effect |
+|---|---|---|---|
+| `INZSH_LADDER_FULL_COLS` | non-negative integer | `120` | At or above this width, everything is drawn. |
+| `INZSH_LADDER_WIDE_COLS` | non-negative integer | `80` | At or above this width, the step is `wide`. |
+| `INZSH_LADDER_NARROW_COLS` | non-negative integer | `60` | At or above this width, the step is `narrow`; below it, `minimal`. |
+
+A value that is not a non-negative integer falls back to its own default. If the three end up
+out of order — a `wide` wider than `full`, say — the whole set reverts to 120 / 80 / 60 rather
+than producing a ladder that cannot be climbed.
