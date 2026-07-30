@@ -26,6 +26,24 @@ drawing.
 **Read at render time.** Values are read fresh on every prompt, never cached at load. Change a
 variable at the command line and the next prompt reflects it — no re-source, no new shell.
 
+## Every knob is declared
+
+The theme carries a registry: each option is declared once with the values it accepts and the
+default it falls back to, and that declaration is what the read sites use. Two shapes of
+declaration cover everything below.
+
+**Singletons** are one name with one meaning — `INZSH_SURFACE_MODE`, `INZSH_GIT_TIMEOUT`.
+
+**Families** are a shape rather than a name. `INZSH_<SEGMENT>_RANK` is not four variables, it is
+one rule that every segment has and every segment added later will have; the registry holds the
+pattern, and a concrete name resolves against it. The families are `INZSH_<SEGMENT>_RANK`,
+`_BG`, `_FG` and `_MINCOLS`, and `INZSH_SALAH_OFFSET_<PRAYER>`. `<SEGMENT>` is the segment's
+name in capitals; `<PRAYER>` is one of the six prayer names.
+
+Two tests hold this page and the registry to each other: a variable the theme reads and never
+declared fails the suite, and a declared variable missing from the table below fails it too. An
+option missing here is a bug, and it is a bug the build finds.
+
 ## What configuration cannot change
 
 Three properties hold whatever the configuration says. Where a setting would break one, the
@@ -62,6 +80,8 @@ theme falls back to a safe value rather than drawing the broken result:
 | `INZSH_SURFACE_MODE` | `alternate` · `ramp` · `flat` | `alternate` | How segment backgrounds are assigned. `alternate` swings between the two raised surfaces so every powerline separator stays visible. `ramp` assigns by per-segment importance, bumping equal neighbours apart. `flat` uses one surface for everything (no filled-powerline look). Invalid values fall back to `alternate`. |
 | `INZSH_SEPARATOR_STYLE` | `arrow` · `round` · `divider` | `arrow` | Which glyph draws the boundary between two segments. `arrow` is the filled powerline wedge, `round` the same ribbon with rounded caps, `divider` a thin rule with no filled boundary at all. `arrow` and `round` need a Nerd Font; `divider` needs only box drawing. Invalid values fall back to `arrow`. Setting `INZSH_NERD_FONT=0` resolves any style to `divider`, since the powerline glyphs cannot be drawn without the font. |
 | `INZSH_COLOR_DEPTH` | `truecolor` · `256` · `8` | detected | Overrides colour-depth detection for terminals that misreport. The palette degrades through hand-tuned fallback tables; invalid values are ignored and detection wins. |
+| `INZSH_MULTIBYTE` | `1` · `0` | detected | Overrides the locale test that decides whether a non-ASCII glyph is safe to write. `0` selects the ASCII stand-ins for every mark the theme draws — `✕` becomes `x`, a powerline wedge becomes a thin rule — which is what a terminal outside a UTF-8 locale needs. Invalid values are ignored and the locale wins. |
+| `INZSH_NERD_FONT` | `1` · `0` | detected | Whether the private-use glyphs will draw. Nothing inside a shell can prove a font is installed, so detection answers `1` only for terminals that bundle the symbol range and `unknown` otherwise — it never infers a `0`. Setting `0` is you reporting your own screen, and it resolves any separator style to `divider`. Invalid values are ignored. |
 
 ## Responsive breakpoints
 
@@ -83,3 +103,63 @@ segments exist.
 A value that is not a non-negative integer falls back to its own default. If the three end up
 out of order — a `wide` wider than `full`, say — the whole set reverts to 120 / 80 / 60 rather
 than producing a ladder that cannot be climbed.
+
+## Secondary prompts and the title
+
+The parts of a theme nobody notices until they are missing: the continuation prompt you meet
+the first time a quote is left open, the spell-correction prompt, and the text in the tab. The
+two prompt strings are replaced whole rather than tuned — they are one line each, and a
+grammar for editing them would be more to learn than to rewrite them.
+
+| Variable | Values | Default | Effect |
+|---|---|---|---|
+| `INZSH_PS2` | any prompt string | the theme's own | Replaces the continuation prompt verbatim. The theme's own draws zsh's parser state (`then`, `do`, `quote`) muted, then one accented marker, which is what makes a continued line legible as one. Setting this to empty is not "no prompt" — it falls through to the theme's, like every other knob here. |
+| `INZSH_SPROMPT` | any prompt string | the theme's own | Replaces the spell-correction prompt verbatim. The theme's own marks the mistyped word with `✕` and the suggestion with `✓` and lists all four keys zsh accepts — `y n a e` — rather than the usual two. |
+| `INZSH_TITLE` | `1` · `0` · `true` · `false` · `yes` · `no` · `on` · `off`, in any case | `1` | Whether the terminal title is set at all. Off values switch it off; anything unreadable leaves it on, because a typo may not disable a feature silently. The title is never written to a non-interactive shell, to `TERM=dumb` or to the kernel console, whatever this says. |
+| `INZSH_TITLE_FORMAT` | a template over `%d`, `%c` and `%%` | `%d %c` | The title text. `%d` is the current directory collapsed to `~`, `%c` the running command — empty at a prompt, so an idle title is just the directory. The grammar is deliberately these three and nothing else: the command line is pasted into the result, so a format handed to prompt expansion would let a directory name become an instruction. An unknown `%x` is kept literally, and a format that produces nothing falls back to the directory. |
+
+## Segments
+
+Each segment declares its own knobs beside the code that reads them. Rank, colour and
+`MINCOLS` are the same for every segment and live under [per-segment
+overrides](#per-segment-overrides); what follows is what one segment alone asks about.
+
+| Variable | Values | Default | Effect |
+|---|---|---|---|
+| `INZSH_DEFAULT_USER` | a username | unset | The account whose name is not worth drawing. Set it and the user segment becomes a difference detector: absent while you are that user, present the moment you are not — `sudo -s`, a service account, someone else's shell. Unset, the name is always drawn. Compared as text and never as a pattern, so a `*` here matches the user called `*` and nobody else. |
+| `INZSH_HOST_ALWAYS` | `1` · `0` | `0` | Forces the host segment on for a local session. The default draws it only over SSH, where the hostname is the answer to "am I about to run this on production" and changes as you hop; locally it is a constant, and a constant spends width without carrying information. `1` is for people who split panes across machines and want the block in a fixed place. |
+| `INZSH_TIME_FORMAT` | a `strftime` format | `%H:%M` | The clock segment's format. Not validated against a list of conversions — `strftime` is the only authority on what one means and the set differs between platforms — so it is tried, and judged on what came back: a format that renders nothing, or renders a control character, falls back to `%H:%M` rather than breaking the row. |
+
+## Git
+
+The git segment is the theme's one background worker. It never runs git on the render path: a
+worker fills a cache and the segment draws whatever is in it, so a slow repository costs a
+stale segment rather than a slow prompt.
+
+| Variable | Values | Default | Effect |
+|---|---|---|---|
+| `INZSH_GIT_ASYNC` | `1` · `0` · `true` · `false` · `yes` · `no` · `on` · `off`, in any case | `1` | Whether the worker runs at all. Off, the segment renders whatever is already cached and launches nothing — the escape hatch for a machine where a background git is the wrong trade at any timeout. |
+| `INZSH_GIT_TIMEOUT` | integer, 1–60 | `2` | Seconds before the git call is killed. Two is chosen against the keystroke rather than against git: a status that has not answered in two seconds will not answer before you have finished typing the next command either. |
+| `INZSH_GIT_BRANCH_MAX` | integer, 0–200 | `24` | How many columns the ref may take before it is elided. `0` means no limit. Branch names are as long as whoever named the ticket felt like, and a prompt that gives half its row to one has stopped being a prompt. |
+| `INZSH_GIT_CACHE_DIR` | a directory path | `$XDG_CACHE_HOME/inzsh/git`, or `~/.cache/inzsh/git` | Where the cache entries live. Derived data with no value once the repository moves on, which is why it defaults under the cache directory rather than under a config one. A directory that cannot be created means no cache, which means the segment simply does not appear. |
+
+## Prayer times
+
+Local arithmetic over a timestamp and a location — no network, no fork, no calendar file. Name
+the authority your masjid follows, or set the two angles off its noticeboard; the angles win
+over the named method, so an authority the theme does not ship is a two-variable configuration
+rather than a feature request.
+
+Every value here is validated by the prayer module itself, which computes without loading any
+part of the prompt engine. Unreadable values fall back the same way everything else does: an
+unrecognised method computes MWL, and an angle of `banana` computes the method's own.
+
+| Variable | Values | Default | Effect |
+|---|---|---|---|
+| `INZSH_SALAH_METHOD` | `MWL` · `ISNA` · `UmmAlQura` · `Egyptian` · `Karachi` · `Algeria`, plus the aliases `Makkah`, `Mecca`, `Egypt`, `MuslimWorldLeague` | `MWL` | The calculation authority. Matched with case, spacing and punctuation ignored, so `Umm al-Qura`, `umm_al_qura` and `ummalqura` are one request. Each entry is a fajr angle plus either an isha angle or a fixed interval after maghrib; both forms are first-class. |
+| `INZSH_SALAH_ASR` | `standard` · `shafi` · `hanafi`, in any case | `standard` | Which shadow length starts asr. `hanafi` is twice the object's length plus its noon shadow; the other two are once. |
+| `INZSH_SALAH_HIGHLAT` | `angle` · `seventh` · `middle` · `none`, in any case | `angle` | What to do at a latitude where the sun never reaches the depression angle and fajr or isha would otherwise not exist. `none` leaves the prayer absent rather than inventing one. |
+| `INZSH_SALAH_FAJR_ANGLE` | a number above `0` and no higher than `30` | the method's | The sun's depression below the horizon at fajr, in degrees. Overrides whatever the named method said. |
+| `INZSH_SALAH_ISHA_ANGLE` | a number above `0` and no higher than `30` | the method's | The same for isha. Setting it clears any interval in play — an angle and an interval are two answers to one question. |
+| `INZSH_SALAH_ISHA_INTERVAL` | integer, 1–240 | the method's, where it has one | Minutes after maghrib, for the authorities that fix isha that way rather than by an angle. Setting it clears the isha angle, for the same reason. |
+| `INZSH_SALAH_OFFSET_<PRAYER>` | integer, −180 to 180 | `0` | Minutes to nudge one prayer's displayed time. `<PRAYER>` is `FAJR`, `SUNRISE`, `DHUHR`, `ASR`, `MAGHRIB` or `ISHA`. This calibrates a display against a local masjid, so it never feeds back into the arithmetic: moving maghrib does not move an isha measured as an interval from it. |
