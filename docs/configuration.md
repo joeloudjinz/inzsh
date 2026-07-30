@@ -5,6 +5,48 @@ documents — an option missing here is a bug.
 
 Precedence, everywhere: per-segment override → semantic role → default.
 
+## How a value is read
+
+**Three levels.** A per-segment override — `INZSH_<SEGMENT>_<KNOB>` — beats the semantic role
+the theme picked for that segment, which beats the knob's default. Setting the plain
+`INZSH_<KNOB>` moves the default for every segment at once; a role or an override still
+specialises it. The rule is the same for colour, for surfaces and for everything added later,
+so learning it once is enough.
+
+**Empty means unset, at every level.** An `INZSH_DIR_BG=` left behind in a `.zshrc` falls
+through to the role rather than blanking the segment. There is no value that means "nothing" —
+to switch a thing off, `unset` it or use the knob's own off value.
+
+**Validate, then fall back.** Every knob has a set of values it accepts. A value outside that
+set is not an error and is never reported: it is simply not used, and the default is drawn
+instead. `INZSH_SURFACE_MODE=chartreuse` gives an `alternate` prompt; a misspelled colour depth
+gives the detected one. Nothing you can type into a config file can stop the prompt from
+drawing.
+
+**Read at render time.** Values are read fresh on every prompt, never cached at load. Change a
+variable at the command line and the next prompt reflects it — no re-source, no new shell.
+
+## What configuration cannot change
+
+Three properties hold whatever the configuration says. Where a setting would break one, the
+theme falls back to a safe value rather than drawing the broken result:
+
+- **Separators stay visible.** In a filled mode no two adjacent segments share a background.
+  A surface assignment that would put equal backgrounds side by side is rejected and the mode
+  degrades to `alternate`, which holds the property by construction.
+- **The exit status survives.** `$?` and `$pipestatus` are captured on the first line of the
+  prompt hook, above everything else, so no amount of configuration can cost you the status of
+  the command you just ran.
+- **The render budget holds.** The prompt renders in under 30 ms warm. The budget is not
+  settable: options change what the prompt looks like, never what it is allowed to cost.
+
+## Per-segment overrides
+
+| Variable | Values | Default | Effect |
+|---|---|---|---|
+| `INZSH_<SEGMENT>_BG` | anything `%K{…}` accepts — a hex value, a named colour, a 256 index | the segment's background role | Pins one segment's background, ahead of the palette, at every colour depth. `<SEGMENT>` is the segment's name in capitals, e.g. `INZSH_DIR_BG`. Not validated beyond non-emptiness: a colour you typed for your own terminal is your business. |
+| `INZSH_<SEGMENT>_FG` | anything `%F{…}` accepts | the segment's foreground role | The same, for the text colour. Colour is never the only signal in this theme, so an override here cannot make a state unreadable — the glyph still says what the colour said. |
+
 ## Engine
 
 | Variable | Values | Default | Effect |
