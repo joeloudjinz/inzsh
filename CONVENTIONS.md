@@ -67,7 +67,7 @@ test(ui): assert token colours at 60 columns
 docs: document tmux setup
 ```
 
-Scopes: `engine` · `tokens` · `segments` · `salah` · `ui` · `install` · `docs`
+Scopes: `engine` · `config` · `tokens` · `segments` · `salah` · `ui` · `install` · `docs`
 
 Breaking changes use `!` — `feat(config)!: rename INZSH_SALAH_LAT` — since there is no body for a
 footer.

@@ -28,7 +28,7 @@ if (( ${#msg} > 72 )); then
 fi
 
 local types='feat|fix|test|docs|chore|build|ci|perf|refactor'
-local scopes='engine|tokens|segments|salah|ui|install|docs'
+local scopes='engine|config|tokens|segments|salah|ui|install|docs'
 if [[ ! $msg =~ "^(${types})(\((${scopes})\))?!?: [^ ].*$" ]]; then
   print -u2 -- "commit-msg: expected '<type>[(scope)][!]: subject'"
   print -u2 -- "  types:  ${types//|/ · }"

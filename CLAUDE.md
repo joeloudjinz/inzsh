@@ -82,8 +82,8 @@ for those, so keep pushes small.
 
 - **Atomic commits** — one coherent change each, build green at every commit. A feature is
   several commits, never one. We never squash.
-- **One line, no body.** Conventional Commits, scoped: `engine` · `tokens` · `segments` ·
-  `salah` · `ui` · `install` · `docs`. Breaking changes use `!`
+- **One line, no body.** Conventional Commits, scoped: `engine` · `config` · `tokens` ·
+  `segments` · `salah` · `ui` · `install` · `docs`. Breaking changes use `!`
   (`feat(config)!: rename INZSH_SALAH_LAT`).
 - `dev` is the development trunk; `main` is for release cycles only. Branch per issue off
   `dev`: `m<n>-<short-slug>` (e.g. `m2-rank-sort`). PR to `dev` with `Closes #N`, milestone
