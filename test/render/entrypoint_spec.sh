@@ -105,7 +105,7 @@ Describe 'the entry point'
           source "$1"
           local -a moved=()
           [[ $PROMPT == $before ]] || moved+=PROMPT
-          local want="_inzsh_precmd _inzsh_title_precmd _inzsh_git_async_precmd"
+          local want="_inzsh_precmd _inzsh_title_precmd _inzsh_transient_precmd _inzsh_git_async_precmd"
           [[ ${precmd_functions[*]} == $want ]] || moved+=precmd:${precmd_functions[*]}
           [[ ${preexec_functions[*]} == _inzsh_title_preexec ]] ||
             moved+=preexec:${preexec_functions[*]}
