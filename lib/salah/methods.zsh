@@ -65,6 +65,37 @@ typeset -gi _inzsh_salah_angle_limit=30
 typeset -gi _inzsh_salah_interval_limit=240
 
 # --------------------------------------------------------------------------------------------
+# The declaration table
+#
+# Every knob this file reads, declared where the theme's registry can find it — name, validator
+# spec, default, three words each, with a `*` naming a family rather than a name. The engine
+# absorbs any array named `_inzsh_<module>_knobs` once both halves are in the same shell.
+#
+# It is a TABLE and not a series of calls because `lib/salah/` imports nothing from the engine:
+# that is what lets the prayer maths be tested standalone against a fixture oracle, and a
+# guarded registration call would still be this file naming an engine function — which
+# `test/unit/salah_calc_spec.sh` fails on, by prefix, deliberately. Nothing below refers to
+# anything outside this file. Sourced on its own, it is an array nothing reads.
+#
+# Five of the seven declare `any`, and that is not laziness. The registry's spec grammar has
+# five forms and none of them can say "one of three words, in any case" or "a real number above
+# zero and no higher than thirty" — and a spec that is NEARLY right is worse than one that says
+# the module decides, because it would make the registry disagree with the code below about what
+# a value means. The vocabulary each one accepts is in `docs/configuration.md`; the two the
+# grammar can state exactly are built from the limits above rather than restating them, so a
+# bound cannot be raised in one place only.
+typeset -ga _inzsh_salah_knobs
+_inzsh_salah_knobs=(
+  INZSH_SALAH_METHOD         any  $_inzsh_salah_default_method
+  INZSH_SALAH_ASR            any  standard
+  INZSH_SALAH_HIGHLAT        any  angle
+  INZSH_SALAH_FAJR_ANGLE     any  ''
+  INZSH_SALAH_ISHA_ANGLE     any  ''
+  INZSH_SALAH_ISHA_INTERVAL  "int:1:$_inzsh_salah_interval_limit"  ''
+  'INZSH_SALAH_OFFSET_*'  "int:-$_inzsh_salah_offset_limit:$_inzsh_salah_offset_limit"  0
+)
+
+# --------------------------------------------------------------------------------------------
 # Reading the configuration
 
 # Normalise a method name into a table key, in REPLY: upper case, letters and digits only, then

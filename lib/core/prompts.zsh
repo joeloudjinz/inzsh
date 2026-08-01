@@ -75,12 +75,20 @@ _inzsh_prompts_paint() {
 # character, and it is what makes a continued line legible as a continued line at a glance.
 #
 # `INZSH_PS2` replaces the lot, verbatim. Set but empty counts as unset — an `INZSH_PS2=` left
-# behind in a zshrc must fall through to the theme's own rather than blank the prompt.
+# behind in a zshrc must fall through to the theme's own rather than blank the prompt. That is
+# the registry's own rule for every knob, which is why the read goes through it where it is
+# loaded; the registered default is empty, because there is no value that means "the theme's".
 _inzsh_prompts_ps2() {
   emulate -L zsh
 
-  if [[ -n $INZSH_PS2 ]]; then
-    typeset -g REPLY=$INZSH_PS2
+  local override=${INZSH_PS2-}
+  if (( ${+functions[_inzsh_config_get]} )); then
+    _inzsh_config_get INZSH_PS2
+    override=$REPLY
+  fi
+
+  if [[ -n $override ]]; then
+    typeset -g REPLY=$override
     return 0
   fi
 
@@ -110,8 +118,14 @@ _inzsh_prompts_ps2() {
 _inzsh_prompts_sprompt() {
   emulate -L zsh
 
-  if [[ -n $INZSH_SPROMPT ]]; then
-    typeset -g REPLY=$INZSH_SPROMPT
+  local override=${INZSH_SPROMPT-}
+  if (( ${+functions[_inzsh_config_get]} )); then
+    _inzsh_config_get INZSH_SPROMPT
+    override=$REPLY
+  fi
+
+  if [[ -n $override ]]; then
+    typeset -g REPLY=$override
     return 0
   fi
 
@@ -206,11 +220,18 @@ _inzsh_prompts_uninstall() {
 
 # Is the title switched on? `INZSH_TITLE` takes the house boolean vocabulary in any case; unset,
 # empty or unreadable means on, because the default is on and a typo may not disable a feature
-# silently.
+# silently. The registry says the same thing twice over — the knob is `bool` with a default of
+# `1` — so an unreadable value arrives here as that default and the `case` below never sees it.
 _inzsh_title_enabled() {
   emulate -L zsh
 
-  case ${(L)INZSH_TITLE} in
+  local value=${INZSH_TITLE-}
+  if (( ${+functions[_inzsh_config_get]} )); then
+    _inzsh_config_get INZSH_TITLE
+    value=$REPLY
+  fi
+
+  case ${(L)value} in
     (0|false|no|off) return 1 ;;
   esac
 
@@ -256,6 +277,11 @@ _inzsh_title_text() {
   typeset -g REPLY=
 
   local format=${INZSH_TITLE_FORMAT:-$_inzsh_title_format_default}
+  if (( ${+functions[_inzsh_config_get]} )); then
+    _inzsh_config_get INZSH_TITLE_FORMAT
+    format=${REPLY:-$_inzsh_title_format_default}
+  fi
+
   local dir=${${(%):-%~}//[[:cntrl:]]/ }
   local cmd=${1//[[:cntrl:]]/ }
 

@@ -211,6 +211,16 @@ _inzsh_bench_case_config_get() {
   _inzsh_config_get INZSH_COLOR_DEPTH
 }
 
+# The other shape. A singleton is a hash hit; a family name has to be matched against the
+# registered patterns, and that walk is what every per-segment override in a render goes
+# through — colour twice per segment, then rank, then MINCOLS. Timed on its own so a registry
+# that grows a dozen families says so here rather than in `render-prompt`.
+_inzsh_bench_case_config_get_family() {
+  _inzsh_config_get INZSH_DIR_BG
+  _inzsh_config_get INZSH_DIR_RANK
+  _inzsh_config_get INZSH_DIR_MINCOLS
+}
+
 _inzsh_bench_case_config_resolve() {
   local segment
   for segment in "${_inzsh_bench_segments[@]}"; do
@@ -350,14 +360,23 @@ typeset -ga _inzsh_bench_table=(
   surface-alternate   800   0.250
   surface-ramp        400   0.400
   layout-width        150   1.100
-  layout-filter       150   1.000
+  layout-filter       150   3.250
   truncate-path        80   2.650
   config-get          600   0.320
+  config-get-family   200   0.800
   config-resolve      150   1.450
   render-floor         40   7.200
   render-prompt        40  12.000
 )
 
+# `layout-filter` was re-baselined when the knob registry landed: the width filter now asks the
+# registry for each segment MINCOLS, which validates the value rather than trusting it, so the
+# primitive genuinely does more than it did. The number is the table's own rule — best-of-5 ×6 —
+# applied to the new cost, and it was raised only after the read path had been optimised three
+# ways (the family answer memoised, the `any` families read direct, the bare `int` check
+# inlined). A budget raised before that work would have been an excuse; raised after it, it is
+# a measurement.
+#
 # The budget on `render-prompt` is the one number here that was chosen rather than measured
 # from a stable base: it is the same 6× headroom every other row carries, over a first
 # measurement taken the day the renderer landed. It will want revisiting once the segment set

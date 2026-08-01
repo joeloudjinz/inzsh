@@ -201,11 +201,21 @@ _inzsh_mincols_of() {
   local var=INZSH_${(U)1}_MINCOLS
   [[ $var == [A-Za-z_][A-Za-z0-9_]# ]] || return 0
 
+  # `INZSH_*_MINCOLS` is registered as a FAMILY in `lib/core/config.zsh`, so the read goes
+  # through the registry where it is loaded: one validator and one default — 0 — for every
+  # segment, rather than a rule restated per read site. The grammar below is that same rule for
+  # a layout layer sourced without the config layer, and the two accept the same values: a
+  # non-negative integer, optional leading `+`, which is what `int:0:` means.
+  local value=${(P)var-}
+  if (( ${+functions[_inzsh_config_get]} )); then
+    _inzsh_config_get "$var"
+    value=$REPLY
+  fi
+
   # Normalised through an integer, so `007` and `7` are the same MINCOLS and every caller can
   # compare what comes back arithmetically without re-reading the config.
   local -i resolved=0
-  local value=${(P)var-}
-  [[ $value == <-> ]] && resolved=$value
+  [[ $value == (|+)<-> ]] && resolved=$value
   REPLY=$resolved
 
   return 0
@@ -264,6 +274,11 @@ _inzsh_ladder_steps=(full wide narrow minimal)
 # PLACEHOLDERS from the roadmap and will be tuned at the M3 gate against a real prompt — which
 # is exactly why they are overridable. Tuning must be a config change, not a code change, so
 # every number here has an `INZSH_LADDER_<STEP>_COLS` in front of it.
+#
+# The three knobs are registered with these same defaults in `lib/core/config.zsh`. This array
+# is what a layout layer sourced WITHOUT the config layer degrades to — the same reason
+# `lib/segments/time.zsh` keeps `_inzsh_time_format_default` — and the two copies are held
+# equal by `test/unit/config_registry_spec.sh` rather than by anybody remembering.
 typeset -ga _inzsh_ladder_defaults
 _inzsh_ladder_defaults=(120 80 60)
 
@@ -287,7 +302,11 @@ _inzsh_ladder_resolve() {
   for (( i = 1; i <= ${#_inzsh_ladder_defaults}; i++ )); do
     var=INZSH_LADDER_${(U)_inzsh_ladder_steps[i]}_COLS
     value=${(P)var-}
-    [[ $value == <-> ]] || value=${_inzsh_ladder_defaults[i]}
+    if (( ${+functions[_inzsh_config_get]} )); then
+      _inzsh_config_get "$var"
+      value=$REPLY
+    fi
+    [[ $value == (|+)<-> ]] || value=${_inzsh_ladder_defaults[i]}
     resolved=$value
     bounds+=($resolved)
   done

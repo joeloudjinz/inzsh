@@ -323,6 +323,11 @@ Describe 'MINCOLS'
     # $1 what the config holds, $2 what it resolves to. Zero means "never hide on width", which
     # is also where everything unreadable lands: a typo shows a segment that should have hidden,
     # and that is the survivable direction.
+    #
+    # `+80` is 80, not a typo. `INZSH_*_MINCOLS` is registered as `int:0:` in the config layer
+    # and there is one integer grammar in the theme — the same one `_inzsh_rank_of` normalises
+    # `+3` under. A leading `+` that meant one thing here and another there is exactly the
+    # disagreement the registry exists to remove.
     Parameters
       80    80
       0     0
@@ -335,7 +340,7 @@ Describe 'MINCOLS'
       ' 80' 0
       '80 ' 0
       80x   0
-      +80   0
+      +80   80
       abc   0
       1e3   0
     End

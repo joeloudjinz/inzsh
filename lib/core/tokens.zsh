@@ -273,13 +273,33 @@ _inzsh_tokens_resolve() {
 #
 # When neither role exists the result is an empty REPLY and status 1 — the caller decides what
 # to do with that. A missing role must never reach the prompt as a broken escape.
+#
+# `INZSH_*_BG` and `INZSH_*_FG` are registered as FAMILIES in `lib/core/config.zsh` — one
+# validator and one default for every segment that exists and every one that will — so the
+# override is read through the registry where it is loaded. It answers `any`, which is this
+# function's own rule already: non-empty is used verbatim, empty is no opinion. What the
+# registry adds is that a segment name which cannot spell a variable comes back with nothing
+# instead of reaching `${(P)}`, and that the shape is declared somewhere a reader can find it.
 _inzsh_seg_color() {
   emulate -L zsh
 
   typeset -g REPLY=
 
+  # Read straight from the parameter, deliberately, though the knob IS registered.
+  #
+  # `INZSH_*_BG` and `INZSH_*_FG` register as `any` with an empty default: every non-empty value
+  # is accepted — a colour someone typed for their own terminal is their business — and absence
+  # falls through to the role below. So the registry's answer for these two families is the
+  # parameter, character for character, and asking through it buys a call and two lookups per
+  # read for an answer that cannot differ. This is the hottest read in the theme: twice per
+  # segment, every draw.
+  #
+  # What makes the surface knowable is REGISTRATION, not the read path — the guard in
+  # `test/unit/config_registry_spec.sh` requires a read to be declared, and this one is. A knob
+  # whose spec could reject something must go through `_inzsh_config_get`; these cannot.
   local var=INZSH_${(U)1}_${(U)2}
   local override=${(P)var}
+
   if [[ -n $override ]]; then
     REPLY=$override
     return 0

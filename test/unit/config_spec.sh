@@ -172,6 +172,131 @@ Describe 'the knob registry'
     End
   End
 
+  Describe 'what may be registered as a family'
+    # A family is a SHAPE — `INZSH_<SEGMENT>_RANK`, one rule for every segment there will ever
+    # be — so the pattern is registered rather than the names. $1 the pattern, $2 the spec, $3
+    # the default, $4 whether the registry takes it.
+    #
+    # Everything `_inzsh_config_register` refuses, this refuses for the same reasons, plus the
+    # two that are only about the shape: a pattern needs exactly one wildcard, and it may not
+    # be `INZSH_*` alone. A family matching every knob in the theme would quietly become the
+    # answer for names nobody declared, which is the invisibility the registry exists to end.
+    Parameters
+      'INZSH_*_BG'       any        ''    accepted
+      'INZSH_*_MINCOLS'  int:0:     0     accepted
+      'INZSH_SALAH_*'    int:-9:9   0     accepted
+      'INZSH_*'          any        ''    refused
+      'INZSH_*_*'        any        ''    refused
+      INZSH_NO_STAR      any        ''    refused
+      'inzsh_*_bg'       any        ''    refused
+      'INZSH_*_BG'       bogus      ''    refused
+      'INZSH_*_MINCOLS'  int:0:     -1    refused
+      'INZSH_ *_BG'      any        ''    refused
+    End
+
+    It "$4 the family '$1' with spec '$2' and default '$3'"
+      family() {
+        local verdict=refused
+        _inzsh_config_register_family "$1" "$2" "$3" && verdict=accepted
+        print -r -- $verdict
+      }
+      When call family "$1" "$2" "$3"
+      The output should eq "$4"
+    End
+
+    # Which family answers for a name, when more than one could. The rule is the most literal
+    # pattern — the one that guessed least — and it must not depend on the order the families
+    # were registered in, because that order is whatever the load happened to be.
+    It 'answers a name with the most specific family that matches it'
+      specific() {
+        _inzsh_config_register_family 'INZSH_*_OFFSET'       int      0
+        _inzsh_config_register_family 'INZSH_SALAH_*_OFFSET' int:-9:9 1
+        _inzsh_config_family_of INZSH_SALAH_FAJR_OFFSET
+        local first=$REPLY
+        _inzsh_config_family_of INZSH_DIR_OFFSET
+        print -r -- "$first / $REPLY"
+      }
+      When call specific
+      The output should eq 'INZSH_SALAH_*_OFFSET / INZSH_*_OFFSET'
+    End
+
+    # A concrete name registered on its own outranks every family that matches it: the family
+    # is what a name falls back to, never the other way round.
+    It 'lets a name of its own beat the family it would have matched'
+      overridden() {
+        _inzsh_config_register_family 'INZSH_*_SHOUT' int:0:9 0
+        _inzsh_config_register INZSH_DIR_SHOUT 'enum:loud|quiet' quiet
+        typeset -g INZSH_DIR_SHOUT=loud
+        typeset -g INZSH_GIT_SHOUT=7
+        _inzsh_config_get INZSH_DIR_SHOUT
+        local named=$REPLY
+        _inzsh_config_get INZSH_GIT_SHOUT
+        print -r -- "$named / $REPLY"
+      }
+      When call overridden
+      The output should eq 'loud / 7'
+    End
+  End
+
+  Describe 'a declaration table'
+    # The shape a module that may not call this layer at all uses: an array of triples the
+    # config layer absorbs. `lib/salah/` is the case — it imports nothing from the engine — and
+    # the registry has to be able to take its word for it without either side naming the other.
+    It 'registers every triple, families included'
+      absorbed() {
+        typeset -ga _inzsh_spec_module_knobs
+        _inzsh_spec_module_knobs=(
+          INZSH_SPEC_ONE   int:1:9   4
+          'INZSH_SPEC_*_X' any       ''
+        )
+        _inzsh_config_absorb _inzsh_spec_module_knobs || { print -r -- refused; return }
+        typeset -g INZSH_SPEC_ONE=99
+        _inzsh_config_get INZSH_SPEC_ONE
+        local one=$REPLY
+        typeset -g INZSH_SPEC_DIR_X=anything
+        _inzsh_config_get INZSH_SPEC_DIR_X
+        print -r -- "$one / $REPLY"
+      }
+      When call absorbed
+      The output should eq '4 / anything'
+    End
+
+    # $1 the table, $2 the verdict. A malformed table is a bug in the module rather than in
+    # anyone's config, so it fails out loud instead of degrading — and it does not half-absorb.
+    Parameters
+      'INZSH_SPEC_A any x'                       absorbed
+      'INZSH_SPEC_A any x INZSH_SPEC_B'          refused
+      'INZSH_SPEC_A any'                         refused
+      ''                                         refused
+      'INZSH_SPEC_A bogus x'                     refused
+      'inzsh_spec_a any x'                       refused
+    End
+
+    It "$2 a table of '$1'"
+      ragged() {
+        typeset -ga _inzsh_spec_ragged_knobs
+        _inzsh_spec_ragged_knobs=(${=1})
+        local verdict=refused
+        _inzsh_config_absorb _inzsh_spec_ragged_knobs && verdict=absorbed
+        print -r -- $verdict
+      }
+      When call ragged "$1"
+      The output should eq "$2"
+    End
+
+    It 'refuses a table that is not there at all'
+      absent() {
+        local verdict=refused
+        _inzsh_config_absorb _inzsh_spec_no_such_knobs && verdict=absorbed
+        verdict+=' '
+        _inzsh_config_absorb '' && verdict+=absorbed || verdict+=refused
+        print -r -- $verdict
+      }
+      When call absent
+      The output should eq 'refused refused'
+    End
+  End
+
   Describe 'the knobs the tree already reads'
     # Seeded from what `detect.zsh` and `render.zsh` validate by hand today, so the registry
     # and the inline reads cannot disagree about what is legal.

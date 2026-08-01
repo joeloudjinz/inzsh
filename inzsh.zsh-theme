@@ -17,14 +17,15 @@
 # preset loader need the same answer, and computing it twice invites the two to disagree.
 typeset -g _inzsh_theme_root=${${(%):-%x}:A:h}
 
-# Dependency order, strictly downward. Detection answers how many colours we have; config is the
-# defaults-and-validation registry everything above it reads through; the reduced palettes must
-# exist before the token layer's end-of-file resolve chooses between them; the token layer builds
-# the roles; layout and the engine are pure arithmetic over them; the render core is the surface
-# machinery; hooks close the loop. No file in this list sources another, so this is the whole
-# load and its order is the whole contract.
-source $_inzsh_theme_root/lib/core/detect.zsh
+# Dependency order, strictly downward. Config is the defaults-and-validation registry everything
+# above it reads through, and it comes first because it reads nothing itself — detection asks it
+# what the user said about colour depth before it starts guessing; detection then answers what
+# the terminal can do; the reduced palettes must exist before the token layer's end-of-file
+# resolve chooses between them; the token layer builds the roles; layout and the engine are pure
+# arithmetic over them; the render core is the surface machinery; hooks close the loop. No file
+# in this list sources another, so this is the whole load and its order is the whole contract.
 source $_inzsh_theme_root/lib/core/config.zsh
+source $_inzsh_theme_root/lib/core/detect.zsh
 source $_inzsh_theme_root/lib/core/tokens-256.zsh
 source $_inzsh_theme_root/lib/core/tokens.zsh
 source $_inzsh_theme_root/lib/core/layout.zsh
@@ -47,6 +48,13 @@ source $_inzsh_theme_root/lib/segments/git.zsh
 source $_inzsh_theme_root/lib/segments/git-async.zsh
 source $_inzsh_theme_root/lib/segments/retval.zsh
 source $_inzsh_theme_root/lib/segments/time.zsh
+
+# Every knob declared, now that everything that declares one is loaded. Files that may call the
+# config layer registered their own on the way past; a module that may NOT call it — `lib/salah/`
+# imports nothing from the engine — ships a declaration table instead, and this is the one moment
+# where both halves are guaranteed to be in the same shell. Idempotent, and a no-op in a load
+# that pulled in no such module.
+_inzsh_config_absorb_all
 
 # Hooks first: precmd functions run in registration order, and only the first one sees an
 # untouched `$?` and `$pipestatus`. `_inzsh_precmd` captures both on its first line, so anything
