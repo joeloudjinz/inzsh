@@ -540,6 +540,128 @@ _inzsh_render_build() {
   return 0
 }
 
+# ---------------------------------------------------------------------------------------------
+# The shape — one line or two
+#
+# TWO LINES BY DEFAULT. The segment row is a ribbon of blocks and it grows with the repository,
+# the virtualenv and the branch name; the line you type on should not move with it. So the
+# segments take a row of their own and the input starts at column 1 of the next one, behind one
+# short marker. A command is then always typed in the same place, and a pasted transcript wraps
+# at the same column it was typed at. `INZSH_PROMPT_LINES=1` puts it all back on one row for
+# anyone who would rather spend the row than the width.
+#
+# WHERE THE RIGHT PROMPT GOES, and why it is not `RPROMPT` here. zsh draws `RPROMPT` on the LAST
+# line of a multi-line prompt — verified on a real terminal in `test/ui/test_prompt_shape.py` —
+# which would put the clock and the prayer time beside the marker, on the line the user is
+# typing into, where they would be overwritten by a long command line. They belong on the
+# segment row. So in two-line mode the right side is PADDED INTO the first line and `RPROMPT` is
+# left empty: the padding is `COLUMNS` minus two widths this file already tracked, so it costs
+# one subtraction and no measuring pass. Where the two sides do not both fit — a narrow terminal,
+# an unknown `COLUMNS` — the right side falls back to `RPROMPT` and lands beside the marker,
+# because a right prompt in the wrong place is still better than one that vanished.
+typeset -g _inzsh_prompt_lines_resolved=2
+
+# Resolve INZSH_PROMPT_LINES into `_inzsh_prompt_lines_resolved`. Unset, empty, `3`, `two` — all
+# of it lands on 2, exactly as `_inzsh_surface_mode` lands on `alternate` and for the same
+# reason. The `case` repeats the enum rather than trusting what came back, because this file is
+# independently sourceable.
+_inzsh_render_lines() {
+  emulate -L zsh
+
+  local want=${INZSH_PROMPT_LINES-}
+  if (( ${+functions[_inzsh_config_get]} )); then
+    _inzsh_config_get INZSH_PROMPT_LINES
+    want=$REPLY
+  fi
+
+  typeset -g _inzsh_prompt_lines_resolved=2
+  case $want in
+    (1|2) _inzsh_prompt_lines_resolved=$want ;;
+  esac
+
+  return 0
+}
+
+# `_inzsh_render_paint <role> <text>` → REPLY. One helper, for one reason: an unresolved role
+# must never reach the prompt as `%F{}`, which is a broken escape zsh prints verbatim and
+# exactly what a bundle loaded without the token layer would produce. No role, no colour, same
+# text. `_inzsh_role` is read directly rather than through `_inzsh_seg_color`, which would
+# invent `INZSH_MARKER_FG`-shaped knobs as a side effect of asking; the marker is already
+# replaceable whole through `INZSH_PROMPT_MARKER`.
+_inzsh_render_paint() {
+  emulate -L zsh
+
+  local color=${_inzsh_role[$1]-}
+  if [[ -n $color ]]; then
+    typeset -g REPLY="%F{$color}$2%f"
+  else
+    typeset -g REPLY=$2
+  fi
+
+  return 0
+}
+
+# The stand-in, for a render core sourced without a token layer. Assigned first and overwritten
+# from the glyph table at call time, the same way `_inzsh_separators` treats its ASCII pair: a
+# marker that cannot degrade to one ASCII column is a marker that breaks a single-byte locale.
+typeset -g _inzsh_render_marker_ascii='>'
+
+# The second line's marker, in REPLY, coloured and ready to concatenate.
+#
+# WHAT IT SIGNALS, and what it deliberately does not. The marker takes the `negative` role when
+# the last command failed and `accent` when it did not — and it changes NOTHING ELSE. The glyph
+# stays the same, and no number is drawn. That is the whole point: `lib/segments/retval.zsh`
+# already carries the failure as a glyph and a status (`✕ 1`, `✕ SIGINT`), on the row above, and
+# a second copy of it beside the cursor would be the same fact twice in a prompt whose stated
+# goal is calm. So the marker REPEATS in colour what the retval block has already said in a
+# glyph — the same relationship `_inzsh_prompts_sprompt` has between its glyphs and its colours —
+# and the house rule that colour is never the only signal is kept by the block, not by the
+# marker. A user who hides the retval segment has chosen not to be told; the marker is not the
+# place to overrule that.
+#
+# `INZSH_PROMPT_MARKER` replaces the mark verbatim, with the same set-but-empty rule as
+# `INZSH_PS2`: an `INZSH_PROMPT_MARKER=` left in a zshrc falls through to the theme's own rather
+# than blanking the line you type on. The colouring still applies to whatever it holds.
+_inzsh_render_marker() {
+  emulate -L zsh
+
+  local mark=$_inzsh_render_marker_ascii
+  if [[ ${(t)_inzsh_glyph} == association* && -n ${_inzsh_glyph[prompt]} ]]; then
+    mark=${_inzsh_glyph[prompt]}
+  fi
+
+  local override=${INZSH_PROMPT_MARKER-}
+  if (( ${+functions[_inzsh_config_get]} )); then
+    _inzsh_config_get INZSH_PROMPT_MARKER
+    override=$REPLY
+  fi
+  [[ -n $override ]] && mark=$override
+
+  # The capture in `lib/core/hooks.zsh`, never `$?` — by the time this runs, `$?` is the status
+  # of whatever the render path did last, which is always 0 and always a lie. A capture that is
+  # missing or unreadable reads as success: a marker must not claim a failure it cannot see.
+  local -i last=0
+  [[ ${_inzsh_last_status-0} == <-> ]] && last=${_inzsh_last_status-0}
+
+  local role=accent
+  (( last )) && role=negative
+
+  _inzsh_render_paint "$role" "$mark"
+
+  return 0
+}
+
+# The two knobs this section reads, declared where they are read — the pattern
+# `lib/segments/git.zsh` follows. Guarded, because this file is independently sourceable and the
+# config layer may not be in the shell at all.
+#
+# `INZSH_PROMPT_MARKER` registers an EMPTY default for the reason `INZSH_PS2` does: there is no
+# value that means "the theme's own", there is only not setting it.
+if (( ${+functions[_inzsh_config_register]} )); then
+  _inzsh_config_register INZSH_PROMPT_LINES  'enum:1|2'  2
+  _inzsh_config_register INZSH_PROMPT_MARKER any         ''
+fi
+
 # ---------------------------------------------------------------------------------------
 # The draw. This is the function `lib/core/hooks.zsh` dispatches to on every precmd — the name
 # is the contract, and until this file defined one the dispatch was a deliberate no-op.
@@ -599,15 +721,53 @@ _inzsh_render() {
     _inzsh_segment_dir_build "" "$budget"
     _inzsh_render_build left
     left=$REPLY
+    left_width=$_inzsh_render_width
   fi
 
-  # A prompt is the one thing that may never come back empty. Every segment can legitimately
-  # be absent at once — a clean directory at a narrow width with nothing to report — and a
-  # blank PROMPT reads as a broken shell rather than a calm one. `%#` is zsh's own marker and
-  # costs one column.
-  [[ -n $left ]] && left+=' '
-  typeset -g PROMPT=${left:-'%# '}
-  typeset -g RPROMPT=$right
+  # The shape, resolved per draw so that `INZSH_PROMPT_LINES=1` typed at a prompt takes effect
+  # at the next one, with no re-source — the rule every other knob in this tree follows.
+  _inzsh_render_lines
+
+  # One line. Unchanged, and deliberately the shorter branch: a prompt is the one thing that may
+  # never come back empty. Every segment can legitimately be absent at once — a clean directory
+  # at a narrow width with nothing to report — and a blank PROMPT reads as a broken shell rather
+  # than a calm one. `%#` is zsh's own marker and costs one column.
+  if (( _inzsh_prompt_lines_resolved == 1 )); then
+    [[ -n $left ]] && left+=' '
+    typeset -g PROMPT=${left:-'%# '}
+    typeset -g RPROMPT=$right
+    return 0
+  fi
+
+  # Two lines. The segment row first, with the right side padded into it where both fit, then
+  # the marker on a row of its own. `pad` is arithmetic over two widths this function already
+  # holds, so placing the right side costs no second measuring pass.
+  _inzsh_render_marker
+  local marker=$REPLY
+
+  local row=$left
+  local rest=$right
+  if [[ -n $right ]]; then
+    # One column spare at the right edge, which is where zsh puts `RPROMPT` itself — measured on
+    # a real terminal rather than assumed, in `test/ui/test_prompt_shape.py`. Filling the last
+    # cell is the classic off-by-one that turns a two-row prompt into a three-row one on a
+    # terminal that wraps eagerly, and the row below already keeps the same column back for the
+    # cursor.
+    local -i pad=$(( cols - left_width - right_width - 1 ))
+    if (( cols > 0 && pad >= 1 )); then
+      row+=${(l:pad:):-}$right
+      rest=
+    fi
+  fi
+
+  # An empty segment row is not drawn at all. Two lines is a shape, not a quota: a row with
+  # nothing on it is a blank line above the cursor, which is the noise this theme is against.
+  if [[ -n $row ]]; then
+    typeset -g PROMPT=$row$'\n'"$marker "
+  else
+    typeset -g PROMPT="$marker "
+  fi
+  typeset -g RPROMPT=$rest
 
   return 0
 }

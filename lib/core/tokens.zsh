@@ -352,6 +352,7 @@ _inzsh_glyph_utf8=(
   # --- Rules and markers: ordinary Unicode, drawn by any font with box drawing ---
   divider          $'\xe2\x94\x82'  # U+2502  box drawings light vertical
   ellipsis         $'\xe2\x80\xa6'  # U+2026  horizontal ellipsis — the truncation marker
+  prompt           $'\xe2\x86\x92'  # U+2192  rightwards arrow — "type here", the input marker
 
   # --- The design system's sanctioned state marks ---
   ok               $'\xe2\x9c\x93'  # U+2713  check mark
@@ -381,6 +382,7 @@ _inzsh_glyph_ascii=(
   sep-right-round  '('
   divider          '|'
   ellipsis         '...'
+  prompt           '>'              # the mark every shell since sh has used for "type here"
   ok               'v'
   info             'i'
   error            'x'

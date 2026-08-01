@@ -32,6 +32,7 @@ source $_inzsh_theme_root/lib/core/layout.zsh
 source $_inzsh_theme_root/lib/core/engine.zsh
 source $_inzsh_theme_root/lib/core/render.zsh
 source $_inzsh_theme_root/lib/core/prompts.zsh
+source $_inzsh_theme_root/lib/core/transient.zsh
 source $_inzsh_theme_root/lib/core/hooks.zsh
 
 # The segments, listed rather than globbed. A glob would load whatever happens to be in the
@@ -67,6 +68,7 @@ _inzsh_config_absorb_all
 _inzsh_hooks_install
 _inzsh_prompts_install
 _inzsh_title_install
+_inzsh_transient_install
 
 # The one background worker in the theme. Installed after the prompt hooks because it registers
 # a precmd of its own, and the status capture has to stay first. It draws nothing itself: it

@@ -41,6 +41,7 @@ Describe 'sourcing under a C locale'
     'lib/core/detect.zsh'
     'lib/core/tokens.zsh'
     'lib/core/render.zsh'
+    'lib/core/transient.zsh'
     'lib/segments/retval.zsh'
     'lib/core/detect.zsh lib/core/layout.zsh'
     'lib/core/layout.zsh lib/core/detect.zsh'
@@ -87,7 +88,7 @@ Describe 'the glyph table'
       ' inzsh-locale-glyphs "$SHELLSPEC_PROJECT_ROOT"
     }
     When call stood_in
-    The output should eq '0 14 '
+    The output should eq '0 15 '
     The stderr should eq ''
   End
 
@@ -213,6 +214,7 @@ Describe 'parse-time character literals'
     'lib/core/detect.zsh'
     'lib/core/tokens.zsh'
     'lib/core/render.zsh'
+    'lib/core/transient.zsh'
     'lib/segments/retval.zsh'
   End
 

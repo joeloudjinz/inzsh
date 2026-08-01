@@ -906,24 +906,40 @@ Describe 'render assembly'
       The stderr should eq ''
     End
 
-    # Structural, and deliberately so: the rule is about the TEXT of the file. Exactly two
-    # assignments may exist — PROMPT and RPROMPT, both inside `_inzsh_render` — and `PS1` may
-    # not be touched at all. A third assignment, or one that appeared in the builder rather
-    # than the draw, would mean the prompt is being written from somewhere that does not know
-    # whether the shell is interactive.
-    It 'assigns the prompt in one place and never touches PS1'
+    # Structural, and deliberately so: the rule is about the TEXT of the file. Every
+    # assignment to PROMPT or RPROMPT lives INSIDE `_inzsh_render`, and `PS1` is not touched
+    # at all. An assignment that appeared in the builder rather than in the draw would mean
+    # the prompt is being written from somewhere that does not know whether the shell is
+    # interactive — which is the whole reason the draw is a separate function.
+    #
+    # The counts are what the two shapes cost. One line assigns both parameters once. Two
+    # lines assigns RPROMPT once and PROMPT twice, because a segment row with nothing on it
+    # is not drawn at all and the marker-only prompt is its own arm. Five in total, none of
+    # them anywhere else, and the numbers are pinned rather than bounded so that a sixth has
+    # to be argued for here before it can be written there.
+    It 'assigns the prompt only inside the draw, and never touches PS1'
       grepped() {
         setopt local_options extended_glob
-        local line bare; local -a found=()
+        local line bare
+        # `prompt` and `rprompt` are zsh's own — `local prompt` is an error, not a shadow —
+        # so the counters are named for what they count rather than for the parameter.
+        local -i inside=0 n_left=0 n_right=0 n_ps1=0 n_outside=0
         while IFS= read -r line; do
           bare=${line##[[:space:]]#}
           [[ -z $bare || $bare == \#* ]] && continue
-          [[ $bare == *((|R)PROMPT|PS1)=* ]] && found+=${bare%%=*}
+          [[ $bare == '_inzsh_render() {' ]] && inside=1
+          [[ $bare == *((|R)PROMPT|PS1)=* ]] || continue
+          (( inside )) || (( n_outside++ ))
+          case $bare in
+            (*RPROMPT=*) (( n_right++ )) ;;
+            (*PS1=*)     (( n_ps1++ ))   ;;
+            (*)          (( n_left++ ))  ;;
+          esac
         done < "$SHELLSPEC_PROJECT_ROOT/lib/core/render.zsh"
-        print -r -- "${found[*]}"
+        print -r -- "prompt=$n_left rprompt=$n_right ps1=$n_ps1 outside=$n_outside"
       }
       When call grepped
-      The output should eq 'typeset -g PROMPT typeset -g RPROMPT'
+      The output should eq 'prompt=3 rprompt=2 ps1=0 outside=0'
     End
   End
 End

@@ -582,8 +582,26 @@ after=[alien|alien]'
       # though, so the re-render here still reaches THIS prompt. Without it the segment would be
       # one command late, which is worse than absent.
       #
-      # RPROMPT is read on the input line immediately after the command, because that is the one
-      # line on which it is still the prompt that was built for it.
+      # TWO THINGS ABOUT THE HARNESS, and both of them have already cost a debugging session.
+      #
+      # WHICH PARAMETER. The claim is about THE PROMPT, and which of `PROMPT` and `RPROMPT`
+      # carries the right-hand side is `INZSH_PROMPT_LINES`'s business rather than this
+      # segment's: at one line the right side stays in `RPROMPT`, and at two — the default —
+      # `_inzsh_render` pads it into `PROMPT` and leaves `RPROMPT` empty. So `holds` reads the
+      # two TOGETHER. An example that named one of them was asserting the shape by accident, and
+      # broke the day the shape changed without the segment changing at all.
+      #
+      # WHICH LINE, AND HOW MANY. Every input line here is one prompt, so a precmd cycle runs
+      # between any two of them. The command that follows `sleep` is fast, so that cycle freezes
+      # an elapsed time under the floor, empties the fragment AND RE-RENDERS — which is the very
+      # behaviour under test, and it wipes the block out of the prompt. The whole reading must
+      # therefore happen on the ONE input line after the command, semicolons and all. Split it
+      # over two lines and it reports a miss at every shape, for a reason that has nothing to do
+      # with what it is asking about.
+      #
+      # That same re-render is the second half of the claim, so it is asserted rather than
+      # merely survived: after a fast command the block is GONE. A prompt that kept it would be
+      # showing the previous command's duration, which is the failure this example is named for.
       current() {
         inzsh_spec_duration_live '
           source "$1/lib/core/config.zsh"
@@ -599,13 +617,16 @@ after=[alien|alien]'
           typeset -g COLUMNS=80
           _inzsh_hooks_install
           _inzsh_duration_install
+          holds() { [[ $PROMPT$RPROMPT == *$1* ]] }
           sleep 3.2
-          t=${_inzsh_segment_text[DURATION]}; s=no; [[ -n $t && $RPROMPT == *$t* ]] && s=yes
-          print -r -- "[$t] in-prompt=$s"
+          t=${_inzsh_segment_text[DURATION]}; s=no; [[ -n $t ]] && holds "$t" && s=yes
+          true
+          u=${_inzsh_segment_text[DURATION]}; g=stale; [[ -z $u ]] && ! holds "$t" && g=cleared
+          print -r -- "[$t] in-prompt=$s then=$g"
         '
       }
       When call current
-      The output should eq '[3s] in-prompt=yes'
+      The output should eq '[3s] in-prompt=yes then=cleared'
       # The one example in this file that does not assert an empty stderr, and the reason is the
       # harness rather than the theme: this is the only script here that lets `_inzsh_render`
       # assign PROMPT, and an interactive zsh writes its prompt to stderr. So the assertion is
