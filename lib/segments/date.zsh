@@ -35,11 +35,16 @@ zmodload -i zsh/datetime
 #                value that changes once between midnights has no business drawing attention.
 #   importance 3 the bottom of the ramp, for the same reason. `alternate` and `flat` ignore it.
 typeset -gA _inzsh_segment_text _inzsh_segment_defaults
-typeset -gA _inzsh_segment_fg_role _inzsh_segment_importance
+typeset -gA _inzsh_segment_fg_role _inzsh_segment_bg_role _inzsh_segment_importance
 
 _inzsh_segment_defaults[DATE]=0
 _inzsh_segment_fg_role[DATE]=text-muted
 _inzsh_segment_importance[DATE]=3
+
+# The fill `INZSH_SURFACE_MODE=hue` gives it — see `_inzsh_render_hues`. The neutral wash: quiet,
+# no `on-` twin so the muted ink above survives, and a different role from the clock beside it so
+# the two never merge into one long block.
+_inzsh_segment_bg_role[DATE]=neutral-wash
 
 # The format `INZSH_DATE_FORMAT` falls back to. Held in a variable rather than repeated, because
 # it is used twice — once as the registered default and once as the retry after a user's format

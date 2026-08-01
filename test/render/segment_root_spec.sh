@@ -34,6 +34,11 @@ inzsh_spec_root() {
 # Snapshots go to files rather than to locals, so that holding one cannot perturb the other.
 # RANDOM and SECONDS move between any two snapshots on their own; they are the only volatile
 # names zsh reports here.
+# The four maps registration writes, in the sorted order the snapshot reports them. Assembled
+# rather than wrapped: the matcher takes one argument, and a continuation would make it two.
+inzsh_spec_root_maps='_inzsh_segment_bg_role _inzsh_segment_defaults _inzsh_segment_fg_role'
+inzsh_spec_root_maps+=' _inzsh_segment_importance'
+
 inzsh_spec_root_touches() {
   local snap=${SHELLSPEC_TMPBASE:-${TMPDIR:-/tmp}}/inzsh-root-registration
   mkdir -p $snap
@@ -62,7 +67,8 @@ Describe 'the root segment'
       # is the leftmost block on the left prompt: whatever else the row says, it is read first.
       Parameters
         _inzsh_segment_defaults    10
-        _inzsh_segment_fg_role     on-negative
+        _inzsh_segment_fg_role     negative-text
+        _inzsh_segment_bg_role     negative
         _inzsh_segment_importance  1
       End
 
@@ -93,26 +99,43 @@ Describe 'the root segment'
       The output should eq '10 10 6 0 10'
     End
 
-    It 'registers a foreground role the token layer actually carries, in both registers'
-      # `on-negative` is the face for text sitting ON the negative fill, and it has to exist in
-      # whichever register the user chose — a warm prompt that lost the root badge's colour
-      # would lose half of a two-signal warning.
+    It 'registers both colour roles the token layer actually carries, in both registers'
+      # `negative-text` is the ink on a SURFACE and `negative` the fill the segment asks for, and
+      # both have to exist in whichever register the user chose — a warm prompt that lost the
+      # root badge's colour would lose half of a two-signal warning.
       real() {
         local -a missing=()
-        local role=${_inzsh_segment_fg_role[ROOT]}
-        [[ -n ${_inzsh_roles_dark[$role]+set} ]]  || missing+=dark
-        [[ -n ${_inzsh_roles_light[$role]+set} ]] || missing+=light
-        [[ -n ${_inzsh_role[$role]+set} ]]        || missing+=resolved
+        local role
+        for role in ${_inzsh_segment_fg_role[ROOT]} ${_inzsh_segment_bg_role[ROOT]}; do
+          [[ -n ${_inzsh_roles_dark[$role]+set} ]]  || missing+=dark:$role
+          [[ -n ${_inzsh_roles_light[$role]+set} ]] || missing+=light:$role
+          [[ -n ${_inzsh_role[$role]+set} ]]        || missing+=resolved:$role
+        done
         print -r -- "${missing[*]}"
       }
       When call real
       The output should eq ''
     End
 
+    It 'registers an ink that is legible on every surface the renderer can assign it'
+      # The reason the registered ink is not `on-negative`: that is the face for text sitting ON
+      # the negative fill, and in a positional mode there is no negative fill under it. This
+      # example is the rule rather than the numbers — the badge's ink must not be a role the DS
+      # pairs with a FILL, because a fill is exactly what a positional mode will not give it.
+      paired() {
+        local ink=${_inzsh_segment_fg_role[ROOT]}
+        local -a bad=()
+        [[ $ink == on-* ]] && bad+=on-fill-ink
+        [[ -n ${_inzsh_role[on-$ink]+set} ]] && bad+=is-a-fill
+        print -r -- "${bad[*]}"
+      }
+      When call paired
+      The output should eq ''
+    End
+
     It 'writes the three maps and nothing else — no text, no state, no side effect'
       When call inzsh_spec_root_touches 0
-      The output should eq \
-        '_inzsh_segment_defaults _inzsh_segment_fg_role _inzsh_segment_importance'
+      The output should eq "$inzsh_spec_root_maps"
       The stderr should eq ''
     End
 

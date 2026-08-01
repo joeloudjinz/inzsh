@@ -37,7 +37,7 @@ Describe 'depth-aware resolution'
         print -r -- "${#_inzsh_role} ${#wrong} ${#unexpected}"
       }
       When call resolved "$1" "$2" "$3" "$4"
-      The output should eq '37 0 0'
+      The output should eq '38 0 0'
     End
   End
 
@@ -147,7 +147,7 @@ Describe 'depth-aware resolution'
         print -r -- "${#_inzsh_role} ${wrong[*]}"
       }
       When call unset_depth
-      The output should eq '37 '
+      The output should eq '38 '
     End
 
     # The reduced tables live in their own file, and a bundle, an old install or a partial
@@ -168,7 +168,7 @@ Describe 'depth-aware resolution'
         ' inzsh-depth-absent "$SHELLSPEC_PROJECT_ROOT"
       }
       When call absent
-      The output should eq '0 37 0'
+      The output should eq '0 38 0'
     End
 
     # Belt and braces for a table that loaded but came up short — a key added to the palette
@@ -216,7 +216,7 @@ Describe 'depth-aware resolution'
         print -r -- "${#_inzsh_role} ${empty[*]}"
       }
       When call populated "$1" "$2"
-      The output should eq '37 '
+      The output should eq '38 '
     End
   End
 

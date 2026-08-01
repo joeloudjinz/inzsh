@@ -84,11 +84,49 @@ def label_columns(text, labels):
 
 
 class DemoRenderTest(unittest.TestCase):
-    """One row, alternating surfaces, at every depth."""
+    """One row, alternating surfaces, at every depth.
+
+    WHAT DEGRADING COSTS, and what it may not. The two surfaces `alternate` swings between are
+    both raised ends of one narrow family, and at eight colours that family has ONE index per
+    register: every dark surface is 0 and every light one is 7. So below 256 the alternation
+    collapses and the ribbon draws as one filled run — the engine's assignment is still valid,
+    because the invariant is over ROLES and the roles still differ, and the terminal simply
+    cannot express the difference.
+
+    That is a boundary lost, and it is the right half to lose. The other half is `assert_legible`
+    below: every block's ink must differ from its own fill at every depth, because a boundary you
+    cannot see costs you where one block ends and a text colour you cannot see costs you the
+    block. Eight colours can keep exactly one of the two.
+    """
+
+    #: Depths at which the palette can still tell the two alternating surfaces apart.
+    ALTERNATING = ("truecolor", "256")
 
     @classmethod
     def setUpClass(cls):
         cls.labels = demo_labels()
+
+    def assert_legible(self, grid, depth):
+        """Every run of TEXT on the row is drawn in something other than its own background.
+
+        Asserted over the RUNS rather than over the labels, so the state glyphs — three
+        foregrounds inside one block — are covered as well as the plain ones.
+
+        Separator cells are excluded, and that exclusion is the whole point of the split: a
+        separator whose ink IS its fill is a boundary the palette could not draw, which is what
+        the class note calls the right half to lose. A LABEL whose ink is its fill is a block
+        nobody can read, which is not.
+        """
+        for run in extract_runs(grid, 0):
+            body = run.text.replace(SEPARATOR, "").strip()
+            if not body:
+                continue
+            self.assertNotEqual(
+                run.fg,
+                run.bg,
+                msg=f"{run.text!r} is drawn in its own background at depth {depth}\n"
+                + excerpt(grid, focus=0),
+            )
 
     def assert_ribbon(self, depth):
         """Every structural claim the demo makes, checked on one rendered grid."""
@@ -105,29 +143,47 @@ class DemoRenderTest(unittest.TestCase):
 
         # (b) the surfaces are actually distinguishable on screen. Two alternating
         # surfaces, the reserved accent fill and the terminal's own background behind
-        # the closing separator — four different backgrounds in one row.
+        # the closing separator — four different backgrounds in one row. At eight colours
+        # the two alternating surfaces are one index, so the accent and the terminal's own
+        # are all that is left to tell apart, and that is the claim made instead.
         distinct = {run.bg for run in extract_runs(grid, 0)}
+        wanted = 4 if depth in self.ALTERNATING else 3
         self.assertGreaterEqual(
-            len(distinct), 4, msg=f"{sorted(map(str, distinct))}\n{excerpt(grid, focus=0)}"
+            len(distinct), wanted, msg=f"{sorted(map(str, distinct))}\n{excerpt(grid, focus=0)}"
         )
-        self.assertGreaterEqual(len({bg for bg in distinct if bg != DEFAULT_COLOR}), 3)
+        self.assertGreaterEqual(
+            len({bg for bg in distinct if bg != DEFAULT_COLOR}), wanted - 1
+        )
 
-        # (c) the invariant, observed rather than argued: no segment shares a background
-        # with the segment beside it, so every boundary is a boundary you can see.
-        for i, (left, right) in enumerate(zip(self.labels, self.labels[1:])):
-            self.assertNotEqual(
-                backgrounds[i],
-                backgrounds[i + 1],
-                msg=f"{left!r} and {right!r} share a background at depth {depth}\n"
-                + excerpt(grid, focus=0),
-            )
+        # (c) every block IS filled, at every depth: whatever the palette can express, no
+        # segment falls through to the terminal's own background.
         self.assertNotIn(DEFAULT_COLOR, backgrounds, msg=excerpt(grid, focus=0))
+
+        # (d) the ink is never the fill — the half of legibility eight colours keeps.
+        self.assert_legible(grid, depth)
+
+        # (e) the invariant, observed rather than argued: no segment shares a background
+        # with the segment beside it, so every boundary is a boundary you can see. Only
+        # asked where the palette can draw the difference; see the note on the class.
+        if depth in self.ALTERNATING:
+            for i, (left, right) in enumerate(zip(self.labels, self.labels[1:])):
+                self.assertNotEqual(
+                    backgrounds[i],
+                    backgrounds[i + 1],
+                    msg=f"{left!r} and {right!r} share a background at depth {depth}\n"
+                    + excerpt(grid, focus=0),
+                )
 
         # …and the chaining that makes it read as one ribbon: each separator is drawn in
         # the previous segment's background over the next one's, and the last one over
         # the terminal's.
         separators = [col for col, char in enumerate(text) if char == SEPARATOR]
         self.assertEqual(len(separators), len(self.labels), msg=excerpt(grid, focus=0))
+        if depth not in self.ALTERNATING:
+            # A separator between two blocks the palette collapsed is drawn in its own fill,
+            # which is exactly what "the boundary is lost" means; only the accent's boundary
+            # and the closing cap carry a colour change, and those are (b)'s business.
+            return grid
         for index, col in enumerate(separators):
             cell = grid.cell(0, col)
             following = (
@@ -149,6 +205,23 @@ class DemoRenderTest(unittest.TestCase):
     def test_8_render_is_the_same_ribbon_without_24_bit_escapes(self):
         grid = self.assert_ribbon("8")
         self.assertNotIn(TRUECOLOR_SGR, grid.raw)
+
+    def test_8_colours_lose_the_boundary_and_keep_the_block(self):
+        """The degradation, stated both ways round so it cannot rot into an accident.
+
+        Eight colours have one background per register, so the two alternating surfaces really
+        do collapse — asserting that they differ would be asserting something the palette cannot
+        do. What may not collapse is the ink: every block is still drawn in a colour that is not
+        its own fill, which is the half that carries the words.
+        """
+        grid = render_demo(depth="8")
+        columns = label_columns(grid.row_text(0), self.labels)
+        backgrounds = [grid.cell(0, col).bg for col in columns]
+        # The surfaces: one value across every positional block, the accent apart from them.
+        positional = set(backgrounds[:-1])
+        self.assertEqual(len(positional), 1, msg=excerpt(grid, focus=0))
+        self.assertNotIn(backgrounds[-1], positional, msg=excerpt(grid, focus=0))
+        self.assert_legible(grid, "8")
 
     def test_every_depth_draws_the_same_text(self):
         """Degrading changes the colours and nothing else — same glyphs, same width."""

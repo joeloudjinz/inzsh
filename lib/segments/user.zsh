@@ -33,7 +33,7 @@
 # in it, so re-sourcing neither empties a map nor doubles a registration. The declaration is
 # also what makes this file sourceable on its own.
 typeset -gA _inzsh_segment_text _inzsh_segment_defaults
-typeset -gA _inzsh_segment_fg_role _inzsh_segment_importance
+typeset -gA _inzsh_segment_fg_role _inzsh_segment_bg_role _inzsh_segment_importance
 
 # The registration. Rank 2 puts the user after the root marker and before the host, so the left
 # prompt reads `user host dir` — who, where, what. `text-muted` and importance 3 because it is
@@ -41,6 +41,12 @@ typeset -gA _inzsh_segment_fg_role _inzsh_segment_importance
 _inzsh_segment_defaults[USER]=20
 _inzsh_segment_fg_role[USER]=text-muted
 _inzsh_segment_importance[USER]=3
+
+# The fill `INZSH_SURFACE_MODE=hue` gives it, and nothing else reads it — see
+# `_inzsh_render_hues`. `neutral` is the muted chip: an identity is neither good news nor bad,
+# and the one thing the block must not do is look like a state. The ink comes with it —
+# `on-neutral`, the DS's own pair for that fill, at 6.5:1 light and 9.7:1 dark.
+_inzsh_segment_bg_role[USER]=neutral
 
 # The knob, registered where it is read. `any` because a username is whatever the system says
 # it is, and empty because there is no name that means "no expectation" — not setting it is how

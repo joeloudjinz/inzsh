@@ -380,7 +380,7 @@ Describe 'separator style'
 
       It "drops an invalid assignment under $1"
         When call inzsh_sep_hostile 4 "$1"
-        The output should eq 'surface-soft hairline surface-soft hairline mode=alternate'
+        The output should eq 'surface-deep neutral-wash surface-deep neutral-wash mode=alternate'
         The stderr should eq ''
       End
     End

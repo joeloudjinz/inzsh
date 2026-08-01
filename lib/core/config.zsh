@@ -249,7 +249,8 @@ _inzsh_config_validate() {
   _inzsh_config_check "${REPLY:-any}" "$2"
 }
 
-# Declare a knob: `_inzsh_config_register INZSH_SURFACE_MODE 'enum:alternate|ramp|flat' alternate`
+# Declare a knob:
+#   `_inzsh_config_register INZSH_SURFACE_MODE 'enum:alternate|ramp|flat|hue' alternate`
 #
 # Idempotent — the same call twice lands on the same registry, and a later call with different
 # arguments replaces the earlier one, which is what makes re-sourcing safe.
@@ -628,11 +629,11 @@ _inzsh_config_register_family 'INZSH_*_MINCOLS'  int:0:   0
 # nothing set is not a missing answer, it is the instruction to trust `lib/core/detect.zsh`.
 # `INZSH_SEPARATOR_STYLE`, by contrast, has a real default — `arrow` is what an unset, empty or
 # misspelled value gives.
-_inzsh_config_register INZSH_SURFACE_MODE     'enum:alternate|ramp|flat'   alternate
-_inzsh_config_register INZSH_SEPARATOR_STYLE  'enum:arrow|round|divider'   arrow
-_inzsh_config_register INZSH_COLOR_DEPTH      'enum:truecolor|256|8'       ''
-_inzsh_config_register INZSH_MULTIBYTE        'enum:1|0'                   ''
-_inzsh_config_register INZSH_NERD_FONT        'enum:1|0'                   ''
+_inzsh_config_register INZSH_SURFACE_MODE     'enum:alternate|ramp|flat|hue'  alternate
+_inzsh_config_register INZSH_SEPARATOR_STYLE  'enum:arrow|round|divider'      arrow
+_inzsh_config_register INZSH_COLOR_DEPTH      'enum:truecolor|256|8'          ''
+_inzsh_config_register INZSH_MULTIBYTE        'enum:1|0'                      ''
+_inzsh_config_register INZSH_NERD_FONT        'enum:1|0'                      ''
 
 # The responsive ladder. `lib/core/layout.zsh` restates these three numbers in
 # `_inzsh_ladder_defaults` so that it degrades sensibly when sourced without this file; the two

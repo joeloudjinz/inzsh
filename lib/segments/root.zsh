@@ -14,41 +14,46 @@
 # and there must never be one. A fork on the render path is slow, and a fork that decides
 # whether to warn you about root is a fork that can fail quietly.
 #
-# Registration, and why these three:
+# Registration, and why these four:
 #
-#   rank 1           the leftmost block on the left prompt. Whatever else the row says, this is
-#                    read first.
-#   importance 1     the top of the ramp, alongside `dir`. Nothing on the row outranks it.
-#   fg on-negative   the foreground for text sitting ON the negative fill. Half of a pair, and
-#                    the half that says what the other half must be — see below.
+#   rank 1            the leftmost block on the left prompt. Whatever else the row says, this is
+#                     read first.
+#   importance 1      the top of the ramp, alongside `dir`. Nothing on the row outranks it.
+#   fg negative-text  the ink for the badge sitting on a SURFACE, which is where it sits in every
+#                     positional mode. Madder on any of the three surfaces reads between 5.3:1
+#                     and 8.6:1.
+#   bg negative       the fill it asks for, honoured by `INZSH_SURFACE_MODE=hue` — see
+#                     `_inzsh_render_hues`. The ink comes with it: `on-negative` is the DS's own
+#                     pair for that fill and the renderer takes it without being told.
 #
-# THE BACKGROUND IS NOT THIS FILE'S TO SET, and the note is here rather than in a knob because
-# the rule is structural. `lib/core/render.zsh` assigns surfaces centrally: whether two adjacent
-# blocks are legible is a property of the SEQUENCE, so no segment may decide its own fill. What
-# this segment registers is the foreground of a pair whose other half is the `negative` role,
-# and until the renderer can express that, `on-negative` ink lands on a positional surface —
-# legible, but not yet the red block the segment is asking for.
+# WHY THE FOREGROUND IS NOT `on-negative` AT REGISTRATION, which is what this file used to say.
+# `on-negative` is the ink for text sitting ON the negative fill — cream-bright in the light
+# register, navy-deep in the dark — and in a positional mode there is no negative fill under it.
+# Cream-bright on the warm preset's raised surface is 1.11:1: a root warning drawn in a colour
+# nobody can see, which is the exact failure this segment exists to prevent. So the registered
+# ink is the one that is right on a surface, and the fill's own ink arrives with the fill.
 #
-# How a future renderer should give it one: `_inzsh_surface_assign` answers one surface role per
-# POSITION, so the missing piece is a way for a segment to declare a STATE fill instead — a
-# `_inzsh_segment_bg_role` map read beside `_inzsh_segment_fg_role`, consulted before the
-# positional assignment and exempt from the alternation invariant, because a state fill is
-# legible against its neighbours by hue rather than by elevation. `root` would register
-# `negative` there and the pair would close. Until then the seam that already works is the
-# override precedence in `_inzsh_seg_color`: `INZSH_ROOT_BG` fills the block, and it is the one
-# place a user or a renderer can spell the intent today.
+# THE BACKGROUND IS STILL NOT THIS FILE'S TO ASSIGN, and the distinction is the whole point.
+# `lib/core/render.zsh` assigns surfaces centrally, because whether two adjacent blocks are
+# legible is a property of the SEQUENCE. What a segment may do is ASK, and `hue` is the mode that
+# listens; the renderer takes the ask back where honouring it would put two equal blocks side by
+# side, so the invariant is still the renderer's and still holds. Outside `hue` the seam that has
+# always worked is the override precedence in `_inzsh_seg_color`: `INZSH_ROOT_BG` fills the block
+# in any mode.
 #
 # One caveat on the glyph, recorded rather than worked around: under `promptbang` — a csh
 # compatibility option, off in zsh by default — a bare `!` in a prompt expands to the history
 # number, and no spelling of it is literal under both settings. `!` is drawn as itself.
 
 # `typeset -gA` over an existing association keeps what is in it, so this file is independently
-# sourceable and re-sourcing it re-registers over the same three keys rather than doubling
+# sourceable and re-sourcing it re-registers over the same four keys rather than doubling
 # anything. The maps belong to `lib/core/engine.zsh` and `lib/core/render.zsh`.
-typeset -gA _inzsh_segment_defaults _inzsh_segment_fg_role _inzsh_segment_importance
+typeset -gA _inzsh_segment_defaults _inzsh_segment_fg_role _inzsh_segment_bg_role
+typeset -gA _inzsh_segment_importance
 
 _inzsh_segment_defaults[ROOT]=10
-_inzsh_segment_fg_role[ROOT]=on-negative
+_inzsh_segment_fg_role[ROOT]=negative-text
+_inzsh_segment_bg_role[ROOT]=negative
 _inzsh_segment_importance[ROOT]=1
 
 # `_inzsh_segment_root_build [euid]` — the ROOT fragment, into `_inzsh_segment_text[ROOT]`.

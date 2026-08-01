@@ -55,7 +55,7 @@ Describe 'presets'
         print -r -- "${#_inzsh_role} ${#wrong} ${#unexpected}"
       }
       When call rebuilt "$1" "$2" "$4"
-      The output should eq '37 0 0'
+      The output should eq '38 0 0'
     End
   End
 

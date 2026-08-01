@@ -66,35 +66,41 @@
 #                 `flat` ignore importance entirely.
 #   fg text-body  the RESTING role, and the correct one on the surface the renderer assigns
 #                 positionally. See the accent note.
+#   bg accent     the fill it asks for, honoured by `INZSH_SURFACE_MODE=hue`.
 #
-# THE ACCENT. The theme has exactly one saturated colour — caramel, the `accent` role — and this
-# segment is the candidate for spending it. It cannot claim it today, and the reason is structural
-# rather than an omission: `_inzsh_render_build` resolves a background POSITIONALLY, from the
-# surface assignment, and the only thing that outranks that assignment is the per-segment override
-# `INZSH_SALAH_BG`. So today a reader who wants it writes two lines in their own config, and
-# writes them as ROLES rather than as colour values, so a palette change still reaches them:
+# THE ACCENT. The theme has exactly one saturated colour — caramel, the `accent` role, the same
+# value in both registers by design — and this is the segment it is meant for. It asks for it
+# through `_inzsh_segment_bg_role`, the map `_inzsh_render_hues` reads, and the ink arrives with
+# the fill: no segment names its own foreground for a fill it declared, because the design system
+# already pairs the two and a second opinion is a second place to get it wrong.
+#
+# WHAT THE ASK DOES NOT BUY, and this is recorded rather than worked around. `accent` is a FILL
+# like any other here, so it is held to the adjacency invariant like any other — an earlier note
+# in this file argued it should be exempt, on the grounds that caramel differs from every surface
+# by construction. It does; what it does not differ from is another accented block, and a rule
+# with one exemption in it is a rule with a hole in it. The renderer takes the ask back where
+# honouring it would put two equal fills side by side, which for one accent on the row never
+# happens.
+#
+# AND WHAT THE DESIGN SYSTEM COULD NOT SUPPLY. `on-accent` is choc in the dark register and cream
+# in the light, and on caramel those are 3.79:1 and 3.07:1 — AA-large, not AA. There is no role
+# in either table that clears 4.5:1 on the accent fill, because the DS keeps the accent
+# register-invariant and its on-colour register-dependent, and no single name is dark enough in
+# both. This is the theme's one sub-AA pairing and it is the design system's, not this file's:
+# the block still carries its meaning as text — a prayer name and a time — rather than as colour,
+# so the shortfall costs contrast and not information.
+#
+# Outside `hue` the seam is unchanged: the per-segment override still outranks everything, and
+# it is still written as ROLES rather than as colour values so a palette change reaches it.
 #
 #   INZSH_SALAH_BG=${_inzsh_role[accent]}
 #   INZSH_SALAH_FG=${_inzsh_role[on-accent]}
-#
-# What the engine would need for the theme to do it itself is one more map beside the three it
-# already keeps — `_inzsh_segment_bg_role`, SEGMENT → a background ROLE name — consulted in
-# `_inzsh_render_build` between the override and the positional surface:
-#
-#   _inzsh_seg_color "$seg" bg "${_inzsh_segment_bg_role[$seg]:-${surfaces[i]}}" surface
-#
-# and one line in `_inzsh_render_surfaces`, which must stop asking the invariant about a segment
-# whose background is not a surface at all: `accent` differs from every surface role by
-# construction, so an accented block cannot collide with a neighbour, and holding it to the
-# adjacency rule would make it bump a neighbour that had no reason to move. That map is ENGINE
-# work and is deliberately not built here — a segment that reached into the renderer to claim a
-# background would be the second place surfaces are decided, and the first thing to break the one
-# invariant the whole render core is arranged around.
 typeset -gA _inzsh_segment_text _inzsh_segment_defaults
-typeset -gA _inzsh_segment_fg_role _inzsh_segment_importance
+typeset -gA _inzsh_segment_fg_role _inzsh_segment_bg_role _inzsh_segment_importance
 
 _inzsh_segment_defaults[SALAH]=-20
 _inzsh_segment_fg_role[SALAH]=text-body
+_inzsh_segment_bg_role[SALAH]=accent
 _inzsh_segment_importance[SALAH]=1
 
 # The format knob, registered where it is read. `any` rather than an enum, matching
