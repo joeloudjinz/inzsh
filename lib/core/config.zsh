@@ -160,23 +160,48 @@ _inzsh_config_family_reorder() {
   typeset -ga _inzsh_config_family_order
   _inzsh_config_family_order=(${${(O)ranked}#* })
 
+  # The remembered answers were computed against the old list, so they are now guesses. Cheap
+  # to drop and rebuilt on demand; registration happens at load, the answers are used at draw.
+  typeset -gA _inzsh_config_family_memo
+  _inzsh_config_family_memo=()
+
   return 0
 }
 
 # The most specific registered family matching `$1`, in REPLY; empty when none does. The walk
 # is over the ordered list above, so the first hit is the answer.
+# Which family a concrete name belongs to, remembered.
+#
+# The answer is a pure function of the name and the registered patterns, and the patterns only
+# change when something registers — so a name resolved once never needs walking again. That
+# matters because this is the theme's hottest miss: `INZSH_DIR_BG` is not a registered name, so
+# every colour read for every segment on every draw walked the pattern list to learn which
+# family it belongs to. Answering from a hash instead is the difference between a walk per read
+# and a walk per name, ever.
+#
+# The empty answer is remembered too — "belongs to no family" is an answer, and a name that is
+# not a knob at all is exactly the case a render must not pay for twice.
+typeset -gA _inzsh_config_family_memo
+
 _inzsh_config_family_of() {
   emulate -L zsh
 
   typeset -g REPLY=
-  local pattern
 
+  if (( ${+_inzsh_config_family_memo[$1]} )); then
+    typeset -g REPLY=${_inzsh_config_family_memo[$1]}
+    return 0
+  fi
+
+  local pattern
   for pattern in $_inzsh_config_family_order; do
     if [[ $1 == ${~pattern} ]]; then
       typeset -g REPLY=$pattern
-      return 0
+      break
     fi
   done
+
+  _inzsh_config_family_memo[$1]=$REPLY
 
   return 0
 }
@@ -378,9 +403,16 @@ _inzsh_config_get() {
 
   # `any` is inlined for the same reason: it is what both colour families are, so the common
   # case must not cost a call to find out that any non-empty value will do.
+  # `any` and bare `int` are inlined for the same reason: between them they are what the
+  # per-segment families are, so the two commonest reads in a draw must not each cost a call
+  # into the dispatcher to be told what a one-line pattern already says. Every other spec —
+  # bounded ints, enums, bools — goes the long way, where the cost is paid once per prompt
+  # rather than once per segment.
   local live=${(P)knob}
   if [[ -n $live ]]; then
-    if [[ ${spec:-any} == any ]] || _inzsh_config_check "$spec" "$live"; then
+    if [[ ${spec:-any} == any ]] ||
+       [[ $spec == int && $live == (|-|+)<-> ]] ||
+       _inzsh_config_check "$spec" "$live"; then
       typeset -g REPLY=$live
       return 0
     fi

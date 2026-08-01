@@ -285,15 +285,20 @@ _inzsh_seg_color() {
 
   typeset -g REPLY=
 
+  # Read straight from the parameter, deliberately, though the knob IS registered.
+  #
+  # `INZSH_*_BG` and `INZSH_*_FG` register as `any` with an empty default: every non-empty value
+  # is accepted — a colour someone typed for their own terminal is their business — and absence
+  # falls through to the role below. So the registry's answer for these two families is the
+  # parameter, character for character, and asking through it buys a call and two lookups per
+  # read for an answer that cannot differ. This is the hottest read in the theme: twice per
+  # segment, every draw.
+  #
+  # What makes the surface knowable is REGISTRATION, not the read path — the guard in
+  # `test/unit/config_registry_spec.sh` requires a read to be declared, and this one is. A knob
+  # whose spec could reject something must go through `_inzsh_config_get`; these cannot.
   local var=INZSH_${(U)1}_${(U)2}
-  local override
-  if (( ${+functions[_inzsh_config_get]} )); then
-    _inzsh_config_get "$var"
-    override=$REPLY
-    typeset -g REPLY=
-  else
-    override=${(P)var}
-  fi
+  local override=${(P)var}
 
   if [[ -n $override ]]; then
     REPLY=$override
