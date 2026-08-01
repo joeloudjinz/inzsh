@@ -68,11 +68,17 @@
 #                 directory beside it for the same surface.
 #   fg text-body  the RESTING role, and the one that is registered at load. The build rewrites
 #                 the entry per state from the ladder above — see `_inzsh_segment_git_build`.
+#   bg text-body's own fill, likewise rewritten per state. This is the only segment whose
+#                 background moves while the shell is running, and it moves because its colour is
+#                 the one thing on the row that is genuinely about the moment: a clean tree is
+#                 green, a dirty one madder, a staged one ink-blue, a detached head ochre. Read
+#                 only by `INZSH_SURFACE_MODE=hue` — see `_inzsh_render_hues`.
 typeset -gA _inzsh_segment_text _inzsh_segment_defaults
-typeset -gA _inzsh_segment_fg_role _inzsh_segment_importance
+typeset -gA _inzsh_segment_fg_role _inzsh_segment_bg_role _inzsh_segment_importance
 
 _inzsh_segment_defaults[GIT]=50
 _inzsh_segment_fg_role[GIT]=text-body
+_inzsh_segment_bg_role[GIT]=surface-deep
 _inzsh_segment_importance[GIT]=2
 
 # ---------------------------------------------------------------------------------------------
@@ -157,16 +163,21 @@ _inzsh_git_count() {
 # that is not committed — and they are added together into one `!`. Splitting them would be
 # three marks for one fact, and the fact the prompt is answering is "can I switch branches".
 #
-# The role is written on EVERY build, including the absent one, so a repository that went clean
-# does not keep the colour of the last one that was not. Always status 0: an unreadable state is
-# an absent segment, never an error and never a prompt that fails to draw.
+# BOTH roles are written on EVERY build, including the absent one, so a repository that went
+# clean does not keep the colour of the last one that was not. The background is the FILL twin of
+# the foreground — `positive-text` and `positive` are the same statement at two elevations, and
+# the DS names them that way — so the two can never disagree about what state the tree is in.
+#
+# Always status 0: an unreadable state is an absent segment, never an error and never a prompt
+# that fails to draw.
 _inzsh_segment_git_build() {
   emulate -L zsh
   setopt extended_glob
 
-  typeset -gA _inzsh_segment_text _inzsh_segment_fg_role
+  typeset -gA _inzsh_segment_text _inzsh_segment_fg_role _inzsh_segment_bg_role
   _inzsh_segment_text[GIT]=
   _inzsh_segment_fg_role[GIT]=text-body
+  _inzsh_segment_bg_role[GIT]=surface-deep
 
   # `${(P)}` on something that is not an identifier is a fatal error mid-render, the same trap
   # `_inzsh_mincols_of` guards in `lib/core/layout.zsh`. A name that cannot form a variable is
@@ -269,6 +280,14 @@ _inzsh_segment_git_build() {
   local text="$glyph $ref$divergence"
   _inzsh_segment_text[GIT]=${text//'%'/'%%'}
   _inzsh_segment_fg_role[GIT]=$role
+
+  # The fill twin, spelled off the text role rather than tabulated beside it: the DS's five slots
+  # per state are `X`, `on-X`, `X-text`, `X-wash`, `X-edge`, so stripping `-text` turns the ink
+  # into the fill it belongs to and `negative` — which the ladder above names without the suffix,
+  # because on a surface the fill IS the right ink for a failure — is already the fill. A second
+  # table here would be a second place the state ladder is written down, and the copy that drifts
+  # is always the one further from the ladder.
+  _inzsh_segment_bg_role[GIT]=${role%-text}
 
   return 0
 }

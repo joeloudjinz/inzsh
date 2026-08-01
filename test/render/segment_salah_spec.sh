@@ -158,6 +158,23 @@ Describe 'the prayer-time segment'
       The output should eq '-20 text-body 1'
     End
 
+    It 'asks for the accent, which is the whole reason this segment has a background role'
+      # The theme has one saturated colour and this is the segment it is for. Asserted as the
+      # ACCENT rather than as any old fill: a background role here that was not `accent` would
+      # still draw a prompt, and would quietly spend the one colour the theme reserves on
+      # nothing, or spend it twice.
+      accented() {
+        local role=${_inzsh_segment_bg_role[SALAH]-<unset>}
+        local -a missing=()
+        [[ $role == accent ]] || missing+=role:$role
+        # The ink arrives with the fill, so the pair the renderer will draw has to exist.
+        [[ -n ${_inzsh_role[on-$role]+set} ]] || missing+=no-paired-ink
+        print -r -- "${missing[*]}"
+      }
+      When call accented
+      The output should eq ''
+    End
+
     It 'sits on the right prompt, inward of the clock'
       # Both facts in one example: the side is a consequence of the sign, and the ORDER within the
       # side is what the number is for. The clock is registered at -10 by `lib/segments/time.zsh`.

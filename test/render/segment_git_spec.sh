@@ -458,6 +458,63 @@ Describe 'the git segment'
       The output should eq 'len=0 width=0'
     End
 
+    Describe 'the fill follows the state, alongside the ink'
+      # The one segment whose BACKGROUND moves while the shell is running, which is what makes
+      # `INZSH_SURFACE_MODE=hue` say something rather than just look like something. The pair is
+      # asserted together on purpose: the fill is the ink's DS twin, so a ladder that grew a
+      # sixth state and only taught one of the two would be caught here rather than on screen.
+      #
+      # $1 the pinned state as one word, $2 the ink, $3 the fill.
+      Describe 'the ladder'
+      Parameters
+        'repo 1 branch main'                       positive-text  positive
+        'repo 1 branch main dirty 2'               negative       negative
+        'repo 1 branch main untracked 1'           negative       negative
+        'repo 1 branch main conflicts 1'           negative       negative
+        'repo 1 branch main staged 3'              info-text      info
+        'repo 1 sha a1b2c3d4e5 detached 1'         caution-text   caution
+        'repo 1 branch main ahead 1 behind 1'      caution-text   caution
+      End
+
+      It "draws ($1) with $2 ink on the $3 fill"
+        paired() {
+          local -a args=(${=1})
+          local -A pinned=("${args[@]}")
+          _inzsh_segment_git_build pinned
+          print -r -- "${_inzsh_segment_fg_role[GIT]} ${_inzsh_segment_bg_role[GIT]}"
+        }
+        When call paired "$1"
+        The output should eq "$2 $3"
+      End
+      End
+
+      It 'pairs every fill it can choose with an ink the token layer carries'
+        # The renderer takes the ink from the fill — `on-<fill>` — so a fill without one would
+        # leave the block drawn in the resting `text-body`, on a saturated background, which is
+        # the illegible outcome this pairing exists to prevent.
+        inked() {
+          local -a states=(
+            'repo 1 branch main'
+            'repo 1 branch main dirty 2'
+            'repo 1 branch main staged 3'
+            'repo 1 sha a1b2c3d4e5 detached 1'
+          )
+          local state
+          local -a bad=()
+          for state in "${states[@]}"; do
+            local -a args=(${=state})
+            local -A pinned=("${args[@]}")
+            _inzsh_segment_git_build pinned
+            [[ -n ${_inzsh_role[on-${_inzsh_segment_bg_role[GIT]}]+set} ]] ||
+              bad+=${_inzsh_segment_bg_role[GIT]}
+          done
+          print -r -- "${bad[*]}"
+        }
+        When call inked
+        The output should eq ''
+      End
+    End
+
     It 'puts the role back when it goes absent, rather than keeping the last state colour'
       # A repository that went from dirty to gone must not leave `negative` registered: the next
       # segment to be drawn under that key would inherit a colour from a repository that is not
@@ -467,13 +524,13 @@ Describe 'the git segment'
         local -A dirty=(repo 1 branch main dirty 1)
         local -A gone=(repo 0)
         _inzsh_segment_git_build dirty
-        seen+=${_inzsh_segment_fg_role[GIT]}
+        seen+=${_inzsh_segment_fg_role[GIT]}:${_inzsh_segment_bg_role[GIT]}
         _inzsh_segment_git_build gone
-        seen+=${_inzsh_segment_fg_role[GIT]}
+        seen+=${_inzsh_segment_fg_role[GIT]}:${_inzsh_segment_bg_role[GIT]}
         print -r -- "${seen[*]}"
       }
       When call reset
-      The output should eq 'negative text-body'
+      The output should eq 'negative:negative text-body:surface-deep'
     End
 
     It 'rewrites the entry on every build rather than accumulating'

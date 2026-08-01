@@ -51,7 +51,9 @@ theme falls back to a safe value rather than drawing the broken result:
 
 - **Separators stay visible.** In a filled mode no two adjacent segments share a background.
   A surface assignment that would put equal backgrounds side by side is rejected and the mode
-  degrades to `alternate`, which holds the property by construction. `flat` and
+  degrades to `alternate`, which holds the property by construction. Under `hue`, where a segment
+  names its own colour and two of them may name the same one, the repair is per block: the
+  declaration is given up for the surface the position would have assigned. `flat` and
   `INZSH_SEPARATOR_STYLE=divider` are the exemptions, and for the same reason: neither draws a
   filled boundary, so there is none to lose.
 - **Every state carries a glyph as well as a colour.** The marks come from one table in the
@@ -77,7 +79,7 @@ theme falls back to a safe value rather than drawing the broken result:
 
 | Variable | Values | Default | Effect |
 |---|---|---|---|
-| `INZSH_SURFACE_MODE` | `alternate` · `ramp` · `flat` | `alternate` | How segment backgrounds are assigned. `alternate` swings between the two raised surfaces so every powerline separator stays visible. `ramp` assigns by per-segment importance, bumping equal neighbours apart. `flat` uses one surface for everything (no filled-powerline look). Invalid values fall back to `alternate`. |
+| `INZSH_SURFACE_MODE` | `alternate` · `ramp` · `flat` · `hue` | `alternate` | How segment backgrounds are assigned. The first three assign by **elevation** — how far a block sits from the base surface — and differ only in the rule that picks a level: `alternate` swings between the two ends of the surface ramp, so every powerline separator stays visible; `ramp` assigns by per-segment importance, bumping equal neighbours apart; `flat` uses one surface for everything (no filled-powerline look). `hue` changes the axis — see below. Invalid values fall back to `alternate`. |
 | `INZSH_SEPARATOR_STYLE` | `arrow` · `round` · `divider` | `arrow` | Which glyph draws the boundary between two segments. `arrow` is the filled powerline wedge, `round` the same ribbon with rounded caps, `divider` a thin rule with no filled boundary at all. `arrow` and `round` need a Nerd Font; `divider` needs only box drawing. Invalid values fall back to `arrow`. Setting `INZSH_NERD_FONT=0` resolves any style to `divider`, since the powerline glyphs cannot be drawn without the font. |
 | `INZSH_COLOR_DEPTH` | `truecolor` · `256` · `8` | detected | Overrides colour-depth detection for terminals that misreport. The palette degrades through hand-tuned fallback tables; invalid values are ignored and detection wins. |
 | `INZSH_MULTIBYTE` | `1` · `0` | detected | Overrides the locale test that decides whether a non-ASCII glyph is safe to write. `0` selects the ASCII stand-ins for every mark the theme draws — `✕` becomes `x`, a powerline wedge becomes a thin rule — which is what a terminal outside a UTF-8 locale needs. Invalid values are ignored and the locale wins. |
@@ -86,6 +88,45 @@ theme falls back to a safe value rather than drawing the broken result:
 | `INZSH_PROMPT_MARKER` | any prompt string | `→` | What the second row draws in front of your input, verbatim. Outside a multibyte locale the default degrades to `>`. Set-but-empty falls through rather than blanking the line you type on. Whatever it holds is coloured by whether the last command succeeded. |
 | `INZSH_TRANSIENT` | `1` · `0` | `1` | Whether a prompt collapses to its minimal form once its command has been accepted, so scrollback reads as commands and output rather than two hundred repetitions of a seven-segment ribbon. Off keeps the full prompt in the transcript. |
 | `INZSH_TRANSIENT_FORMAT` | `marker` · `dir` | `marker` | What a collapsed prompt shows. `marker` is the marker alone; `dir` puts the directory, muted, in front of it — worth it if you move between trees mid-session and want scrollback to say where each command ran. Invalid values fall back to `marker`. |
+
+### One colour per segment — `INZSH_SURFACE_MODE=hue`
+
+The default tells two blocks apart by **elevation**: the ribbon alternates between two surfaces
+from the same narrow family, and the boundary is a step in brightness. `hue` tells them apart by
+**colour** instead. Each segment carries a background of its own, drawn from the design system's
+own ramps, and the ink comes with it — every fill in the palette is paired with the text colour
+that belongs on it, so a block that takes the `negative` fill takes `on-negative` for its text
+without anything else being set.
+
+What ships, out of the box:
+
+| Segment | Fill | |
+|---|---|---|
+| `root` | `negative` | the block *is* the warning |
+| `user` | `neutral` | an identity is neither good news nor bad |
+| `host` | a surface | a third hue between two coloured blocks turns an address into a traffic light |
+| `dir` | `info` | the row's subject, and information rather than a state |
+| `git` | the state's own fill | clean is green, dirty madder, staged ink-blue, a detached head ochre — the one block whose colour moves while you work |
+| `venv` | the info wash | the quiet half of the family the path is the loud half of |
+| `retval` | `negative` | it only exists when something failed |
+| `ssh` | `caution` | the one segment whose whole point is that you are somewhere else |
+| `jobs` | the info wash | a held job is information, not a fault |
+| `time` · `duration` · `date` | surfaces | true of every prompt equally, and next to the block that should be spending the colour |
+| `salah` | `accent` | the theme has one saturated colour and this is the segment it is for |
+
+Two things worth knowing before you switch it on.
+
+**A segment that declares a fill gives up its own text colour**, because the fill's paired ink
+replaces it. That is why `git` moves its *background* with the repository's state rather than
+just its foreground, and why the segments whose text colour is doing the work — the clock, the
+duration — take surfaces instead.
+
+**It costs colour at lower depths.** At 256 colours the fills are the hand-tuned approximations
+the whole palette degrades to and the mode still reads. At 8 there are five ink colours and one
+background, so `hue` and `alternate` draw the same flat ribbon; the glyphs carry the state, as
+they do everywhere in this theme.
+
+`INZSH_<SEGMENT>_BG` still outranks all of it, in every mode.
 
 ## Responsive breakpoints
 
@@ -226,15 +267,23 @@ A prayer with no astronomical time — a polar night, a midnight sun — is skip
 next real moment, and never drawn as `00:00`. Where every moment of the day is absent, so is the
 segment.
 
-**The accent.** This is the segment the theme's one saturated colour is meant for, and it cannot
-claim it by itself: backgrounds are assigned positionally so that no two adjacent blocks share
-one. Two lines in your own config give it the accent today, written as roles so that a palette
-change still reaches them:
+**The accent.** This is the segment the theme's one saturated colour is meant for, and under
+[`INZSH_SURFACE_MODE=hue`](#one-colour-per-segment--inzsh_surface_modehue) it takes it: the
+segment asks for the `accent` fill and the renderer gives it, along with the ink the design system
+pairs with that fill. The other modes assign backgrounds positionally, so there the accent is two
+lines in your own config — written as roles rather than colour values, so a palette change still
+reaches them:
 
 ```zsh
 INZSH_SALAH_BG=${_inzsh_role[accent]}
 INZSH_SALAH_FG=${_inzsh_role[on-accent]}
 ```
+
+One caveat, recorded rather than hidden: caramel is the same value in both registers by design and
+its paired ink is not, and neither of the two clears WCAG AA on it — 3.79:1 in the dark register,
+3.07:1 in the light, both AA-large. It is the theme's one sub-AA pairing, and it is the design
+system's rather than the prompt's. The block still says what it means as words — a prayer name and
+a time — so the shortfall costs contrast and not information.
 
 ### Where the day is kept
 

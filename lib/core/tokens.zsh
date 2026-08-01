@@ -114,11 +114,27 @@ _inzsh_palette=(
 # Two DS roles are deliberately absent: --surface-card (web chrome — a raised card behind
 # content, no prompt analogue) and --accent-wash (an rgba() marker highlight; a terminal cell
 # has no alpha channel to composite against).
+#
+# ONE ROLE HERE IS NOT A DS ALIAS: `surface-deep`. It carries no `--` name below because the
+# design system does not name it, and it does not name it because a web surface never abuts
+# another filled surface — a card sits on a page with air around it. A prompt's blocks abut,
+# and the boundary between two of them IS the colour change, so the engine needs a second
+# surface as far from the first as the ramp goes. The DS's own surface roles do not go far
+# enough: `surface-soft` and `hairline` resolve to #2A3350 and #333C58 in the dark register,
+# nine points a channel and 1.14:1 — a separator you have to look for.
+#
+# NO NEW COLOUR IS INVENTED FOR IT. `surface-deep` points at `cream-bright` and `navy-deep`,
+# two palette entries the DS already ships and already maps five times over as `on-positive`,
+# `on-info`, `on-negative`, `on-caution` and `on-neutral`. What is new is a NAME that says
+# what the engine draws with it — the far end of the surface ramp, which is the brightest
+# value in the light register and the deepest in the dark, exactly as the DS's own gradients
+# run. Against `neutral-wash` it gives 1.32:1 in light and 1.41:1 in dark.
 
 typeset -gA _inzsh_roles_light
 _inzsh_roles_light=(
   surface        cream          # --surface
   surface-soft   cream-soft     # --surface-soft
+  surface-deep   cream-bright   # (engine) the far end of the surface ramp — see above
   text-strong    choc-ink       # --text-strong
   text-body      choc           # --text-body
   text-muted     choc-soft      # --text-muted
@@ -163,6 +179,7 @@ typeset -gA _inzsh_roles_dark
 _inzsh_roles_dark=(
   surface        navy                # --surface
   surface-soft   navy-soft           # --surface-soft
+  surface-deep   navy-deep           # (engine) the far end of the surface ramp — see above
   text-strong    cream               # --text-strong
   text-body      cream               # --text-body
   text-muted     cream-muted         # --text-muted

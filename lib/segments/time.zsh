@@ -23,11 +23,17 @@ zmodload -i zsh/datetime
 #   importance 3 the bottom of the ramp, for the same reason.
 typeset -gA _inzsh_segment_defaults
 typeset -gA _inzsh_segment_fg_role
+typeset -gA _inzsh_segment_bg_role
 typeset -gA _inzsh_segment_importance
 
 _inzsh_segment_defaults[TIME]=-10
 _inzsh_segment_fg_role[TIME]=text-muted
 _inzsh_segment_importance[TIME]=3
+
+# The fill `INZSH_SURFACE_MODE=hue` gives it — see `_inzsh_render_hues`. A surface, because the
+# reasoning above does not stop being true in a colourful mode: a value that never varies has no
+# business drawing attention, and the accent block it sits beside is the one that should.
+_inzsh_segment_bg_role[TIME]=surface-deep
 
 # The format `INZSH_TIME_FORMAT` falls back to: hours and minutes, 24-hour, zero-padded. Held in
 # a variable rather than repeated, because it is used twice — once as the default and once as

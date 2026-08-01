@@ -22,21 +22,36 @@
 # it — an unrecognised mode falls back rather than erroring, and `ramp` repairs a collision
 # rather than rejecting it.
 #
-# Three modes:
-#   alternate  the default. Two raised surfaces, strictly alternating. Visibility here is
-#              structural — the invariant holds by construction, with no further rule — which
-#              is exactly why it is also the fallback.
-#   ramp       importance drives the surface: 1 (most important) sits highest, 3 lowest. Equal
-#              neighbours are pulled apart afterwards by the collision rule below.
+# Four modes. The first three assign by ELEVATION — how far a block sits from the base surface
+# — and differ only in the rule that picks a level. The fourth changes the axis.
+#   alternate  the default. The two ends of the surface ramp, strictly alternating. Visibility
+#              here is structural — the invariant holds by construction, with no further rule —
+#              which is exactly why it is also the fallback.
+#   ramp       importance drives the surface: 1 (most important) sits furthest from the base
+#              surface, 3 on it. Equal neighbours are pulled apart afterwards by the collision
+#              rule below.
 #   flat       one surface throughout. There is no filled powerline to make legible, so equal
 #              neighbours are expected and the invariant does not apply.
+#   hue        each segment carries its OWN background, declared rather than assigned — see
+#              `_inzsh_render_hues`. Elevation stops being the thing that tells two blocks
+#              apart and colour starts; the positional assignment stays underneath as the
+#              answer for a segment that declared nothing.
 
-# The ramp's ordering, and the bump order the collision rule walks: surface-soft → hairline →
-# surface → surface-soft. Index 1..3 is also the importance mapping, so `ramp` reads an
-# importance as a subscript directly. The first two entries are the two raised surfaces that
-# `alternate` swings between.
+# The ramp's ordering, and the bump order the collision rule walks: surface-deep → neutral-wash
+# → surface → surface-deep. Index 1..3 is also the importance mapping, so `ramp` reads an
+# importance as a subscript directly. The first two entries are the pair `alternate` swings
+# between, and they are the two the whole file is arranged around.
+#
+# WHY THESE TWO. A filled boundary IS the colour change, so the separator's own contrast is the
+# contrast between the blocks either side of it — and the DS's two raised surfaces, `surface-soft`
+# and `hairline`, are #2A3350 and #333C58 in the dark register: nine points a channel, 1.14:1, a
+# boundary you have to look for. `surface-deep` (the far end of the ramp — `lib/core/tokens.zsh`
+# says why the DS has no name for it) against `neutral-wash` (its neutral chip tint, and a prompt
+# block is exactly a chip) gives 1.32:1 in light and 1.41:1 in dark, and every foreground role a
+# segment can register still clears WCAG AA on both of them — which `hairline` did not: at
+# #333C58 the info ink lands at 3.97:1.
 typeset -ga _inzsh_surface_cycle
-_inzsh_surface_cycle=(surface-soft hairline surface)
+_inzsh_surface_cycle=(surface-deep neutral-wash surface)
 
 # Resolve INZSH_SURFACE_MODE into `_inzsh_surface_mode_resolved`. Unset, empty, misspelled,
 # wrong case, padded with a stray space — all of it lands on `alternate`. A prompt with an
@@ -57,7 +72,7 @@ _inzsh_surface_mode() {
 
   typeset -g _inzsh_surface_mode_resolved=alternate
   case $want in
-    (alternate|ramp|flat) typeset -g _inzsh_surface_mode_resolved=$want ;;
+    (alternate|ramp|flat|hue) typeset -g _inzsh_surface_mode_resolved=$want ;;
   esac
 }
 
@@ -118,8 +133,13 @@ _inzsh_surface_assign() {
       ;;
 
     (*)
-      # alternate — odd positions raised, even positions on the hairline surface. Index 1 is
-      # surface-soft, so the first segment is always the most raised one.
+      # alternate — odd positions on the cycle's first surface, even on its second. Index 1 is
+      # surface-deep, so a prompt always opens on the far end of the ramp.
+      #
+      # `hue` lands here too, and deliberately: this is the assignment it falls back on for every
+      # segment that declared no background of its own, and it is the one assignment that holds
+      # the adjacency invariant with no further rule. A mode that decorates a positional
+      # assignment wants the SAFEST positional assignment under it.
       for (( i = 1; i <= n; i++ )); do
         reply+=${_inzsh_surface_cycle[2 - (i % 2)]}
       done
@@ -181,10 +201,14 @@ _inzsh_surfaces_valid() {
 #                              A segment with NO entry, or an empty one, is ABSENT: no block, and
 #                              no separator either. Empty means unset here as it does everywhere.
 #   _inzsh_segment_fg_role     SEGMENT → the semantic role its text takes. `text-body` by default.
+#   _inzsh_segment_bg_role     SEGMENT → the background ROLE it asks for, read only by `hue` —
+#                              see `_inzsh_render_hues`. Nothing by default, which means "give me
+#                              whatever the position was going to give me".
 #   _inzsh_segment_importance  SEGMENT → 1..3, what `ramp` reads. 2 by default, the middle of the
-#                              ramp; `alternate` and `flat` ignore it.
+#                              ramp; `alternate`, `flat` and `hue` ignore it.
 typeset -gA _inzsh_segment_text
 typeset -gA _inzsh_segment_fg_role
+typeset -gA _inzsh_segment_bg_role
 typeset -gA _inzsh_segment_importance
 
 # The visible width of the last build, in columns. Tracked as the string is assembled rather than
@@ -330,26 +354,123 @@ _inzsh_render_escape() {
 # construction. If alternate is invalid too — `_inzsh_surface_cycle` clobbered, a bundle half
 # sourced — the assignment is drawn as it stands: a prompt whose separators are hard to see is a
 # worse prompt, and no prompt at all is not a prompt. Always status 0.
+# WHICH invariant applies is a property of the SEPARATOR and not of the surface mode, so the mode
+# an assignment is judged under is not always the mode it was drawn with. A filled boundary is
+# only visible while the two blocks differ; `divider` has no filled boundary at all, so equal
+# neighbours there are as harmless as they are under `flat`. A `divider` prompt is therefore put
+# to the invariant AS `flat` — the exemption `_inzsh_surfaces_valid` already grants, asked for the
+# reason it already grants it, rather than a second exemption bolted onto the predicate.
+#
+# The answer is in REPLY. Written once and asked twice — by `_inzsh_render_surfaces` and by
+# `_inzsh_render_hues` — because two copies of a rule is one copy too many, and the copy that
+# drifts is always the one further from the sentence.
+#
+# The mode is READ rather than re-resolved: `_inzsh_surface_mode_resolved` is the mode the
+# assignment in hand was actually drawn with, and that is the one its adjacency has to be judged
+# under. Re-reading the knob here would judge an assignment against a mode that did not produce
+# it — which is exactly the confusion `_inzsh_render_surfaces` avoids by checking the sequence
+# rather than the knob.
+_inzsh_render_fill_mode() {
+  emulate -L zsh
+
+  _inzsh_sep_style
+
+  typeset -g REPLY=$_inzsh_surface_mode_resolved
+  [[ $_inzsh_sep_style_resolved == divider ]] && typeset -g REPLY=flat
+
+  return 0
+}
+
 _inzsh_render_surfaces() {
   emulate -L zsh
 
   _inzsh_surface_assign "$@"
 
-  # WHICH invariant applies is a property of the SEPARATOR and not of the surface mode. A filled
-  # boundary is only visible while the two blocks differ; `divider` has no filled boundary at
-  # all, so equal neighbours there are as harmless as they are under `flat`. The style is
-  # therefore resolved here and a `divider` prompt is put to the invariant AS `flat` — the
-  # exemption `_inzsh_surfaces_valid` already grants, asked for the reason it already grants it,
-  # rather than a second exemption bolted onto the predicate. Two copies of a rule is one copy
-  # too many, and the copy that drifts is always the one further from the sentence.
-  _inzsh_sep_style
-  local mode=$_inzsh_surface_mode_resolved
-  [[ $_inzsh_sep_style_resolved == divider ]] && mode=flat
-
-  _inzsh_surfaces_valid "$mode" "${reply[@]}" && return 0
+  _inzsh_render_fill_mode
+  _inzsh_surfaces_valid "$REPLY" "${reply[@]}" && return 0
 
   local INZSH_SURFACE_MODE=alternate
   _inzsh_surface_assign "$1"
+
+  return 0
+}
+
+# `_inzsh_render_hues <segment>…` — the backgrounds actually drawn, in `reply`, given the
+# positional assignment already in `reply` and the visible segments in drawn order. Outside `hue`
+# the positional assignment is the answer and this returns it untouched.
+#
+# WHAT THE MODE IS FOR. `alternate`, `ramp` and `flat` are POSITIONAL: the renderer owns every
+# background, which is what makes the adjacency invariant hold by construction. A segment that
+# could claim a fill under those would be a second place surfaces are decided, and the first thing
+# to put a hole in the one property the render core is arranged around. `hue` is the mode that
+# hands that decision over — `_inzsh_segment_bg_role` is read here and nowhere else, and outside
+# this mode the way to pin one block is `INZSH_<SEGMENT>_BG`, which has always worked and still
+# does.
+#
+# HOW THE INVARIANT SURVIVES A COLOUR THAT WAS CHOSEN RATHER THAN ASSIGNED. It stops being
+# automatic the moment two segments may name the same role, so it is enforced rather than argued,
+# left to right, one settled neighbour at a time:
+#
+#   1. a segment takes the background it declared, or the positional one if it declared none;
+#   2. where that repeats the background already settled on its LEFT, the declaration is given up
+#      and the positional surface taken instead — a segment's colour is worth less than the
+#      boundary beside it, and the positional one is the assignment the invariant was built for;
+#   3. where the positional surface repeats too, it walks the cycle until it does not, which is
+#      the bump `ramp` already uses and terminates for the same reason: a bump always lands on a
+#      different entry, and there are three.
+#
+# Left-anchored on purpose: position 1 always keeps what it asked for, and every later decision is
+# judged against a neighbour that has already settled, so one pass is enough.
+# `_inzsh_surfaces_valid` is then asked over the finished sequence — the rule above should make
+# that a formality, and it is asked anyway because the predicate is the invariant and this
+# function is only an argument about it. Where it says no, every declaration is dropped and the
+# positional assignment stands, which came out of `_inzsh_render_surfaces` valid.
+#
+# Parameter operations only: this runs on the render path, once per side, no forks.
+_inzsh_render_hues() {
+  emulate -L zsh
+
+  local -a surfaces=("${reply[@]}")
+
+  # Resolved here rather than read, because this is a stage of its own and whether the map is
+  # consulted at all is the CONFIG's answer — the same re-read every knob in this file gets, so
+  # `INZSH_SURFACE_MODE=hue` typed at a prompt takes effect at the next one.
+  _inzsh_surface_mode
+  [[ $_inzsh_surface_mode_resolved == hue ]] || return 0
+
+  _inzsh_render_fill_mode
+  local mode=$REPLY
+
+  [[ ${(t)_inzsh_segment_bg_role} == association* ]] || return 0
+
+  local -i n=${#surfaces}
+  local -a drawn=()
+  local -i i idx turns
+  local want
+
+  for (( i = 1; i <= n; i++ )); do
+    want=${_inzsh_segment_bg_role[${@[i]}]:-${surfaces[i]}}
+
+    if (( i > 1 )) && [[ $mode != flat && $want == ${drawn[i-1]} ]]; then
+      # The bump is bounded by the cycle's own length rather than trusting it to terminate: a
+      # clobbered or half-sourced `_inzsh_surface_cycle` would otherwise divide by zero
+      # mid-render. Running out of turns leaves the pair equal, the predicate below says so,
+      # and the positional assignment stands.
+      want=${surfaces[i]}
+      turns=${#_inzsh_surface_cycle}
+      while (( turns-- > 0 )) && [[ $want == ${drawn[i-1]} ]]; do
+        idx=${_inzsh_surface_cycle[(Ie)$want]}
+        want=${_inzsh_surface_cycle[idx % ${#_inzsh_surface_cycle} + 1]}
+      done
+    fi
+
+    drawn+=$want
+  done
+
+  _inzsh_surfaces_valid "$mode" "${drawn[@]}" || return 0
+
+  typeset -ga reply
+  reply=("${drawn[@]}")
 
   return 0
 }
@@ -456,6 +577,7 @@ _inzsh_render_build() {
   _inzsh_separators
 
   _inzsh_render_surfaces $n "${importances[@]}"
+  _inzsh_render_hues "${visible[@]}"
   local -a surfaces=("${reply[@]}")
 
   local -i colour=${+functions[_inzsh_seg_color]}
@@ -480,8 +602,17 @@ _inzsh_render_build() {
     if (( colour )) && [[ ${visible[i]} == [A-Za-z_][A-Za-z0-9_]# ]]; then
       _inzsh_seg_color "${visible[i]}" bg "${surfaces[i]}" surface
       bg=$REPLY
-      _inzsh_seg_color "${visible[i]}" fg "${_inzsh_segment_fg_role[${visible[i]}]:-text-body}" \
-        text-body
+      # THE FOREGROUND FOLLOWS THE FILL, and it does so without a second map. The design system
+      # already pairs every fill with the ink that goes on it — `accent`/`on-accent`,
+      # `negative`/`on-negative`, five slots per state — so the ink a block wants is `on-` its own
+      # background, and where the role layer has no such twin the segment's own foreground is the
+      # answer. That is exactly the distinction between the two kinds of background a block can
+      # end up with: no SURFACE role has an `on-` twin, so a positional block keeps the ink it
+      # registered and this line costs one hash miss; a segment that declared a FILL under `hue`
+      # gives its ink up to that fill's, which is the only way `on-negative` ends up over madder
+      # rather than over a surface it cannot be read on.
+      _inzsh_seg_color "${visible[i]}" fg "on-${surfaces[i]}" \
+        "${_inzsh_segment_fg_role[${visible[i]}]:-text-body}"
       fg=$REPLY
     fi
     _inzsh_render_escape K "$bg"; fill[i]=$REPLY

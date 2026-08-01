@@ -4,8 +4,14 @@ Include lib/core/tokens.zsh
 # use, written out by hand so a dropped or renamed role fails here rather than at draw time.
 # Deliberately excluded: --surface-card (web chrome, no prompt analogue) and --accent-wash
 # (rgba() alpha — a terminal cell has nothing to composite against).
+#
+# ONE ENTRY IS NOT A DS ALIAS. `surface-deep` is the engine's own, and it is on this list because
+# the list is what the role LAYER must carry rather than what colors.css names — see the note
+# above the tables in `lib/core/tokens.zsh` for why a prompt needs a surface the DS never had to.
+# It maps to palette keys the DS does ship, so the `dangling` example below holds it to the same
+# rule as every other role, which is the property that matters.
 inzsh_spec_roles=(
-  surface surface-soft
+  surface surface-soft surface-deep
   text-strong text-body text-muted
   accent on-accent
   positive positive-text on-positive positive-wash positive-edge
@@ -58,7 +64,7 @@ Describe 'role layer'
         print -r -- "${#table} ${#inzsh_spec_roles}"
       }
       When call count "$2"
-      The output should eq '37 37'
+      The output should eq '38 38'
     End
 
     It "the $1 table maps every role to a palette key, never to a value"
@@ -108,7 +114,7 @@ Describe 'role layer'
         print -r -- "${#_inzsh_role} ${#wrong} ${#unexpected}"
       }
       When call resolved "$1" "$2"
-      The output should eq '37 0 0'
+      The output should eq '38 0 0'
     End
   End
 
@@ -122,7 +128,7 @@ Describe 'role layer'
         local role; local -a same=()
         _inzsh_register=light; _inzsh_tokens_resolve; light=("${(@kv)_inzsh_role}")
         _inzsh_register=dark;  _inzsh_tokens_resolve; dark=("${(@kv)_inzsh_role}")
-        for role in positive negative on-accent surface text-body hairline; do
+        for role in positive negative on-accent surface surface-deep text-body hairline; do
           [[ ${light[$role]} != ${dark[$role]} ]] || same+=$role
         done
         print -r -- "${same[*]}"

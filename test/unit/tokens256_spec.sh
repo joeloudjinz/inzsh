@@ -59,6 +59,23 @@ inzsh_spec_stacks=(
   hairline      surface
   text-body     surface-soft
   negative-text surface-soft
+
+  # The two surfaces `alternate` swings between and `ramp` reads as its top two, and every ink a
+  # segment registers over them. This is the stack the DEFAULT mode produces on every prompt, so
+  # a depth at which one of these collides is a depth at which the shipped theme has a block
+  # nobody can read — which is what `hairline` as a surface used to be at eight colours, where it
+  # and `text-body` are both index 7.
+  text-body     surface-deep
+  text-muted    surface-deep
+  info-text     surface-deep
+  caution-text  surface-deep
+  positive-text surface-deep
+  negative-text surface-deep
+  text-body     neutral-wash
+  text-muted    neutral-wash
+  info-text     neutral-wash
+  caution-text  neutral-wash
+  positive-text neutral-wash
   on-accent     accent
   on-positive   positive
   on-info       info

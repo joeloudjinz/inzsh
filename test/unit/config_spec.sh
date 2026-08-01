@@ -31,7 +31,8 @@ inzsh_spec_guard() {
 # Every way a mode can be written wrong, plus the three that are right. The sweeps below run
 # each one through the whole config path; a value added here and not handled shows up as a
 # fallback that did not happen.
-inzsh_spec_modes=(alternate ramp flat Alternate RAMP 'ramp ' ' flat' alternat chartreuse 0 -)
+inzsh_spec_modes=(alternate ramp flat hue Alternate RAMP 'ramp ' ' flat' HUE alternat
+                  chartreuse 0 -)
 
 # Slow enough to blow any sane budget, with no subprocess and no `sleep`: about twenty
 # thousand turns of an empty arithmetic loop.
@@ -301,7 +302,7 @@ Describe 'the knob registry'
     # Seeded from what `detect.zsh` and `render.zsh` validate by hand today, so the registry
     # and the inline reads cannot disagree about what is legal.
     Parameters
-      INZSH_SURFACE_MODE 'enum:alternate|ramp|flat' alternate
+      INZSH_SURFACE_MODE 'enum:alternate|ramp|flat|hue' alternate
       INZSH_COLOR_DEPTH  'enum:truecolor|256|8'     ''
     End
 
@@ -403,7 +404,7 @@ Describe 'reading configuration'
         print -r -- "checked=${#inzsh_spec_modes} empty=${empty[*]}"
       }
       When call populated
-      The output should eq 'checked=11 empty='
+      The output should eq 'checked=13 empty='
     End
 
     # No status a prompt could usefully react to. A read that could fail is a read every caller
@@ -817,12 +818,12 @@ Describe 'degrading under a hostile config'
         typeset -g INZSH_SURFACE_MODE=$candidate
         _inzsh_config_guarded INZSH_SURFACE_MODE separator-visibility hairline hairline ||
           bad+="status:${candidate:-none}"
-        [[ $REPLY == (alternate|ramp|flat) ]] || bad+="value:${candidate:-none}:$REPLY"
+        [[ $REPLY == (alternate|ramp|flat|hue) ]] || bad+="value:${candidate:-none}:$REPLY"
       done
       print -r -- "checked=${#inzsh_spec_modes} bad=${bad[*]}"
     }
     When call survivable
-    The output should eq 'checked=11 bad='
+    The output should eq 'checked=13 bad='
   End
 
   # End to end, against the real surface machinery: set the mode, assign, guard, and if the
@@ -847,7 +848,7 @@ Describe 'degrading under a hostile config'
       print -r -- "checked=$checked broken=${broken[*]}"
     }
     When call end_to_end
-    The output should eq 'checked=55 broken='
+    The output should eq 'checked=65 broken='
   End
 End
 

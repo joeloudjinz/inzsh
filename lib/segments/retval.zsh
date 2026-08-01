@@ -29,11 +29,18 @@
 #   importance 1 the top of the ramp: if any segment on the row is worth raising, it is this one.
 typeset -gA _inzsh_segment_defaults
 typeset -gA _inzsh_segment_fg_role
+typeset -gA _inzsh_segment_bg_role
 typeset -gA _inzsh_segment_importance
 
 _inzsh_segment_defaults[RETVAL]=70
 _inzsh_segment_fg_role[RETVAL]=negative
 _inzsh_segment_importance[RETVAL]=1
+
+# The fill `INZSH_SURFACE_MODE=hue` gives it — see `_inzsh_render_hues`. The `negative` FILL,
+# which is the same statement the foreground above makes, made louder: this block only exists
+# when something failed. `on-negative` arrives with the fill, so the ink inverts rather than
+# staying madder-on-madder.
+_inzsh_segment_bg_role[RETVAL]=negative
 
 # The failure mark. The glyph itself is `_inzsh_glyph[error]` in `lib/core/tokens.zsh`, which is
 # where every mark the theme draws lives, along with the byte-spelling and the locale fallback

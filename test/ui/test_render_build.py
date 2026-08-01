@@ -38,7 +38,15 @@ COLS = 100
 TEXTS = ("alpha", "bravo", "charlie", "delta")
 
 
-def build(side, texts=TEXTS, mode="alternate", preset="sharp", depth="truecolor", cols=COLS):
+def build(
+    side,
+    texts=TEXTS,
+    mode="alternate",
+    preset="sharp",
+    depth="truecolor",
+    cols=COLS,
+    hues=(),
+):
     """Render one assembled side on its own row and hand back the `Grid`.
 
     Hermetic on purpose: `unset -m 'INZSH_*'` first, so an `INZSH_SURFACE_MODE` or an
@@ -57,6 +65,10 @@ def build(side, texts=TEXTS, mode="alternate", preset="sharp", depth="truecolor"
         for index, text in enumerate(texts, start=1)
     )
     order = " ".join(f"S{index}" for index in range(1, len(texts) + 1))
+    declarations = "\n".join(
+        f"_inzsh_segment_bg_role[S{index}]={shlex.quote(role)}"
+        for index, role in enumerate(hues, start=1)
+    )
     snippet = "\n".join(
         [
             "unset -m 'INZSH_*'",
@@ -70,6 +82,7 @@ def build(side, texts=TEXTS, mode="alternate", preset="sharp", depth="truecolor"
             f"source {shlex.quote(str(CORE / 'render.zsh'))}",
             f"source {shlex.quote(str(REPO_ROOT / 'presets' / f'inzsh-{preset}.zsh'))}",
             assignments,
+            declarations,
             f"_inzsh_{'right' if side == 'right' else 'left'}=({order})",
             f"_inzsh_render_build {shlex.quote(side)}",
             'print -r -- "${(%%)REPLY}"',
@@ -175,6 +188,12 @@ class RibbonTest(unittest.TestCase):
                 + excerpt(grid, focus=0),
             )
 
+    def test_left_prompt_hue(self):
+        self.assert_chaining("left", "hue")
+
+    def test_right_prompt_hue(self):
+        self.assert_chaining("right", "hue")
+
     def test_left_prompt_alternate(self):
         self.assert_chaining("left", "alternate")
 
@@ -247,6 +266,162 @@ class RibbonTest(unittest.TestCase):
                     msg=f"{preset}: adjacent blocks share a background\n"
                     + excerpt(grid, focus=0),
                 )
+
+
+class HueTest(unittest.TestCase):
+    """`hue` — the mode in which a segment names its own fill.
+
+    Everything here is read off the grid rather than off the string, because the claim the mode
+    makes is about what a cell ends up holding: that four blocks carry four different colours,
+    that the colour follows the SEGMENT rather than its position, and that a run of segments all
+    asking for the same fill still comes out with visible boundaries. No colour is named; the
+    cells are only ever compared to each other, so a palette change cannot fail this file.
+    """
+
+    # Four fills the design system pairs with an on-colour, so each block's ink arrives with its
+    # background rather than being declared beside it. `neutral` is included deliberately: it is
+    # the muted one, and a mode that only worked for saturated fills would pass without it.
+    HUES = ("negative", "neutral", "info", "accent")
+
+    def backgrounds(self, grid, texts=TEXTS):
+        columns = text_columns(grid.row_text(0), texts)
+        return [grid.cell(0, col).bg for col in columns]
+
+    def test_each_segment_draws_the_fill_it_declared(self):
+        """Four declarations, four distinct cells, on whichever side draws them."""
+        for side in ("left", "right"):
+            grid = build(side, mode="hue", hues=self.HUES)
+            self.assertEqual(grid.exit_status, 0, msg=excerpt(grid))
+            backgrounds = self.backgrounds(grid)
+            self.assertNotIn(DEFAULT_COLOR, backgrounds, msg=excerpt(grid, focus=0))
+            self.assertEqual(
+                len(set(backgrounds)),
+                len(self.HUES),
+                msg=f"{side}: declared fills collapsed onto each other\n"
+                + excerpt(grid, focus=0),
+            )
+
+    def test_the_colour_follows_the_segment_and_not_the_position(self):
+        """The whole point of declaring one: reorder the run and each block keeps its colour.
+
+        A positional mode fails this by construction — its second block is the second surface
+        whatever is in it. Here the declarations move with the segments, so the set of colours is
+        the same and the block that was first is now last still wearing its own.
+        """
+        forward = build("left", mode="hue", hues=self.HUES)
+        first = self.backgrounds(forward)
+        reversed_texts = tuple(reversed(TEXTS))
+        backward = build(
+            "left", texts=reversed_texts, mode="hue", hues=tuple(reversed(self.HUES))
+        )
+        second = self.backgrounds(backward, texts=reversed_texts)
+        self.assertEqual(list(reversed(first)), second, msg=excerpt(backward, focus=0))
+
+    def test_a_segment_that_declared_nothing_keeps_its_position(self):
+        """The positional assignment stays underneath, so a partly-declared row still fills."""
+        grid = build("left", mode="hue", hues=("accent", "", "", "negative"))
+        backgrounds = self.backgrounds(grid)
+        self.assertNotIn(DEFAULT_COLOR, backgrounds, msg=excerpt(grid, focus=0))
+        for index in range(len(TEXTS) - 1):
+            self.assertNotEqual(
+                backgrounds[index],
+                backgrounds[index + 1],
+                msg=excerpt(grid, focus=0),
+            )
+
+    def test_every_segment_asking_for_one_colour_still_draws_boundaries(self):
+        """The hostile configuration, on a real grid.
+
+        Four segments all naming `accent` is the sequence a positional mode could never produce
+        and the one the collision rule exists for. What must survive is not the colour — the
+        renderer takes the ask back — but the boundary: no two abutting blocks the same.
+        """
+        grid = build("left", mode="hue", hues=("accent",) * len(TEXTS))
+        backgrounds = self.backgrounds(grid)
+        self.assertNotIn(DEFAULT_COLOR, backgrounds, msg=excerpt(grid, focus=0))
+        for index in range(len(TEXTS) - 1):
+            self.assertNotEqual(
+                backgrounds[index],
+                backgrounds[index + 1],
+                msg=f"blocks {index} and {index + 1} share a background under a map that "
+                f"asked for one colour throughout\n" + excerpt(grid, focus=0),
+            )
+
+    def test_the_ink_arrives_with_the_fill(self):
+        """A declared fill brings the DS's paired on-colour; a positional one does not.
+
+        Read as a relationship rather than as a value: the same segment, same text, drawn once
+        with a fill it declared and once without, must not end up with the same foreground —
+        otherwise `on-negative` is landing on a surface, which is the failure this pairing was
+        built to prevent.
+        """
+        declared = build("left", mode="hue", hues=("negative", "info", "accent", "neutral"))
+        positional = build("left", mode="alternate")
+        columns_a = text_columns(declared.row_text(0), TEXTS)
+        columns_b = text_columns(positional.row_text(0), TEXTS)
+        for index, (col_a, col_b) in enumerate(zip(columns_a, columns_b)):
+            self.assertNotEqual(
+                declared.cell(0, col_a).fg,
+                positional.cell(0, col_b).fg,
+                msg=f"block {index} kept its positional ink over a declared fill\n"
+                + excerpt(declared, focus=0),
+            )
+
+    def test_the_declarations_are_read_in_no_other_mode(self):
+        """A positional mode owns every background, which is what makes its invariant free.
+
+        The map is filled identically in all four modes; only `hue` may act on it, so the three
+        positional modes must draw exactly what they draw with no map at all.
+        """
+        for mode in ("alternate", "ramp", "flat"):
+            with_map = build("left", mode=mode, hues=self.HUES)
+            without = build("left", mode=mode)
+            self.assertEqual(
+                self.backgrounds(with_map),
+                self.backgrounds(without),
+                msg=f"{mode} acted on a declared background\n"
+                + excerpt(with_map, focus=0),
+            )
+
+
+class WidthSweepTest(unittest.TestCase):
+    """The invariant at the widths a terminal actually gets dragged to.
+
+    `assert_ribbon` proves it at one width in two modes. This proves it across every filled mode
+    and a spread of widths, because the assembly measures as it draws and a mode that only holds
+    at 100 columns holds by luck.
+    """
+
+    WIDTHS = (40, 60, 80, 100, 160)
+    FILLED = ("alternate", "ramp", "hue")
+
+    def test_no_two_abutting_blocks_share_a_background_at_any_width(self):
+        for preset in ("sharp", "warm"):
+            for mode in self.FILLED:
+                for cols in self.WIDTHS:
+                    hues = HueTest.HUES if mode == "hue" else ()
+                    grid = build(
+                        "left", mode=mode, preset=preset, cols=cols, hues=hues
+                    )
+                    self.assertEqual(grid.exit_status, 0, msg=excerpt(grid))
+                    row = grid.row_text(0)
+                    # A width that cannot hold the run is not what this asserts; the assembly
+                    # does not shorten on its own, so every text is there at every width tried.
+                    columns = text_columns(row, TEXTS)
+                    backgrounds = [grid.cell(0, col).bg for col in columns]
+                    self.assertNotIn(
+                        DEFAULT_COLOR,
+                        backgrounds,
+                        msg=f"{preset}/{mode}/{cols}\n" + excerpt(grid, focus=0),
+                    )
+                    for index in range(len(TEXTS) - 1):
+                        self.assertNotEqual(
+                            backgrounds[index],
+                            backgrounds[index + 1],
+                            msg=f"{preset}/{mode} at {cols} columns: blocks "
+                            f"{index} and {index + 1} share a background\n"
+                            + excerpt(grid, focus=0),
+                        )
 
 
 if __name__ == "__main__":
