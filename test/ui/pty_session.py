@@ -16,6 +16,13 @@ The environment is pinned the same way `grid_runner` pins it, and for the same r
 `TERM=xterm-256color`, `COLORTERM` stripped, `LC_ALL=C.UTF-8`. `PROMPT` and friends are
 cleared on the way in so that a developer's exported prompt cannot appear in a grid this
 suite is about to make assertions on.
+
+The pty is made the child's CONTROLLING TERMINAL, and that is not decoration. SIGWINCH is
+sent by the kernel to the foreground process group of a terminal, so a shell that merely
+has a pty on its file descriptors is never told the window changed: `session.resize()`
+would move the size and the shell would go on drawing for the old one, which is exactly
+the bug under test passing itself off as a fix. `setsid` plus `TIOCSCTTY` in the child is
+what makes the resize arrive the way it arrives on a real terminal.
 """
 
 from __future__ import annotations
@@ -39,6 +46,16 @@ _READ_CHUNK = 65536
 _SETTLE = 0.12
 
 
+def _claim_terminal():
+    """In the child, between fork and exec: take the pty as the controlling terminal.
+
+    `start_new_session` has already made this process a session leader, and stdin is
+    already the pty slave, so all that is left is the ioctl that binds the two. Without it
+    the kernel has no foreground process group to deliver SIGWINCH to.
+    """
+    fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+
+
 class Session:
     """One interactive `zsh -f -i` on a pty of the requested size."""
 
@@ -57,6 +74,13 @@ class Session:
             child_env.update(env)
         child_env["LC_ALL"] = LOCALE
 
+        # Every window size the session has run at, as (byte offset into `_output`, cols,
+        # lines). `grid()` replays the transcript against it rather than against the final
+        # size, because bytes written at 100 columns did not wrap where bytes written at 60
+        # do — a screen built at one width out of output produced at two is a screen nobody
+        # ever saw.
+        self._sizes = [(0, cols, lines)]
+
         self._master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", lines, cols, 0, 0))
         try:
@@ -68,6 +92,7 @@ class Session:
                 env=child_env,
                 close_fds=True,
                 start_new_session=True,
+                preexec_fn=_claim_terminal,
             )
         except BaseException:
             os.close(self._master)
@@ -91,6 +116,25 @@ class Session:
         """Ctrl-C, as the key rather than as a signal: the line editor has to see it."""
         self.send_raw("\x03")
 
+    # -- the window ---------------------------------------------------------------
+    def resize(self, cols, lines=None):
+        """Change the window size, the way dragging a window's edge does.
+
+        The ioctl on the master is the whole of it: the kernel updates the size for both
+        ends of the pty and sends SIGWINCH to the terminal's foreground process group,
+        which is the shell, because `_claim_terminal` made this pty its controlling
+        terminal. Nothing here signals the child by hand — a test that did would be
+        proving that `kill -WINCH` works rather than that a resize does.
+        """
+        lines = self.lines if lines is None else lines
+        fcntl.ioctl(
+            self._master, termios.TIOCSWINSZ, struct.pack("HHHH", lines, cols, 0, 0)
+        )
+        self.cols = cols
+        self.lines = lines
+        self._sizes.append((len(self._output), cols, lines))
+        self._settle()
+
     # -- reading ------------------------------------------------------------------
     def finish(self):
         """Exit the shell, drain the pty and return the `Grid` of what it wrote."""
@@ -103,9 +147,27 @@ class Session:
         return self.grid()
 
     def grid(self):
-        screen = pyte.Screen(self.cols, self.lines)
+        """The screen as the user would have been left looking at it.
+
+        Replayed size by size. With no resize this is one `feed` of everything, byte for
+        byte what it always was; with resizes it is the same transcript fed in the widths
+        it was actually written at, with `Screen.resize` between the pieces exactly where
+        the ioctl went.
+        """
+        _, first_cols, first_lines = self._sizes[0]
+        screen = pyte.Screen(first_cols, first_lines)
         stream = pyte.ByteStream(screen)
-        stream.feed(self._output)
+
+        for index, (offset, cols, lines) in enumerate(self._sizes):
+            if index:
+                screen.resize(lines, cols)
+            end = (
+                self._sizes[index + 1][0]
+                if index + 1 < len(self._sizes)
+                else len(self._output)
+            )
+            stream.feed(self._output[offset:end])
+
         return Grid(screen, exit_status=self._proc.returncode, raw=self._output)
 
     def rows(self):

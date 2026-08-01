@@ -122,6 +122,27 @@ Describe 'the entry point'
       The output should eq ''
     End
 
+    # The one slot the theme takes that is not an array. zsh has a single WINCH handler, so it
+    # cannot be registered alongside anybody — it is saved, wrapped and given back — and it is
+    # asserted here rather than above because it is not a hook and would read as one.
+    It 'takes the WINCH slot, and gives it back on uninstall'
+      winch() {
+        zsh -f -i -c '
+          TRAPWINCH() { alien=1 }
+          local before=${functions[TRAPWINCH]}
+          source "$1"
+          local -a wrong=()
+          [[ ${functions[TRAPWINCH]} == ${functions[_inzsh_resize_trap]} ]] || wrong+=not-ours
+          _inzsh_resize_uninstall
+          [[ ${functions[TRAPWINCH]} == $before ]] || wrong+=not-given-back
+          print -r -- "${wrong[*]}"
+        ' inzsh-entry-winch "$(inzsh_spec_theme)"
+      }
+      When call winch
+      The output should eq ''
+      The stderr should eq ''
+    End
+
     # The other half of the same contract: once precmd runs, the theme owns the prompt. Without
     # this the example above passes for a theme that never draws anything at all.
     It 'draws the prompt once precmd has run'

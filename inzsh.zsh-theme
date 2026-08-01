@@ -33,6 +33,7 @@ source $_inzsh_theme_root/lib/core/engine.zsh
 source $_inzsh_theme_root/lib/core/render.zsh
 source $_inzsh_theme_root/lib/core/prompts.zsh
 source $_inzsh_theme_root/lib/core/transient.zsh
+source $_inzsh_theme_root/lib/core/resize.zsh
 source $_inzsh_theme_root/lib/core/hooks.zsh
 
 # The segments, listed rather than globbed. A glob would load whatever happens to be in the
@@ -69,6 +70,10 @@ _inzsh_hooks_install
 _inzsh_prompts_install
 _inzsh_title_install
 _inzsh_transient_install
+
+# The resize redraw. Last of the prompt installers because it is the only one that takes a slot
+# nobody can share — zsh has one WINCH handler — and it saves whatever it found there first.
+_inzsh_resize_install
 
 # The one background worker in the theme. Installed after the prompt hooks because it registers
 # a precmd of its own, and the status capture has to stay first. It draws nothing itself: it
