@@ -159,10 +159,20 @@ _inzsh_fixture_build() {
   local work=$root/work
 
   # The upstream first, so the checkout can be pushed the moment it has a commit.
-  _inzsh_fixture_git "$root" init -q --bare -b "$_inzsh_fixture_branch" "$origin" \
-    >/dev/null 2>&1 || return 1
-  _inzsh_fixture_git "$root" init -q -b "$_inzsh_fixture_branch" "$work" \
-    >/dev/null 2>&1 || return 1
+  #
+  # `init -b` and `init.defaultBranch` both arrived in git 2.28, and the oldest git this project
+  # is tested against is older than that — Debian buster, which the zsh 5.8 image is built on,
+  # ships 2.20. There the flag is an error and the config is ignored, so an unpatched fixture
+  # quietly builds `master` and every expectation that names `main` fails. `symbolic-ref` on an
+  # empty repository is how the branch was named before either existed, and it still is: it
+  # writes HEAD directly, works on every version, and needs no commit to exist yet.
+  _inzsh_fixture_git "$root" init -q --bare "$origin" >/dev/null 2>&1 || return 1
+  _inzsh_fixture_git "$root" -C "$origin" symbolic-ref HEAD \
+    "refs/heads/$_inzsh_fixture_branch" >/dev/null 2>&1 || return 1
+
+  _inzsh_fixture_git "$root" init -q "$work" >/dev/null 2>&1 || return 1
+  _inzsh_fixture_git "$root" -C "$work" symbolic-ref HEAD \
+    "refs/heads/$_inzsh_fixture_branch" >/dev/null 2>&1 || return 1
 
   _inzsh_fixture_commit "$root" "$work" base || return 1
   _inzsh_fixture_git "$root" -C "$work" remote add origin "$origin" >/dev/null 2>&1 || return 1
