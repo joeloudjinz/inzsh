@@ -375,9 +375,9 @@ typeset -ga _inzsh_bench_table=(
   tokens-256          200   0.850
   tokens-8            200   0.850
   seg-color           150   1.350
-  rank-split          100   1.800
-  surface-alternate   800   0.250
-  surface-ramp        400   0.400
+  rank-split          100   3.400
+  surface-alternate   800   0.500
+  surface-ramp        400   0.685
   surface-hue         400   1.500
   layout-width        150   1.100
   layout-filter       150   3.250
@@ -385,7 +385,7 @@ typeset -ga _inzsh_bench_table=(
   config-get          600   0.320
   config-get-family   200   0.800
   config-resolve      150   1.450
-  render-floor         40   7.200
+  render-floor         40  12.000
   render-prompt        40  12.000
 )
 
@@ -394,6 +394,26 @@ typeset -ga _inzsh_bench_table=(
 # laptop breached it on the first CI run at 0.500, 0.526 and 0.654. The number here is the
 # rule applied to the same measurement (worst best-of-5 of 0.246 ms, x6), not a budget
 # widened until the red went away.
+#
+# `rank-split`, `surface-alternate`, `surface-ramp` and `render-floor` were re-baselined
+# together, for the same reason and after the same check. Each carried roughly 3x its measured
+# cost rather than the six this table uses, and `surface-alternate` was the one that finally
+# said so: it breached on two consecutive merges to `dev` at 0.2637 and 0.2604 against 0.250.
+#
+# Before touching a number, the four were measured on the merge commit and on its parent. Every
+# case moved by under 3% — run-to-run noise — so nothing in that merge had made anything slower,
+# and the budgets were simply the old ones. That is the difference between re-baselining and
+# excusing a regression, and it is worth doing in that order every time.
+#
+# What made the rest of the table survive on the same runners is arithmetic, not luck: a CI
+# runner costs about three times a laptop here (`surface-alternate` measured 0.0839 locally and
+# 0.2637 on CI, a ratio of 3.14). A budget at 6x sits at half its ceiling on that runner; one at
+# 3x sits right on it. The four raised here projected to 98%, 104%, 89% and 87% of their
+# budgets, so `rank-split` was the next to go whatever anybody committed next.
+#
+# `config-resolve` was left at 1.450 deliberately. It reads a little tight at 21% of budget
+# locally, but it projects to 65% on CI, and widening a gate that is not going to fire only
+# makes it worse at catching what it is for.
 #
 # `layout-filter` was re-baselined when the knob registry landed: the width filter now asks the
 # registry for each segment MINCOLS, which validates the value rather than trusting it, so the
@@ -408,6 +428,12 @@ typeset -ga _inzsh_bench_table=(
 # measurement taken the day the renderer landed. It will want revisiting once the segment set
 # stops growing — a budget set against a seven-segment prompt says nothing useful about a
 # twelve-segment one.
+#
+# Which is also why `render-floor` and `render-prompt` now carry the SAME budget, though the
+# floor is the cheaper case and the table would normally rank them. They are not measured to the
+# same standard: the floor's 12.000 is its own cost times six, and the prompt's 12.000 is a
+# deliberately tighter multiple over an older measurement. The prompt is the row the 30 ms house
+# budget is about, so it keeps the harder gate rather than being relaxed to match the rule.
 
 # The row the house budget is about. `_inzsh_config_render_budget_ms` in `lib/core/config.zsh`
 # is 30 ms; this is the case measured against it, through the registered guard.
