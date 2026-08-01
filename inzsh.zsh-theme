@@ -56,9 +56,14 @@ source $_inzsh_theme_root/lib/segments/time.zsh
 # that pulled in no such module.
 _inzsh_config_absorb_all
 
-# Hooks first: precmd functions run in registration order, and only the first one sees an
-# untouched `$?` and `$pipestatus`. `_inzsh_precmd` captures both on its first line, so anything
-# registered ahead of it would cost the exit status the retval segment exists to show.
+# Hooks first, and first for a weaker reason than it looks. zsh restores `$?` and `$pipestatus`
+# around EACH precmd function, so a hook registered ahead of `_inzsh_precmd` does not in fact
+# cost it the status — measured, not assumed. What the capture is really defending against is a
+# statement inside its own body running before it, which is why that rule is about the first
+# LINE of the function and not about the order of the list.
+#
+# The order is still deliberate: the segments read what `_inzsh_precmd` captured, so it should
+# have run before anything that renders. A correctness margin rather than a correctness fix.
 _inzsh_hooks_install
 _inzsh_prompts_install
 _inzsh_title_install
