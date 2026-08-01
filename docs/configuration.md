@@ -156,6 +156,101 @@ Every value here is validated by the prayer module itself, which computes withou
 part of the prompt engine. Unreadable values fall back the same way everything else does: an
 unrecognised method computes MWL, and an angle of `banana` computes the method's own.
 
+The shortest working configuration is two numbers:
+
+```zsh
+INZSH_SALAH_LAT=21.4225
+INZSH_SALAH_LON=39.8262
+```
+
+Without a location the segment is **absent** — no block, no separator, nothing. It cannot
+invent one, and it will not guess one from your time zone.
+
+### Where you are
+
+| Variable | Values | Default | Effect |
+|---|---|---|---|
+| `INZSH_SALAH_LAT` | decimal degrees, −90 to 90, north positive | unset | Your latitude. Set both this and the longitude and the segment works offline, privately and deterministically — this is the documented path, and the one everything else here falls back to. A value that is not a number in range is treated as unset, so a typo hides the segment rather than moving you. |
+| `INZSH_SALAH_LON` | decimal degrees, −180 to 180, east positive | unset | Your longitude. |
+
+### Looking it up
+
+Off by default. This is the **only network call in the theme**, and it exists so that people who
+would rather not look their own coordinates up have a way not to. Everything about it is arranged
+so that it cannot cost you a prompt.
+
+**Nothing on the render path can reach it.** The lookup lives in one function,
+`_inzsh_salah_locate_refresh`, and the theme never calls it. You call it — from your `.zshrc`
+detached, from a timer, or by hand after you move:
+
+```zsh
+INZSH_SALAH_AUTOLOCATE=1
+(_inzsh_salah_locate_refresh &!)     # in .zshrc: fire and forget, login does not wait
+```
+
+**What leaves the machine.** One HTTPS `GET` to `INZSH_SALAH_AUTOLOCATE_URL`, made by `curl` or,
+failing that, `wget`. It carries what any HTTP request carries — a method, a path, a `Host`
+header, the client's own user agent — and nothing the theme adds: no coordinates, no hostname, no
+username, no shell state, no identifier of any kind. The service learns your public IP address,
+which is the thing it is being asked to turn into a position. The response is read for two
+numbers and the body is deleted.
+
+**Failure is never visible.** The answer is cached, and the cached answer never expires: the TTL
+says when a refresh is *due*, not when the last one stops being usable. A machine that has been
+offline for a week is still almost certainly in the same city. With the lookup switched on, no
+coordinates set and nothing ever cached, the segment is simply absent.
+
+| Variable | Values | Default | Effect |
+|---|---|---|---|
+| `INZSH_SALAH_AUTOLOCATE` | `1` · `0` · `true` · `false` · `yes` · `no` · `on` · `off`, in any case | `0` | Whether the lookup is permitted at all. Anything unreadable is **off** — a typo may not switch a network call on. `INZSH_SALAH_LAT`/`LON` still win when they are set, so turning this on and then setting the coordinates by hand does the obvious thing. |
+| `INZSH_SALAH_AUTOLOCATE_TTL` | integer, at least `300` | `86400` | Seconds before a refresh is considered due. It bounds a refresh and never a read: an older answer is still used, because a stale city beats no prayer times. |
+| `INZSH_SALAH_AUTOLOCATE_TIMEOUT` | integer, 1–60 | `5` | The hard ceiling on the request, passed to `curl --max-time` or `wget --timeout`. Chosen against a person waiting for a terminal, not against a slow network. |
+| `INZSH_SALAH_AUTOLOCATE_URL` | an `http://` or `https://` URL returning JSON with `latitude`/`longitude` (or `lat`/`lon`) | `https://ipapi.co/json/` | Where to ask. Point it at your own service and that is where the request goes; anything that is not one of those two schemes falls back to the default, since the value reaches an external command's argument list. |
+
+### What it draws
+
+| Variable | Values | Default | Effect |
+|---|---|---|---|
+| `INZSH_SALAH_FORMAT` | `clock` · `countdown` · `window` · `full`, in any case | `clock` | Which reading of the next moment to draw. `clock` is `Maghrib · 19:59` — a time you can compare against a clock. `countdown` is `Maghrib in 24m` — no arithmetic for the reader, and meaningless in a screenshot an hour later. `window` is `Asr · until 19:59` — which prayer is due now and how long it stays due. `full` is `Maghrib · 19:59 · 24m`, for a wide terminal. Anything unrecognised draws `clock`. |
+
+`window` names the window it is inside. Between sunrise and dhuhr, and between isha and the next
+fajr, no window is open, and there it falls back to the `clock` reading rather than going blank
+for a third of the day or asserting that isha's window runs to fajr — where isha's window ends is
+a question of fiqh, and this theme computes the sun's position and rules on nothing else.
+
+A prayer with no astronomical time — a polar night, a midnight sun — is skipped on the way to the
+next real moment, and never drawn as `00:00`. Where every moment of the day is absent, so is the
+segment.
+
+**The accent.** This is the segment the theme's one saturated colour is meant for, and it cannot
+claim it by itself: backgrounds are assigned positionally so that no two adjacent blocks share
+one. Two lines in your own config give it the accent today, written as roles so that a palette
+change still reaches them:
+
+```zsh
+INZSH_SALAH_BG=${_inzsh_role[accent]}
+INZSH_SALAH_FG=${_inzsh_role[on-accent]}
+```
+
+### Where the day is kept
+
+A day's six prayers cost a few milliseconds of trigonometry, which is far too much to pay on
+every prompt, so the answer is computed once and written down. An entry holds **twelve** moments —
+today's six and tomorrow's — so that after isha the next prayer is a lookup rather than a second
+computation, and midnight is not an event anything has to handle.
+
+The entry is keyed by **date, position, UTC offset and calculation parameters**. Change any of
+them — cross a time zone, change methods at the prompt, wait until tomorrow — and the key changes
+and the table is rebuilt. A laptop that travels does not show yesterday's city. The write is a
+temporary file renamed over the target, so several shells waking up on the same morning cannot
+show each other half an entry, and a truncated or edited entry is a miss, which recomputes.
+
+| Variable | Values | Default | Effect |
+|---|---|---|---|
+| `INZSH_SALAH_CACHE_DIR` | a directory path | `$XDG_CACHE_HOME/inzsh/salah`, or `~/.cache/inzsh/salah` | Where the day table and the looked-up position live. Derived data with no value once tomorrow arrives, which is why it defaults under the cache directory rather than under a config one. A directory that cannot be created means no file cache: the table is then held in memory for the life of the shell, and the segment still draws. |
+
+### Calculating
+
 | Variable | Values | Default | Effect |
 |---|---|---|---|
 | `INZSH_SALAH_METHOD` | `MWL` · `ISNA` · `UmmAlQura` · `Egyptian` · `Karachi` · `Algeria`, plus the aliases `Makkah`, `Mecca`, `Egypt`, `MuslimWorldLeague` | `MWL` | The calculation authority. Matched with case, spacing and punctuation ignored, so `Umm al-Qura`, `umm_al_qura` and `ummalqura` are one request. Each entry is a fajr angle plus either an isha angle or a fixed interval after maghrib; both forms are first-class. |
