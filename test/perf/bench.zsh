@@ -378,7 +378,7 @@ typeset -ga _inzsh_bench_table=(
   rank-split          100   1.800
   surface-alternate   800   0.250
   surface-ramp        400   0.400
-  surface-hue         400   0.500
+  surface-hue         400   1.500
   layout-width        150   1.100
   layout-filter       150   3.250
   truncate-path        80   2.650
@@ -389,6 +389,12 @@ typeset -ga _inzsh_bench_table=(
   render-prompt        40  12.000
 )
 
+# `surface-hue` first shipped at 0.500, which was about twice its measured cost rather than
+# the six this table uses everywhere else — and a runner two to three times slower than a
+# laptop breached it on the first CI run at 0.500, 0.526 and 0.654. The number here is the
+# rule applied to the same measurement (worst best-of-5 of 0.246 ms, x6), not a budget
+# widened until the red went away.
+#
 # `layout-filter` was re-baselined when the knob registry landed: the width filter now asks the
 # registry for each segment MINCOLS, which validates the value rather than trusting it, so the
 # primitive genuinely does more than it did. The number is the table's own rule — best-of-5 ×6 —
