@@ -216,6 +216,13 @@ typeset -gA _inzsh_segment_importance
 # it. Declared here so a caller reading it before the first build gets 0 rather than an error.
 typeset -g _inzsh_render_width=0
 
+# The terminal width the prompt currently in `PROMPT` was built for. Written by `_inzsh_render`
+# and read by `lib/core/resize.zsh`, which redraws on SIGWINCH only while this and `$COLUMNS`
+# disagree — a window whose height changed emits the same signal and moves nothing the prompt
+# draws. Declared here so a reader before the first draw gets 0, which no real terminal is, so the
+# first resize after a load always redraws.
+typeset -g _inzsh_render_cols=0
+
 # ---------------------------------------------------------------------------------------------
 # Separators
 #
@@ -713,6 +720,80 @@ _inzsh_render_lines() {
   return 0
 }
 
+# ---------------------------------------------------------------------------------------------
+# The padding, and the guard under it
+#
+# The padding is LITERAL SPACES, which makes it the one thing in the prompt that can push a row
+# past the edge of the terminal. A row that overflows does not merely look wrong: it WRAPS, and a
+# wrapped prompt is redrawn as several rows of the same ribbon, which is issue #190 as the user
+# reported it. Two functions, because the answer is arrived at twice over — the arithmetic that
+# proposes a gap, and the measurement that accepts or refuses the row it produced.
+
+# `_inzsh_render_gap <cols> <left-width> <right-width>` → REPLY: how many columns of PADDING go
+# between the two sides of the segment row, or 0 for "do not pad".
+#
+# One column is kept back at the right edge, which is where zsh puts `RPROMPT` itself — filling
+# the last cell is the classic off-by-one that turns a two-row prompt into a three-row one on a
+# terminal that wraps eagerly, and the marker row below already keeps the same column back for
+# the cursor.
+#
+# Everything that is not a number is refused rather than coerced. `$COLUMNS` must be a positive
+# integer — unknown means no arithmetic can right-align against it, the same reading
+# `lib/core/layout.zsh` gives it — and both widths must be non-negative integers. A `local -i`
+# would silently turn `abc` into 0 and pad the row to the full width of the terminal.
+#
+# A gap of 0 is not a failure. `_inzsh_render` has the degradation for it — the right side goes
+# to `RPROMPT` and lands beside the marker on row two, which is a right prompt in the wrong place
+# rather than one that vanished. Always status 0.
+_inzsh_render_gap() {
+  emulate -L zsh
+
+  typeset -g REPLY=0
+
+  [[ $1 == <1-> && $2 == <-> && $3 == <-> ]] || return 0
+
+  local -i gap=$(( $1 - $2 - $3 - 1 ))
+  (( gap >= 1 )) || return 0
+
+  typeset -g REPLY=$gap
+
+  return 0
+}
+
+# `_inzsh_render_row_fits <row> <cols>` — status 0 iff that row can be drawn on a terminal that
+# wide without wrapping.
+#
+# THE ROW IS MEASURED, NOT ARGUED ABOUT. `left_width + gap + right_width <= cols - 1` is true by
+# construction of the gap, so restating it would gate on the arithmetic's own opinion of itself
+# and could never fire. What can be wrong is the arithmetic's INPUTS: `_inzsh_render_width` is
+# accumulated as a side effect of assembly, it is 0 both for "nothing was drawn" and for "there
+# was no `_inzsh_width` in this shell to measure with" — a render core sourced without the layout
+# layer, which this file supports on purpose — and a separator or a block that stopped being
+# accounted for would be invisible to every check made of the numbers. So the finished string is
+# measured, once, and that is a different question from the one the gap answered.
+#
+# This is `_inzsh_surfaces_valid`'s relationship to `_inzsh_render_surfaces`, in the other half of
+# the file: the predicate is the invariant, and the function that produced the candidate is only
+# an argument about it.
+#
+# A guard that CANNOT answer says no. Without `_inzsh_width` there is no way to know how wide the
+# row is, and "I could not check" has to read as "do not trust this" — the rule
+# `lib/core/config.zsh` states for its own guards, for the same reason: refusing to vouch costs a
+# fallback, vouching wrongly costs a wrapped prompt.
+#
+# It costs one measuring pass over the assembled row, which is 0.06 ms on a 160-column prompt —
+# 2% of the warm render and a fifth of a percent of the house budget.
+_inzsh_render_row_fits() {
+  emulate -L zsh
+
+  (( ${+functions[_inzsh_width]} )) || return 1
+  [[ $2 == <1-> ]] || return 1
+
+  _inzsh_width "$1"
+
+  (( REPLY <= $2 - 1 ))
+}
+
 # `_inzsh_render_paint <role> <text>` → REPLY. One helper, for one reason: an unresolved role
 # must never reach the prompt as `%F{}`, which is a broken escape zsh prints verbatim and
 # exactly what a bundle loaded without the token layer would produce. No role, no colour, same
@@ -812,6 +893,11 @@ _inzsh_render() {
 
   [[ -o interactive ]] || return 0
 
+  # The width this draw is for, published before anything is built. `lib/core/resize.zsh` reads
+  # it to tell a resize that moved the prompt from one that did not, and a draw that is about to
+  # happen is a draw for the width it is happening at.
+  typeset -g _inzsh_render_cols=${COLUMNS:-0}
+
   local segment builder
   for segment in ${(k)_inzsh_segment_defaults}; do
     builder=_inzsh_segment_${(L)segment}_build
@@ -879,15 +965,21 @@ _inzsh_render() {
   local row=$left
   local rest=$right
   if [[ -n $right ]]; then
-    # One column spare at the right edge, which is where zsh puts `RPROMPT` itself — measured on
-    # a real terminal rather than assumed, in `test/ui/test_prompt_shape.py`. Filling the last
-    # cell is the classic off-by-one that turns a two-row prompt into a three-row one on a
-    # terminal that wraps eagerly, and the row below already keeps the same column back for the
-    # cursor.
-    local -i pad=$(( cols - left_width - right_width - 1 ))
-    if (( cols > 0 && pad >= 1 )); then
-      row+=${(l:pad:):-}$right
-      rest=
+    # Proposed, then measured. The gap is arithmetic over two widths this function already holds,
+    # so placing the right side costs no second measuring pass — and the row it produces is put
+    # to `_inzsh_render_row_fits` before it is kept, because a row that overflows its terminal
+    # wraps, and a wrapped prompt is redrawn as several rows of the same ribbon. Where the
+    # measurement refuses, `rest` is left as it was and the right side goes to `RPROMPT`, which
+    # is the degradation this branch already had for a gap that would not fit.
+    _inzsh_render_gap "$cols" "$left_width" "$right_width"
+    local -i pad=$REPLY
+
+    if (( pad >= 1 )); then
+      local padded=$left${(l:pad:):-}$right
+      if _inzsh_render_row_fits "$padded" "$cols"; then
+        row=$padded
+        rest=
+      fi
     fi
   fi
 

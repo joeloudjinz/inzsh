@@ -249,6 +249,107 @@ Describe 'the prompt shape'
   End
 
   # -------------------------------------------------------------------------------------------
+  # The guard under that arithmetic. The padding is the one thing in the prompt that can push a
+  # row past the edge of its terminal — it is literal spaces, and a row that overflows does not
+  # merely look wrong, it WRAPS, and a wrapped prompt is redrawn as the same ribbon twice. So the
+  # rule "left + gap + right fits in cols - 1" is written down as a function rather than left to
+  # emerge from a subtraction, and a gap that cannot satisfy it is answered as 0, which the caller
+  # already reads as "put the right side in RPROMPT".
+  Describe 'the gap the padding is allowed to be'
+    Parameters
+      #cols left right gap
+      80    10   10    59
+      80    40   38    1     # the smallest gap that is still drawn
+      80    40   39    0     # exactly none left over
+      80    50   50    0     # the two sides already overlap
+      1     0    0     0     # a terminal with no room for anything
+      0     10   10    0     # an unknown width: no arithmetic can right-align against it
+      abc   10   10    0     # nor against one that is not a number
+      80    ''   10    0     # nor over a width that was never measured
+      80    10   x     0
+    End
+
+    It "answers $4 for cols=$1 left=$2 right=$3"
+      gap() {
+        inzsh_spec_shape '
+          _inzsh_render_gap "$1" "$2" "$3"
+          print -r -- "$REPLY"
+        ' "$1" "$2" "$3"
+      }
+      When call gap "$1" "$2" "$3" "$4"
+      The output should eq "$4"
+      The stderr should eq ''
+    End
+  End
+
+  # The other half of the guard, and the half that can actually fire. The gap is arithmetic over
+  # two numbers, so `left + gap + right <= cols - 1` is true by construction and a check of it
+  # would gate on the arithmetic's own opinion of itself. What can be wrong is the INPUTS, so the
+  # row that came out is measured instead — a different question from the one the gap answered.
+  Describe 'the row the padding produced'
+    Parameters
+      #row                cols verdict
+      'aaaa'              10   fits
+      'aaaaaaaaa'         10   fits    # exactly one column short of the edge
+      'aaaaaaaaaa'        10   refused # the last cell, which is the off-by-one that wraps
+      'aaaaaaaaaaaa'      10   refused
+      '%F{red}aaaa%f'     10   fits    # escapes occupy no cells and must not be counted
+      'aaaa'              0    refused # nothing to measure against
+      'aaaa'              abc  refused
+    End
+
+    It "answers $3 for a row of '$1' at $2 columns"
+      fits() {
+        inzsh_spec_shape '
+          _inzsh_render_row_fits "$1" "$2" && print -r -- fits || print -r -- refused
+        ' "$1" "$2"
+      }
+      When call fits "$1" "$2" "$3"
+      The output should eq "$3"
+      The stderr should eq ''
+    End
+
+    # A guard that cannot answer says no — the rule `lib/core/config.zsh` states for its own
+    # guards. A render core sourced without the layout layer has nothing to measure with, and "I
+    # could not check" has to read as "do not trust this": refusing to vouch costs a fallback,
+    # vouching wrongly costs a wrapped prompt.
+    It 'refuses to vouch for a row it has no way to measure'
+      unmeasurable() {
+        inzsh_spec_shape_alone '
+          _inzsh_render_row_fits aaaa 80 && print -r -- vouched || print -r -- refused
+        '
+      }
+      When call unmeasurable
+      The output should eq 'refused'
+      The stderr should eq ''
+    End
+
+    # And what it is for. `_inzsh_render_width` is accumulated as a side effect of assembly, so a
+    # block or a separator that stopped being accounted for would leave the gap arithmetic
+    # confidently wrong and every check made of the NUMBERS agreeing with it. Here the accounting
+    # is silenced outright, which is the extreme of that: both sides come back as 0 wide, the gap
+    # comes out as nearly the whole terminal, and only measuring the finished row can tell.
+    It 'falls back to RPROMPT when the accounting under-reports the row'
+      lied() {
+        inzsh_spec_shape '
+          _inzsh_width_add() { : }
+          typeset -g COLUMNS=80
+          _inzsh_render
+          local -a rows=("${(f)PROMPT}")
+          inzsh_shape_width "${rows[1]}"
+          local -a wrong=()
+          (( REPLY_WIDTH < 80 ))    || wrong+=overflowed:$REPLY_WIDTH
+          [[ -n $RPROMPT ]]         || wrong+=rprompt-empty
+          print -r -- "${wrong[*]}"
+        '
+      }
+      When call lied
+      The output should eq ''
+      The stderr should eq ''
+    End
+  End
+
+  # -------------------------------------------------------------------------------------------
   Describe 'INZSH_PROMPT_LINES'
     It 'puts the whole prompt back on one row when it is 1'
       one_line() {
