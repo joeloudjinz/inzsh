@@ -67,7 +67,7 @@ zmodload -i zsh/parameter
 # in it, so re-sourcing neither empties a map nor doubles a registration, and the declaration is
 # what makes this file sourceable on its own.
 typeset -gA _inzsh_segment_text _inzsh_segment_defaults
-typeset -gA _inzsh_segment_fg_role _inzsh_segment_bg_role _inzsh_segment_importance
+typeset -gA _inzsh_segment_fg_role _inzsh_segment_bg_role _inzsh_segment_importance _inzsh_segment_priority
 
 # Registration.
 #
@@ -80,6 +80,7 @@ typeset -gA _inzsh_segment_fg_role _inzsh_segment_bg_role _inzsh_segment_importa
 _inzsh_segment_defaults[JOBS]=0
 _inzsh_segment_fg_role[JOBS]=info-text
 _inzsh_segment_importance[JOBS]=3
+_inzsh_segment_priority[JOBS]=45
 
 # The fill `INZSH_SURFACE_MODE=hue` gives it — see `_inzsh_render_hues`. The info WASH, for the
 # reason `lib/segments/venv.zsh` takes it: a wash has no `on-` twin, so `info-text` above survives

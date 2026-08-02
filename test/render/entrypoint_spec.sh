@@ -66,6 +66,82 @@ Describe 'the entry point'
     End
   End
 
+  # The load list is written down rather than globbed, which is the right call — the order is a
+  # contract — and it is the one hand-maintained list in the tree. It went wrong exactly as a
+  # hand-maintained list does: it was correct for the seven segments that existed when it was
+  # written, `git` and `git-async` were remembered when they landed, and `salah`, `date`, `ssh`,
+  # `duration` and `jobs` were not. Five files, and `lib/salah/` entire, present on disk, tested
+  # thoroughly, and never sourced into anybody's shell.
+  #
+  # Nothing caught it, and the near-misses are the instructive part. `config_registry_spec.sh`
+  # scans `lib/segments/*.zsh` ON DISK for registered knobs and gates each against the reference,
+  # so `INZSH_SALAH_LAT` was registered, documented and unreachable all at once — the guard that
+  # most looked like it covered this is the one that hid it. Every salah spec `Include`s the
+  # files itself, so the astronomy passed through a door the user could not walk through.
+  #
+  # The examples below are the missing gate, and they are deliberately structural: a file that
+  # exists but is not loaded fails, whatever it contains.
+  Describe 'the load list'
+    inzsh_spec_unsourced() {
+      local dir=$1 file name
+      local -a missing=()
+      for file in "$SHELLSPEC_PROJECT_ROOT"/lib/$dir/*.zsh(N); do
+        name=${file:t}
+        grep -q "lib/$dir/$name" "$(inzsh_spec_theme)" || missing+=$name
+      done
+      print -r -- "${missing[*]}"
+    }
+
+    It 'sources every segment that exists'
+      When call inzsh_spec_unsourced segments
+      The output should eq ''
+    End
+
+    It 'sources every file of the prayer-time library'
+      When call inzsh_spec_unsourced salah
+      The output should eq ''
+    End
+
+    # The other direction, and the one a `grep` cannot answer: a name in the list that no longer
+    # names a file leaves the entry point sourcing something absent, which in a `zsh -f` is a
+    # broken prompt for every shell on the machine.
+    It 'sources nothing that has gone away'
+      dangling() {
+        local line path
+        local -a missing=()
+        while IFS= read -r line; do
+          [[ $line == source*lib/* ]] || continue
+          path=${line##*_inzsh_theme_root/}
+          [[ -f "$SHELLSPEC_PROJECT_ROOT/$path" ]] || missing+=$path
+        done < "$(inzsh_spec_theme)"
+        print -r -- "${missing[*]}"
+      }
+      When call dangling
+      The output should eq ''
+    End
+
+    # Loaded is not the same as REGISTERED. A segment file can be sourced and still fail to put
+    # itself in the engine's map — a typo'd association name, a guard that returned early — and
+    # the prompt would be quietly short of a block with every file present and every spec green.
+    It 'ends with every segment registered in a real shell'
+      registered() {
+        zsh -f -i -c '
+          source "$1"
+          local -a want=(ROOT USER HOST SSH DIR VENV GIT RETVAL DURATION JOBS TIME DATE SALAH)
+          local -a missing=()
+          local name
+          for name in $want; do
+            (( ${+_inzsh_segment_defaults[$name]} )) || missing+=$name
+          done
+          print -r -- "${missing[*]}"
+        ' inzsh-entry-registered "$(inzsh_spec_theme)"
+      }
+      When call registered
+      The output should eq ''
+      The stderr should eq ''
+    End
+  End
+
   Describe 'interactive'
     It 'loads the library in dependency order and resolves the roles'
       loaded() {

@@ -50,7 +50,7 @@ zmodload -i zsh/datetime
 # too so this file can be sourced on its own without creating a plain parameter by accident
 # under `warn_create_global`; the precmd below reads them and never writes them.
 typeset -gA _inzsh_segment_text _inzsh_segment_defaults
-typeset -gA _inzsh_segment_fg_role _inzsh_segment_bg_role _inzsh_segment_importance
+typeset -gA _inzsh_segment_fg_role _inzsh_segment_bg_role _inzsh_segment_importance _inzsh_segment_priority
 typeset -ga _inzsh_left _inzsh_right
 
 # Registration.
@@ -63,6 +63,7 @@ typeset -ga _inzsh_left _inzsh_right
 _inzsh_segment_defaults[DURATION]=0
 _inzsh_segment_fg_role[DURATION]=text-muted
 _inzsh_segment_importance[DURATION]=2
+_inzsh_segment_priority[DURATION]=65
 
 # The fill `INZSH_SURFACE_MODE=hue` gives it — see `_inzsh_render_hues`. A surface: a duration is
 # a fact about a command that already finished, and it is next to the exit status, which is the

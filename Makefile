@@ -53,6 +53,9 @@ grid: ## rendered terminal grid, per-cell colours (default COLS=80); needs the p
 	  print -- "make grid: no python venv — run 'make setup' first (skipped)"; \
 	fi
 
+play: ## a live prompt in a throwaway shell — every knob takes effect as you type
+	@zsh tools/play.zsh
+
 demo: ## VHS visual render
 	@echo "make demo: tapes land at M8"
 

@@ -206,10 +206,19 @@ _inzsh_surfaces_valid() {
 #                              whatever the position was going to give me".
 #   _inzsh_segment_importance  SEGMENT → 1..3, what `ramp` reads. 2 by default, the middle of the
 #                              ramp; `alternate`, `flat` and `hue` ignore it.
+#   _inzsh_segment_priority    SEGMENT → the survival order, lower kept longer. Read through
+#                              `_inzsh_priority_of`, which lets `INZSH_<SEG>_PRIORITY` override it.
 typeset -gA _inzsh_segment_text
 typeset -gA _inzsh_segment_fg_role
 typeset -gA _inzsh_segment_bg_role
 typeset -gA _inzsh_segment_importance
+typeset -gA _inzsh_segment_priority
+
+# What `dir` books when the row is fitted, rather than the width it currently happens to be. It is
+# the one segment that shortens instead of vanishing, so what it truly needs is the ellipsis, one
+# path component and the padding around them — everything past that is negotiable, and the
+# truncation pass negotiates it. Four columns of content plus the two of padding.
+typeset -gi _inzsh_dir_reserved=6
 
 # The visible width of the last build, in columns. Tracked as the string is assembled rather than
 # measured off the finished one: the result is escape-laden and its width cannot be recovered from
@@ -910,7 +919,56 @@ _inzsh_render() {
 
   local -a survivors
   survivors=("${reply[@]}")
+
   _inzsh_rank_split "${survivors[@]}"
+
+  # What the terminal has room for. The filter above answered the user's explicit MINCOLS; this
+  # answers the window. Blocks are measured as they will be DRAWN — the text plus the column of
+  # padding either side, one separator between neighbours — and taken in priority order until the
+  # side is full, so what survives is always a prefix of that order.
+  #
+  # PER SIDE, and after the rank split rather than before it, because the two sides do not always
+  # share a row. When the gap will not hold them both the right side moves to `RPROMPT` and is
+  # drawn beside the marker instead — it has somewhere else to go, and fitting the two together
+  # would drop a block for failing to fit a row it was never going to be on. Each side is held to
+  # the terminal on its own, which is the true constraint in the shape where they are apart and
+  # still a necessary one in the shape where they are together.
+  #
+  # `dir` books only what it cannot give up rather than its full width, because it is the one
+  # segment that shortens instead of vanishing. Reserving all of it would drop a block to make
+  # room for a path that the pass below was about to truncate anyway, and the user would lose
+  # their branch name to a directory name they were not going to be shown in full either way.
+  #
+  # One column is held back so the row is never flush against the right edge — the same spare the
+  # truncation pass keeps, and for the same reason: a prompt that ends exactly on the last column
+  # wraps on some terminals and not others.
+  if (( ${+functions[_inzsh_layout_fit]} && ${+functions[_inzsh_width]} )); then
+    _inzsh_separators
+    _inzsh_width "$_inzsh_sep_left"
+    local -i sep_width
+    (( sep_width = REPLY + 1 ))
+
+    local -i budget
+    (( budget = ${COLUMNS:-0} - 1 ))
+
+    local -a fit_args
+    local side candidate
+    local -i block
+    for side in _inzsh_left _inzsh_right; do
+      fit_args=()
+      for candidate in ${(P)side}; do
+        [[ -n ${_inzsh_segment_text[$candidate]-} ]] || continue
+        _inzsh_width "${_inzsh_segment_text[$candidate]}"
+        (( block = REPLY + 2 ))
+        [[ $candidate == DIR ]] && block=$_inzsh_dir_reserved
+        fit_args+=("$candidate" "$block")
+      done
+
+      (( ${#fit_args} )) || continue
+      _inzsh_layout_fit "$budget" "$sep_width" "${fit_args[@]}"
+      set -A $side "${reply[@]}"
+    done
+  fi
 
   _inzsh_render_build right
   local right=$REPLY

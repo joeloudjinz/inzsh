@@ -103,7 +103,7 @@ inzsh_spec_documented_names() {
 }
 
 # Does `$1` — a name or a pattern — answer for `$2`? Asked both ways round, because either side
-# may be the pattern: a read of `INZSH_LADDER_*_COLS` is covered by three registered names, and
+# may be the pattern: a read of `INZSH_SALAH_OFFSET_*` is covered by the registered family, and
 # a read of `INZSH_DIR_BG` is covered by one registered pattern.
 inzsh_spec_covers() {
   [[ $1 == ${~2} || $2 == ${~1} ]]
@@ -269,12 +269,6 @@ Describe 'defaults restated for a partial load'
         done
         _inzsh_config_absorb_all
         local -a bad=()
-        local -i i
-        local -a steps=(FULL WIDE NARROW)
-        for (( i = 1; i <= ${#steps}; i++ )); do
-          [[ ${_inzsh_config_defaults[INZSH_LADDER_${steps[i]}_COLS]} ==
-             ${_inzsh_ladder_defaults[i]} ]] || bad+=ladder:${steps[i]}
-        done
         [[ ${_inzsh_config_defaults[INZSH_TIME_FORMAT]} == $_inzsh_time_format_default ]] ||
           bad+=time-format
         [[ ${_inzsh_config_defaults[INZSH_TITLE_FORMAT]} == $_inzsh_title_format_default ]] ||

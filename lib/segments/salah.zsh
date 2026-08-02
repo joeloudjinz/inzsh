@@ -96,12 +96,13 @@
 #   INZSH_SALAH_BG=${_inzsh_role[accent]}
 #   INZSH_SALAH_FG=${_inzsh_role[on-accent]}
 typeset -gA _inzsh_segment_text _inzsh_segment_defaults
-typeset -gA _inzsh_segment_fg_role _inzsh_segment_bg_role _inzsh_segment_importance
+typeset -gA _inzsh_segment_fg_role _inzsh_segment_bg_role _inzsh_segment_importance _inzsh_segment_priority
 
 _inzsh_segment_defaults[SALAH]=-20
 _inzsh_segment_fg_role[SALAH]=text-body
 _inzsh_segment_bg_role[SALAH]=accent
 _inzsh_segment_importance[SALAH]=1
+_inzsh_segment_priority[SALAH]=90
 
 # The format knob, registered where it is read. `any` rather than an enum, matching
 # `INZSH_SALAH_ASR` and `INZSH_SALAH_HIGHLAT`: every word-valued knob in this family is matched

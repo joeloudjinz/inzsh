@@ -49,12 +49,13 @@
 # sourceable and re-sourcing it re-registers over the same four keys rather than doubling
 # anything. The maps belong to `lib/core/engine.zsh` and `lib/core/render.zsh`.
 typeset -gA _inzsh_segment_defaults _inzsh_segment_fg_role _inzsh_segment_bg_role
-typeset -gA _inzsh_segment_importance
+typeset -gA _inzsh_segment_importance _inzsh_segment_priority
 
 _inzsh_segment_defaults[ROOT]=10
 _inzsh_segment_fg_role[ROOT]=negative-text
 _inzsh_segment_bg_role[ROOT]=negative
 _inzsh_segment_importance[ROOT]=1
+_inzsh_segment_priority[ROOT]=10
 
 # `_inzsh_segment_root_build [euid]` — the ROOT fragment, into `_inzsh_segment_text[ROOT]`.
 #

@@ -30,11 +30,12 @@
 typeset -gA _inzsh_segment_defaults
 typeset -gA _inzsh_segment_fg_role
 typeset -gA _inzsh_segment_bg_role
-typeset -gA _inzsh_segment_importance
+typeset -gA _inzsh_segment_importance _inzsh_segment_priority
 
 _inzsh_segment_defaults[RETVAL]=70
 _inzsh_segment_fg_role[RETVAL]=negative
 _inzsh_segment_importance[RETVAL]=1
+_inzsh_segment_priority[RETVAL]=30
 
 # The fill `INZSH_SURFACE_MODE=hue` gives it — see `_inzsh_render_hues`. The `negative` FILL,
 # which is the same statement the foreground above makes, made louder: this block only exists

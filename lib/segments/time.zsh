@@ -24,11 +24,12 @@ zmodload -i zsh/datetime
 typeset -gA _inzsh_segment_defaults
 typeset -gA _inzsh_segment_fg_role
 typeset -gA _inzsh_segment_bg_role
-typeset -gA _inzsh_segment_importance
+typeset -gA _inzsh_segment_importance _inzsh_segment_priority
 
 _inzsh_segment_defaults[TIME]=-10
 _inzsh_segment_fg_role[TIME]=text-muted
 _inzsh_segment_importance[TIME]=3
+_inzsh_segment_priority[TIME]=80
 
 # The fill `INZSH_SURFACE_MODE=hue` gives it — see `_inzsh_render_hues`. A surface, because the
 # reasoning above does not stop being true in a colourful mode: a value that never varies has no

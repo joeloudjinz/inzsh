@@ -3,7 +3,7 @@
 # Three mechanisms live here, and they are deliberately independent of one another:
 #
 #   width      `_inzsh_width` — how many COLUMNS a rendered fragment occupies.
-#   hide/show  MINCOLS and the degradation ladder — whether a segment is drawn at all.
+#   hide/show  MINCOLS and `_inzsh_layout_fit` — whether a segment is drawn at all.
 #   truncate   `_inzsh_truncate_path` — making one segment's TEXT shorter so it still fits.
 #
 # Hiding and truncating are SEPARATE mechanisms and neither is a fallback for the other. A
@@ -255,96 +255,138 @@ _inzsh_layout_filter() {
 }
 
 # ---------------------------------------------------------------------------------------------
-# The degradation ladder
+# PRIORITY — the order things are given up in
 # ---------------------------------------------------------------------------------------------
 
-# Four steps, widest first. A step is a NAME, not a rule: this file says which one a width lands
-# on, and the engine decides what each one means. Naming them rather than passing the number
-# around is what keeps the breakpoints tunable — a segment asks "which step?", never "is COLUMNS
-# over 80?".
+# `INZSH_<SEG>_PRIORITY` is the survival order: LOWER SURVIVES LONGER. It answers a different
+# question from `INZSH_<SEG>_RANK`, which is why it is a second number rather than a reading of
+# the first — rank is WHERE a segment sits, priority is WHEN it goes, and the segment nearest the
+# edge is not necessarily the one to lose first.
 #
-#   full     everything the configuration asks for
-#   wide     the comfortable prompt
-#   narrow   the prompt that still says something useful in a split pane
-#   minimal  the floor; whatever remains when there is no room to negotiate
-typeset -ga _inzsh_ladder_steps
-_inzsh_ladder_steps=(full wide narrow minimal)
+# MINCOLS still works and still means what it meant: a hard floor the user sets by hand. The
+# difference is what happens when nothing is set. A MINCOLS default can only ever be a guess,
+# because it is a fixed number compared against a segment whose width changes every render — the
+# path grows a directory, the branch name is longer on one repo than another, `Maghrib` is two
+# columns wider than `Isha`. Fitting the row from measured widths at the moment it is drawn is
+# not a better guess, it is the absence of one.
+#
+# The default is EMPTY for the reason `INZSH_*_RANK` registers empty: nothing set is not a
+# missing answer, it is the instruction to use what the segment registered for itself in
+# `_inzsh_segment_priority`. A segment that registered nothing either lands last.
 
-# The minimum width for each step except the floor, which needs none. 120 / 80 / 60 are
-# PLACEHOLDERS from the roadmap and will be tuned at the M3 gate against a real prompt — which
-# is exactly why they are overridable. Tuning must be a config change, not a code change, so
-# every number here has an `INZSH_LADDER_<STEP>_COLS` in front of it.
-#
-# The three knobs are registered with these same defaults in `lib/core/config.zsh`. This array
-# is what a layout layer sourced WITHOUT the config layer degrades to — the same reason
-# `lib/segments/time.zsh` keeps `_inzsh_time_format_default` — and the two copies are held
-# equal by `test/unit/config_registry_spec.sh` rather than by anybody remembering.
-typeset -ga _inzsh_ladder_defaults
-_inzsh_ladder_defaults=(120 80 60)
+# Where an unregistered segment lands. Not a magic number buried in the arithmetic: a stranger
+# has to sort somewhere, and this is the one place that says where.
+typeset -gi _inzsh_priority_unknown=99999
 
-# Resolve the configured breakpoints into `_inzsh_ladder_bounds`. Re-read on every call: a
-# breakpoint is config, and config is whatever the user's shell says right now.
-#
-# Two validity rules, and both of them fall back rather than fail. A breakpoint that is not a
-# non-negative integer takes its default, per knob. Then the resolved trio must be
-# non-increasing — a `wide` above `full` is not a narrower prompt, it is an unreachable step —
-# and if it is not, the WHOLE trio reverts to the defaults. Partial repair of an ordering is
-# guesswork about which of the three numbers the user meant; reverting is one behaviour the user
-# can recognise, and the shipped ladder is a working ladder.
-_inzsh_ladder_resolve() {
+# Declared here as well as in `lib/core/render.zsh` so that this file answers sensibly when it is
+# sourced on its own, rather than depending on the render layer having been loaded first.
+typeset -gA _inzsh_segment_priority
+
+_inzsh_priority_of() {
   emulate -L zsh
   setopt extended_glob
 
-  local -a bounds=()
-  local var value
-  local -i i resolved
+  # Last, not first. An unregistered segment is one this file knows nothing about, and the safe
+  # place for a stranger in a survival order is the end of it — being wrong there costs a
+  # segment nobody configured, where being wrong at the front costs one they did.
+  typeset -g REPLY=$_inzsh_priority_unknown
 
-  for (( i = 1; i <= ${#_inzsh_ladder_defaults}; i++ )); do
-    var=INZSH_LADDER_${(U)_inzsh_ladder_steps[i]}_COLS
-    value=${(P)var-}
-    if (( ${+functions[_inzsh_config_get]} )); then
-      _inzsh_config_get "$var"
-      value=$REPLY
-    fi
-    [[ $value == (|+)<-> ]] || value=${_inzsh_ladder_defaults[i]}
-    resolved=$value
-    bounds+=($resolved)
-  done
+  local var=INZSH_${(U)1}_PRIORITY
+  [[ $var == [A-Za-z_][A-Za-z0-9_]# ]] || return 0
 
-  for (( i = 2; i <= ${#bounds}; i++ )); do
-    if (( bounds[i] > bounds[i - 1] )); then
-      bounds=("${_inzsh_ladder_defaults[@]}")
-      break
-    fi
-  done
+  local value=${(P)var-}
+  if (( ${+functions[_inzsh_config_get]} )); then
+    _inzsh_config_get "$var"
+    value=$REPLY
+  fi
 
-  typeset -ga _inzsh_ladder_bounds
-  _inzsh_ladder_bounds=("${bounds[@]}")
+  # The knob first, then the segment's own registration, then the stranger's place. Negative is
+  # allowed and means what it says — kept longer than anything at zero — because a user who wants
+  # one block to outlive every default should not have to renumber the defaults to say so.
+  # Arithmetic as a COMMAND, never as an expansion. `$(( … ))` is not a subprocess, but the guard
+  # in `test/unit/layout_spec.sh` cannot tell it from `$( … )` and refuses both — which is the
+  # right trade for a file on the render path, and the reason nothing here uses the form.
+  if [[ $value == (|-|+)<-> ]]; then
+    (( REPLY = value ))
+  elif [[ ${_inzsh_segment_priority[$1]-} == (|-|+)<-> ]]; then
+    (( REPLY = _inzsh_segment_priority[$1] ))
+  fi
+
   return 0
 }
 
-# `_inzsh_layout_ladder <cols>` — the step name for that width, in REPLY. Widest step whose
-# breakpoint the width reaches; the floor when it reaches none. An unknown width answers with
-# the widest step, for the same reason `_inzsh_layout_filter` hides nothing: over-degrading a
-# prompt because a number was missing is the worse of the two mistakes.
-_inzsh_layout_ladder() {
+# `_inzsh_layout_fit <budget> <sep-width> <NAME> <WIDTH> [<NAME> <WIDTH>...]` — the segments that
+# fit, IN THE ORDER THEY WERE GIVEN, in `reply`.
+#
+# This is the function that makes the no-wrap rule true rather than likely. Segments are taken in
+# priority order, each one's real measured width added to what is already kept, and the moment
+# one does not fit the walk STOPS.
+#
+# Stopping rather than skipping is deliberate, and it is the difference between a prompt you can
+# predict and one you cannot. Skipping packs the row tighter — an 8-column clock would slip into
+# the gap an 18-column prayer block was refused — but it means a LESS important segment can
+# outlive a MORE important one, and which of them you get depends on arithmetic no one watching
+# the window resize can follow. What survives here is always a PREFIX of the priority order, so
+# the rule a user learns is one sentence: things go in the order you listed them.
+#
+# A budget that is not a non-negative integer keeps everything, the same rule and for the same
+# reason as `_inzsh_layout_filter`: assuming room too readily wraps a prompt, assuming none
+# empties it, and only one of those is recoverable by looking at it.
+_inzsh_layout_fit() {
   emulate -L zsh
   setopt extended_glob
 
-  _inzsh_ladder_resolve
+  typeset -ga reply
+  reply=()
 
-  typeset -g REPLY=${_inzsh_ladder_steps[1]}
-  [[ $1 == <-> ]] || return 0
+  local budget=$1 sep=$2
+  shift 2
 
-  local -i cols=$1 i
-  for (( i = 1; i <= ${#_inzsh_ladder_bounds}; i++ )); do
-    if (( cols >= _inzsh_ladder_bounds[i] )); then
-      REPLY=${_inzsh_ladder_steps[i]}
-      return 0
-    fi
+  local -a args=("$@")
+  local -a names=() widths=()
+  local -i i
+  for (( i = 1; i <= $#args; i += 2 )); do
+    names+=("${args[i]}")
+    widths+=("${args[i + 1]}")
   done
 
-  REPLY=${_inzsh_ladder_steps[-1]}
+  (( $#names )) || return 0
+
+  if [[ $budget != (|+)<-> ]]; then
+    reply=("${names[@]}")
+    return 0
+  fi
+
+  # Sorted by priority, ties by the order given. Zero-padded and offset so that a plain string
+  # sort orders them numerically and negatives sort below zero — `${(n)…}` reads a leading `-` as
+  # part of no number at all, and the numbers here are exactly the ones it gets wrong.
+  local -a keys=()
+  local -i sortable
+  for (( i = 1; i <= $#names; i++ )); do
+    _inzsh_priority_of "${names[i]}"
+    (( sortable = REPLY + 1000000 ))
+    keys+=("${(l:9::0:)sortable}:${(l:4::0:)i}")
+  done
+
+  local -a kept_widths=()
+  local -A kept=()
+  local key
+  local -i idx
+  for key in ${(o)keys}; do
+    idx=${key##*:}
+    kept_widths+=("${widths[idx]}")
+    _inzsh_layout_total "$sep" "${kept_widths[@]}"
+    if (( REPLY > budget )); then
+      kept_widths[-1]=()
+      break
+    fi
+    kept[${names[idx]}]=1
+  done
+
+  for (( i = 1; i <= $#names; i++ )); do
+    (( ${+kept[${names[i]}]} )) && reply+=("${names[i]}")
+  done
+
   return 0
 }
 

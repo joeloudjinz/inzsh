@@ -608,16 +608,28 @@ _inzsh_config_guard_register separator-visibility _inzsh_config_guard_separators
 _inzsh_config_guard_register exit-code-capture    _inzsh_config_guard_exit_capture
 _inzsh_config_guard_register render-budget        _inzsh_config_guard_budget
 
-# The families. Four of them, and every one is a knob that belongs to a SEGMENT rather than to
-# the theme: whichever segments exist, each has a rank, two colours and a width below which it
-# is not worth drawing. Registering the shape rather than the names is what lets a segment
-# added at M5 arrive configurable without this file moving.
+# The families. Five of them, and every one is a knob that belongs to a SEGMENT rather than to
+# the theme: whichever segments exist, each has a rank, a priority, two colours and a width
+# below which it is not worth drawing. Registering the shape rather than the names is what lets
+# a segment added at M5 arrive configurable without this file moving.
 #
 # `INZSH_*_RANK` registers an EMPTY default on purpose. Nothing set is not a missing answer
 # there — the segment's own registration in `_inzsh_segment_defaults` is the default, and the
-# knob's absence is the instruction to use it. `_BG` and `_FG` do the same for the semantic
-# role. `_MINCOLS` is the one with a real default: 0 means "never hide on width alone".
+# knob's absence is the instruction to use it. `_BG`, `_FG` and `_PRIORITY` do the same for the
+# semantic role and the survival order. `_MINCOLS` is the one with a real default: 0 means
+# "never hide on width alone".
+#
+# RANK and PRIORITY answer two different questions and are deliberately independent, which is
+# the whole reason there are two of them:
+#
+#   RANK      WHERE the segment sits in the row — left to right, or inward from the right edge.
+#   PRIORITY  WHEN it goes as the window narrows — lower survives longer.
+#
+# The segment nearest the edge is not necessarily the one you want to lose first, so deriving
+# either from the other would take away the case the pair exists for: a clock pinned to the far
+# right that you would nonetheless give up before the branch name sitting in the middle.
 _inzsh_config_register_family 'INZSH_*_RANK'     int      ''
+_inzsh_config_register_family 'INZSH_*_PRIORITY' int      ''
 _inzsh_config_register_family 'INZSH_*_BG'       any      ''
 _inzsh_config_register_family 'INZSH_*_FG'       any      ''
 _inzsh_config_register_family 'INZSH_*_MINCOLS'  int:0:   0
@@ -635,12 +647,16 @@ _inzsh_config_register INZSH_COLOR_DEPTH      'enum:truecolor|256|8'          ''
 _inzsh_config_register INZSH_MULTIBYTE        'enum:1|0'                      ''
 _inzsh_config_register INZSH_NERD_FONT        'enum:1|0'                      ''
 
-# The responsive ladder. `lib/core/layout.zsh` restates these three numbers in
-# `_inzsh_ladder_defaults` so that it degrades sensibly when sourced without this file; the two
-# copies are held equal by `test/unit/config_registry_spec.sh`.
-_inzsh_config_register INZSH_LADDER_FULL_COLS   int:0:  120
-_inzsh_config_register INZSH_LADDER_WIDE_COLS   int:0:  80
-_inzsh_config_register INZSH_LADDER_NARROW_COLS int:0:  60
+# There were three `INZSH_LADDER_*_COLS` knobs here, naming four width steps — full, wide,
+# narrow, minimal. They are gone, and the reason is worth keeping: nothing ever read the step.
+# The function that answered "which step is this width?" was called by one test and by no code,
+# so the three knobs were a configuration surface over a decision the engine never took.
+#
+# What they were meant to do, `INZSH_<SEGMENT>_PRIORITY` now does, and does better: a row is
+# fitted from the measured widths of the blocks actually about to be drawn, rather than from
+# three numbers guessed in advance. Named steps may come back one day for what priority cannot
+# express — a one-line prompt below some width, say — but that is a feature to add, not a
+# mechanism to restore.
 
 # The secondary prompts and the title, from `lib/core/prompts.zsh`. `INZSH_PS2` and
 # `INZSH_SPROMPT` replace a whole prompt string verbatim, so their default is empty: there is no

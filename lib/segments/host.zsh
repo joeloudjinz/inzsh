@@ -29,7 +29,7 @@
 # declaration is what makes this file sourceable on its own — without it the build would be
 # writing a subscript on a name that is not an association.
 typeset -gA _inzsh_segment_text _inzsh_segment_defaults
-typeset -gA _inzsh_segment_fg_role _inzsh_segment_bg_role _inzsh_segment_importance
+typeset -gA _inzsh_segment_fg_role _inzsh_segment_bg_role _inzsh_segment_importance _inzsh_segment_priority
 
 # The registration. Rank 3 puts the host after the user and before the directory, which reads
 # as `user host dir` — the address, narrowing. `text-muted` because it is context and not the
@@ -37,6 +37,7 @@ typeset -gA _inzsh_segment_fg_role _inzsh_segment_bg_role _inzsh_segment_importa
 _inzsh_segment_defaults[HOST]=30
 _inzsh_segment_fg_role[HOST]=text-muted
 _inzsh_segment_importance[HOST]=3
+_inzsh_segment_priority[HOST]=60
 
 # The fill `INZSH_SURFACE_MODE=hue` gives it — see `_inzsh_render_hues`. A surface rather than a
 # state colour, and deliberately: the host sits between two coloured blocks and a third hue there
