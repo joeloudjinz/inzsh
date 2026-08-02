@@ -208,11 +208,10 @@ _inzsh_bench_case_layout_width() {
   done
 }
 
-# MINCOLS filtering plus the degradation ladder, at a width where both actually decide
-# something: 80 hides `venv` (MINCOLS 100) and keeps `salah` (MINCOLS 60).
+# MINCOLS filtering at a width where it actually decides something: 80 hides `venv`
+# (MINCOLS 100) and keeps `salah` (MINCOLS 60).
 _inzsh_bench_case_layout_filter() {
   _inzsh_layout_filter 80 "${_inzsh_bench_segments[@]}"
-  _inzsh_layout_ladder 80
 }
 
 # The truncation ladder, at three budgets: one that fits, one that lands mid-ladder, and one
@@ -331,7 +330,6 @@ _inzsh_bench_case_render_floor() {
   local -i cols=80
 
   _inzsh_config_get INZSH_SURFACE_MODE
-  _inzsh_layout_ladder $cols
 
   # The directory label is the one segment whose text is computed rather than fixed.
   _inzsh_truncate_path "$_inzsh_bench_path" 24

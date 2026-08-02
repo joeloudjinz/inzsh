@@ -130,26 +130,27 @@ they do everywhere in this theme.
 
 `INZSH_<SEGMENT>_BG` still outranks all of it, in every mode.
 
-## Responsive breakpoints
+## Narrow terminals
 
-The prompt adapts to the terminal width in four steps — `full`, `wide`, `narrow`, `minimal` —
-and each variable below is the narrowest width that still counts as that step. Below the last
-one the prompt is `minimal`. Hiding and shortening are different mechanisms: a path shortens
-progressively (`~/a/b/c` → `…/b/c` → `…/c`) rather than disappearing, while `MINCOLS` decides
-what disappears.
+There are no width breakpoints to configure. The prompt is fitted to the terminal every time it
+is drawn, from the measured widths of the blocks that are actually about to appear — so the row
+never wraps, whatever you have turned on and however long your branch name is today.
 
-The defaults are deliberate placeholders, to be tuned against real segment widths once the
-segments exist.
+Three mechanisms share the work, and they do not stand in for one another:
 
-| Variable | Values | Default | Effect |
-|---|---|---|---|
-| `INZSH_LADDER_FULL_COLS` | non-negative integer | `120` | At or above this width, everything is drawn. |
-| `INZSH_LADDER_WIDE_COLS` | non-negative integer | `80` | At or above this width, the step is `wide`. |
-| `INZSH_LADDER_NARROW_COLS` | non-negative integer | `60` | At or above this width, the step is `narrow`; below it, `minimal`. |
+- **The path shortens** rather than disappearing: `~/a/b/c` → `…/b/c` → `…/c`.
+- **Blocks are dropped in priority order** when shortening is not enough. `INZSH_<SEGMENT>_PRIORITY`
+  is that order — lower survives longer — and what you keep is always a prefix of it.
+- **The right-hand group moves** down beside the cursor when the row cannot hold both sides, which
+  is why the clock and the prayer time survive much narrower windows than their width suggests.
+  They are only dropped once even that has run out of room.
 
-A value that is not a non-negative integer falls back to its own default. If the three end up
-out of order — a `wide` wider than `full`, say — the whole set reverts to 120 / 80 / 60 rather
-than producing a ladder that cannot be climbed.
+`INZSH_<SEGMENT>_MINCOLS` is available on top of all this, for when you want one block gone below
+a width of your own choosing rather than when the arithmetic says so.
+
+Earlier versions had four named steps — `full`, `wide`, `narrow`, `minimal` — behind three
+`INZSH_LADDER_*_COLS` variables. Nothing ever read the step, and fitting from real measurements
+turned out to be both simpler and exact, so they were removed rather than tuned.
 
 ## Secondary prompts and the title
 

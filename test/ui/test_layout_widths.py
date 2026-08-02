@@ -83,11 +83,8 @@ for name in "${{survivors[@]}}"; do
 done
 _inzsh_layout_total $sep_width "${{cost[@]}}"
 integer total=$REPLY
-_inzsh_layout_ladder $COLUMNS
-step=$REPLY
-
 if [[ ${{SPEC_MODE:-prompt}} == plan ]]; then
-  print -rn -- "$COLUMNS $total $step ${{survivors[*]}}"
+  print -rn -- "$COLUMNS $total ${{survivors[*]}}"
   return 0
 fi
 
@@ -117,8 +114,7 @@ class Plan:
         fields = text.split()
         self.cols = int(fields[0])
         self.total = int(fields[1])
-        self.step = fields[2]
-        self.survivors = fields[3:]
+        self.survivors = fields[2:]
 
 
 def plan_at(cols):
@@ -171,14 +167,12 @@ class LayoutWidthTest(unittest.TestCase):
                 self.assertEqual("GIT" in plan.survivors, "main" in text, msg=text)
 
     def test_the_row_degrades_as_the_terminal_narrows(self):
-        """Fewer segments at every step down, and the ladder moves with them."""
+        """Fewer segments at every step down the widths."""
         plans = [plan_at(cols) for cols in WIDTHS]
         counts = [len(plan.survivors) for plan in plans]
         self.assertEqual(counts, sorted(counts, reverse=True), msg=str(counts))
         self.assertEqual(counts[0], 6, msg=str(counts))
         self.assertLess(counts[-1], counts[0], msg=str(counts))
-        self.assertEqual(plans[0].step, "full")
-        self.assertEqual(plans[-1].step, "minimal")
 
     def test_a_terminal_too_narrow_for_anything_draws_nothing_rather_than_wrapping(self):
         grid = prompt_at(8)

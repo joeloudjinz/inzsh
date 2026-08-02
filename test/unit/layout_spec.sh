@@ -484,203 +484,6 @@ Describe 'MINCOLS'
 End
 
 # ------------------------------------------------------------------------------------------
-# The ladder. 120 / 80 / 60 are placeholders due for tuning at the M3 gate, so the examples that
-# pin them are separated from the examples that pin the RULE — the rule survives a re-tune, the
-# numbers are expected to move, and they may only move through config.
-
-inzsh_spec_ladder() {
-  _inzsh_layout_ladder "$1"
-  print -r -- "$REPLY"
-}
-
-Describe 'the degradation ladder'
-  Describe 'the steps themselves'
-    It 'names four steps, widest first, with a breakpoint for all but the floor'
-      shape() {
-        print -r -- "${_inzsh_ladder_steps[*]} / ${#_inzsh_ladder_defaults}"
-      }
-      When call shape
-      The output should eq 'full wide narrow minimal / 3'
-    End
-
-    It 'ships the roadmap placeholders as its defaults'
-      defaults() {
-        unset -m 'INZSH_LADDER_*'
-        _inzsh_ladder_resolve
-        print -r -- "${_inzsh_ladder_bounds[*]}"
-      }
-      When call defaults
-      The output should eq '120 80 60'
-    End
-  End
-
-  Describe 'the default breakpoints'
-    # Both sides of every boundary, so an off-by-one in either direction is a failure and not a
-    # rounding opinion.
-    Parameters
-      1000 full
-      121  full
-      120  full
-      119  wide
-      81   wide
-      80   wide
-      79   narrow
-      61   narrow
-      60   narrow
-      59   minimal
-      1    minimal
-      0    minimal
-    End
-
-    It "puts $1 columns on the $2 step"
-      When call inzsh_spec_ladder "$1"
-      The output should eq "$2"
-    End
-  End
-
-  Describe 'an unknown width'
-    Parameters
-      ''
-      ' '
-      x
-      -1
-      2.5
-      ' 80'
-    End
-
-    It "answers with the widest step for a width of '$1'"
-      When call inzsh_spec_ladder "$1"
-      The output should eq 'full'
-    End
-  End
-
-  Describe 'tuning through config'
-    It 'moves every breakpoint'
-      tuned() {
-        local INZSH_LADDER_FULL_COLS=200 INZSH_LADDER_WIDE_COLS=150
-        local INZSH_LADDER_NARROW_COLS=100
-        local -a seen=()
-        local cols
-        for cols in 250 200 199 150 149 100 99; do
-          _inzsh_layout_ladder $cols
-          seen+=$REPLY
-        done
-        print -r -- "${seen[*]}"
-      }
-      When call tuned
-      The output should eq 'full full wide wide narrow narrow minimal'
-    End
-
-    It 'reads the config afresh on every call'
-      # A breakpoint is config, not a decision taken at source time. Re-tuning must not need a
-      # new shell.
-      live() {
-        local INZSH_LADDER_FULL_COLS=
-        local -a seen=()
-        _inzsh_layout_ladder 130; seen+=$REPLY
-        INZSH_LADDER_FULL_COLS=140
-        _inzsh_layout_ladder 130; seen+=$REPLY
-        INZSH_LADDER_FULL_COLS=120
-        _inzsh_layout_ladder 130; seen+=$REPLY
-        print -r -- "${seen[*]}"
-      }
-      When call live
-      The output should eq 'full wide full'
-    End
-
-    It 'lets two steps share a breakpoint, leaving one of them unreachable'
-      collapsed() {
-        local INZSH_LADDER_FULL_COLS=100 INZSH_LADDER_WIDE_COLS=100
-        local INZSH_LADDER_NARROW_COLS=50
-        local -a seen=()
-        local cols
-        for cols in 100 99 50 49; do
-          _inzsh_layout_ladder $cols
-          seen+=$REPLY
-        done
-        print -r -- "${seen[*]}"
-      }
-      When call collapsed
-      The output should eq 'full narrow narrow minimal'
-    End
-
-    It 'falls back per knob for a breakpoint that is not a non-negative integer'
-      # The valid neighbour is kept; only the unreadable one reverts. 200 is nothing like the
-      # default, so a wholesale revert would show up here.
-      partial() {
-        local INZSH_LADDER_FULL_COLS=200 INZSH_LADDER_WIDE_COLS=banana
-        local INZSH_LADDER_NARROW_COLS=-4
-        _inzsh_ladder_resolve
-        print -r -- "${_inzsh_ladder_bounds[*]}"
-      }
-      When call partial
-      The output should eq '200 80 60'
-    End
-
-    It 'reverts the whole ladder when the breakpoints are out of order'
-      # A `wide` above `full` is not a narrower prompt, it is a step nothing can reach. Repairing
-      # one number would be guessing which of the three was meant; reverting is a behaviour the
-      # user can recognise, and the shipped ladder is a working one.
-      inverted() {
-        local candidate; local -a bad=()
-        local INZSH_LADDER_FULL_COLS INZSH_LADDER_WIDE_COLS INZSH_LADDER_NARROW_COLS
-        for candidate in '50 90 10' '120 40 60' '10 20 30' '0 0 1'; do
-          INZSH_LADDER_FULL_COLS=${${=candidate}[1]}
-          INZSH_LADDER_WIDE_COLS=${${=candidate}[2]}
-          INZSH_LADDER_NARROW_COLS=${${=candidate}[3]}
-          _inzsh_ladder_resolve
-          [[ ${_inzsh_ladder_bounds[*]} == '120 80 60' ]] || bad+=$candidate
-        done
-        print -r -- "${bad[*]}"
-      }
-      When call inverted
-      The output should eq ''
-    End
-
-    It 'never answers with anything that is not one of its own steps'
-      vocabulary() {
-        local INZSH_LADDER_FULL_COLS INZSH_LADDER_WIDE_COLS INZSH_LADDER_NARROW_COLS
-        local candidate; local -i cols; local -a bad=()
-        for candidate in '120 80 60' '200 150 100' '0 0 0' '5 4 3' 'x y z'; do
-          INZSH_LADDER_FULL_COLS=${${=candidate}[1]}
-          INZSH_LADDER_WIDE_COLS=${${=candidate}[2]}
-          INZSH_LADDER_NARROW_COLS=${${=candidate}[3]}
-          for (( cols = 0; cols <= 200; cols++ )); do
-            _inzsh_layout_ladder $cols
-            (( ${_inzsh_ladder_steps[(Ie)$REPLY]} )) || bad+="$candidate:$cols:$REPLY"
-          done
-        done
-        print -r -- "${bad[*]}"
-      }
-      When call vocabulary
-      The output should eq ''
-    End
-
-    It 'never widens the step as the terminal narrows'
-      monotone() {
-        local INZSH_LADDER_FULL_COLS INZSH_LADDER_WIDE_COLS INZSH_LADDER_NARROW_COLS
-        local candidate; local -i cols index previous; local -a bad=()
-        for candidate in '120 80 60' '200 150 100' '100 100 50'; do
-          INZSH_LADDER_FULL_COLS=${${=candidate}[1]}
-          INZSH_LADDER_WIDE_COLS=${${=candidate}[2]}
-          INZSH_LADDER_NARROW_COLS=${${=candidate}[3]}
-          previous=0
-          for (( cols = 200; cols >= 0; cols-- )); do
-            _inzsh_layout_ladder $cols
-            index=${_inzsh_ladder_steps[(Ie)$REPLY]}
-            (( index >= previous )) || bad+="$candidate:$cols"
-            (( previous = index ))
-          done
-        done
-        print -r -- "${bad[*]}"
-      }
-      When call monotone
-      The output should eq ''
-    End
-  End
-End
-
-# ------------------------------------------------------------------------------------------
 # The invariant the whole file exists for: at every step of the ladder the prompt occupies
 # EXACTLY ONE ROW. There are no segments yet, so the row cannot be assembled — but the
 # arithmetic under it can, and it is the arithmetic that decides. A row of survivors whose
@@ -817,36 +620,30 @@ Describe 'the one-row invariant'
     End
   End
 
-  Describe 'the ladder and the row together'
-    It 'holds the invariant on every step of the ladder'
-      # The same sweep, reported per step, so a step that is never reached — or one that is
-      # reached only with an overflowing row — is visible rather than averaged away.
-      stepped() {
+  Describe 'every width, one at a time'
+    # This used to sweep the four named ladder steps and report per step. The steps are gone —
+    # nothing ever read one — so the sweep reports the WIDTHS that break instead, which is what
+    # it was really measuring and is more precise besides: a step told you an invariant failed
+    # somewhere between 80 and 119 columns, a width tells you it failed at 97.
+    It 'holds the invariant at every width from nothing to very wide'
+      swept() {
         local -i sep=2 cols i
         local -a widths=() broken=()
-        local name step
-        local -A reached=()
+        local name
         inzsh_spec_derive_mincols $sep
         for (( cols = 0; cols <= 200; cols++ )); do
-          _inzsh_layout_ladder $cols
-          step=$REPLY
           _inzsh_layout_filter $cols "${inzsh_spec_row_names[@]}"
           widths=()
           for name in "${reply[@]}"; do
             i=${inzsh_spec_row_names[(Ie)$name]}
             widths+=${inzsh_spec_row_widths[i]}
           done
-          reached[$step]=1
-          _inzsh_layout_fits $cols $sep "${widths[@]}" || broken+="$step:$cols"
+          _inzsh_layout_fits $cols $sep "${widths[@]}" || broken+=$cols
         done
-        local -a missing=()
-        for step in "${_inzsh_ladder_steps[@]}"; do
-          [[ -n ${reached[$step]+set} ]] || missing+=$step
-        done
-        print -r -- "missing=${missing[*]} broken=${broken[*]}"
+        print -r -- "broken=${broken[*]}"
       }
-      When call stepped
-      The output should eq 'missing= broken='
+      When call swept
+      The output should eq 'broken='
     End
   End
 End

@@ -3,7 +3,7 @@
 # Three mechanisms live here, and they are deliberately independent of one another:
 #
 #   width      `_inzsh_width` — how many COLUMNS a rendered fragment occupies.
-#   hide/show  MINCOLS and the degradation ladder — whether a segment is drawn at all.
+#   hide/show  MINCOLS and `_inzsh_layout_fit` — whether a segment is drawn at all.
 #   truncate   `_inzsh_truncate_path` — making one segment's TEXT shorter so it still fits.
 #
 # Hiding and truncating are SEPARATE mechanisms and neither is a fallback for the other. A
@@ -279,7 +279,7 @@ _inzsh_layout_filter() {
 typeset -gi _inzsh_priority_unknown=99999
 
 # Declared here as well as in `lib/core/render.zsh` so that this file answers sensibly when it is
-# sourced on its own — the same courtesy `_inzsh_ladder_defaults` paid the breakpoints.
+# sourced on its own, rather than depending on the render layer having been loaded first.
 typeset -gA _inzsh_segment_priority
 
 _inzsh_priority_of() {
@@ -387,100 +387,6 @@ _inzsh_layout_fit() {
     (( ${+kept[${names[i]}]} )) && reply+=("${names[i]}")
   done
 
-  return 0
-}
-
-# ---------------------------------------------------------------------------------------------
-# The degradation ladder
-# ---------------------------------------------------------------------------------------------
-
-# Four steps, widest first. A step is a NAME, not a rule: this file says which one a width lands
-# on, and the engine decides what each one means. Naming them rather than passing the number
-# around is what keeps the breakpoints tunable — a segment asks "which step?", never "is COLUMNS
-# over 80?".
-#
-#   full     everything the configuration asks for
-#   wide     the comfortable prompt
-#   narrow   the prompt that still says something useful in a split pane
-#   minimal  the floor; whatever remains when there is no room to negotiate
-typeset -ga _inzsh_ladder_steps
-_inzsh_ladder_steps=(full wide narrow minimal)
-
-# The minimum width for each step except the floor, which needs none. 120 / 80 / 60 are
-# PLACEHOLDERS from the roadmap and will be tuned at the M3 gate against a real prompt — which
-# is exactly why they are overridable. Tuning must be a config change, not a code change, so
-# every number here has an `INZSH_LADDER_<STEP>_COLS` in front of it.
-#
-# The three knobs are registered with these same defaults in `lib/core/config.zsh`. This array
-# is what a layout layer sourced WITHOUT the config layer degrades to — the same reason
-# `lib/segments/time.zsh` keeps `_inzsh_time_format_default` — and the two copies are held
-# equal by `test/unit/config_registry_spec.sh` rather than by anybody remembering.
-typeset -ga _inzsh_ladder_defaults
-_inzsh_ladder_defaults=(120 80 60)
-
-# Resolve the configured breakpoints into `_inzsh_ladder_bounds`. Re-read on every call: a
-# breakpoint is config, and config is whatever the user's shell says right now.
-#
-# Two validity rules, and both of them fall back rather than fail. A breakpoint that is not a
-# non-negative integer takes its default, per knob. Then the resolved trio must be
-# non-increasing — a `wide` above `full` is not a narrower prompt, it is an unreachable step —
-# and if it is not, the WHOLE trio reverts to the defaults. Partial repair of an ordering is
-# guesswork about which of the three numbers the user meant; reverting is one behaviour the user
-# can recognise, and the shipped ladder is a working ladder.
-_inzsh_ladder_resolve() {
-  emulate -L zsh
-  setopt extended_glob
-
-  local -a bounds=()
-  local var value
-  local -i i resolved
-
-  for (( i = 1; i <= ${#_inzsh_ladder_defaults}; i++ )); do
-    var=INZSH_LADDER_${(U)_inzsh_ladder_steps[i]}_COLS
-    value=${(P)var-}
-    if (( ${+functions[_inzsh_config_get]} )); then
-      _inzsh_config_get "$var"
-      value=$REPLY
-    fi
-    [[ $value == (|+)<-> ]] || value=${_inzsh_ladder_defaults[i]}
-    resolved=$value
-    bounds+=($resolved)
-  done
-
-  for (( i = 2; i <= ${#bounds}; i++ )); do
-    if (( bounds[i] > bounds[i - 1] )); then
-      bounds=("${_inzsh_ladder_defaults[@]}")
-      break
-    fi
-  done
-
-  typeset -ga _inzsh_ladder_bounds
-  _inzsh_ladder_bounds=("${bounds[@]}")
-  return 0
-}
-
-# `_inzsh_layout_ladder <cols>` — the step name for that width, in REPLY. Widest step whose
-# breakpoint the width reaches; the floor when it reaches none. An unknown width answers with
-# the widest step, for the same reason `_inzsh_layout_filter` hides nothing: over-degrading a
-# prompt because a number was missing is the worse of the two mistakes.
-_inzsh_layout_ladder() {
-  emulate -L zsh
-  setopt extended_glob
-
-  _inzsh_ladder_resolve
-
-  typeset -g REPLY=${_inzsh_ladder_steps[1]}
-  [[ $1 == <-> ]] || return 0
-
-  local -i cols=$1 i
-  for (( i = 1; i <= ${#_inzsh_ladder_bounds}; i++ )); do
-    if (( cols >= _inzsh_ladder_bounds[i] )); then
-      REPLY=${_inzsh_ladder_steps[i]}
-      return 0
-    fi
-  done
-
-  REPLY=${_inzsh_ladder_steps[-1]}
   return 0
 }
 

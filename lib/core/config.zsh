@@ -647,12 +647,16 @@ _inzsh_config_register INZSH_COLOR_DEPTH      'enum:truecolor|256|8'          ''
 _inzsh_config_register INZSH_MULTIBYTE        'enum:1|0'                      ''
 _inzsh_config_register INZSH_NERD_FONT        'enum:1|0'                      ''
 
-# The responsive ladder. `lib/core/layout.zsh` restates these three numbers in
-# `_inzsh_ladder_defaults` so that it degrades sensibly when sourced without this file; the two
-# copies are held equal by `test/unit/config_registry_spec.sh`.
-_inzsh_config_register INZSH_LADDER_FULL_COLS   int:0:  120
-_inzsh_config_register INZSH_LADDER_WIDE_COLS   int:0:  80
-_inzsh_config_register INZSH_LADDER_NARROW_COLS int:0:  60
+# There were three `INZSH_LADDER_*_COLS` knobs here, naming four width steps — full, wide,
+# narrow, minimal. They are gone, and the reason is worth keeping: nothing ever read the step.
+# The function that answered "which step is this width?" was called by one test and by no code,
+# so the three knobs were a configuration surface over a decision the engine never took.
+#
+# What they were meant to do, `INZSH_<SEGMENT>_PRIORITY` now does, and does better: a row is
+# fitted from the measured widths of the blocks actually about to be drawn, rather than from
+# three numbers guessed in advance. Named steps may come back one day for what priority cannot
+# express — a one-line prompt below some width, say — but that is a feature to add, not a
+# mechanism to restore.
 
 # The secondary prompts and the title, from `lib/core/prompts.zsh`. `INZSH_PS2` and
 # `INZSH_SPROMPT` replace a whole prompt string verbatim, so their default is empty: there is no
