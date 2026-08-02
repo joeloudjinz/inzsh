@@ -165,31 +165,64 @@ inzsh-reset() {
 
 inzsh-help() {
   <<'HELP'
-InZsh playground — this shell is a throwaway. Nothing here touches your real setup.
+InZsh playground — a throwaway shell. Your own setup is never read or changed.
+Type a setting, press return, and the next prompt uses it.
 
-  Change anything, then press return. Every knob is re-read on the next prompt.
+  HOW IT LOOKS
 
-    INZSH_SURFACE_MODE=hue          alternate · ramp · flat · hue
-    INZSH_SEPARATOR_STYLE=round     arrow · round · divider
-    INZSH_PROMPT_LINES=1            1 or 2
-    INZSH_SALAH_PRIORITY=5          give up the prayer time last
-    INZSH_TIME_RANK=-30             move the clock
-    INZSH_GIT_MINCOLS=60            hide the branch below 60 columns
+    INZSH_SURFACE_MODE=hue        block colours: alternate · ramp · flat · hue
+    INZSH_SEPARATOR_STYLE=round   the shape between blocks: arrow · round · divider
+    INZSH_PROMPT_LINES=1          type on the same line as the blocks, not below
+    inzsh-register light          the light palette instead of the dark one
 
-  Helpers:
+  WHAT IS SHOWN, AND WHERE
 
-    inzsh-help                      this
-    inzsh-knobs                     every knob, its default, and what it is now
-    inzsh-knobs SALAH               ...just the ones matching a word
-    inzsh-segments                  what the prompt is made of, with rank and priority
-    inzsh-stub                      give every segment something to say
-    inzsh-stub off                  and put the real ones back
-    inzsh-at 100 80 60 40           the prompt at those widths, without resizing
-    inzsh-register light            swap the palette register — or 'dark' (see #183)
-    inzsh-reset                     every knob back to its default
+    INZSH_TIME_RANK=-30           where a block sits. Positive counts from the
+                                  left, negative from the right, 0 hides it
+    INZSH_DATE_RANK=65            switches on a block that ships turned off.
+                                  ssh, duration and jobs switch on the same way
+                                  but stay invisible until there is something
+                                  to report — a remote session, a slow command,
+                                  a background job
+    INZSH_SALAH_LAT=21.4225       prayer times need both coordinates. Without
+    INZSH_SALAH_LON=39.8262       them that block never appears at all
 
-  To review the drop order: `inzsh-stub`, then `inzsh-at 100 80 60 40 24`.
-  To review resizing: `inzsh-stub`, then drag the window narrow and watch.
+  WHAT GOES FIRST WHEN THE WINDOW GETS TOO NARROW
+
+    INZSH_SALAH_PRIORITY=5        lower survives longer. Only ever consulted
+                                  when something has to go — see the last
+                                  section if this seems to do nothing
+    INZSH_GIT_MINCOLS=60          or just hide one block below a width you pick
+
+  COMMANDS
+
+    inzsh-help                    this
+    inzsh-knobs                   every setting, its default, and yours
+    inzsh-knobs SALAH             only the ones matching a word
+    inzsh-segments                what the prompt is made of right now
+    inzsh-stub                    fill every block with sample text
+    inzsh-stub off                put the real ones back
+    inzsh-at 80 40 20             show those widths without resizing the window
+    inzsh-register light          the light palette — or 'dark'
+    inzsh-reset                   everything back to its default
+
+  A GOOD FIRST LOOK
+
+    inzsh-stub                    so you are looking at a full prompt
+    inzsh-at 100 60 40 24 16      the whole range on one screen
+
+  NOTHING CHANGED?
+
+    Most likely you changed something that only matters when the window is too
+    narrow to fit everything. At a comfortable width nothing is being dropped,
+    so the order is never asked for.
+
+    The clock and the prayer time are the last to feel it. Above roughly 22
+    columns they do not compete at all — when the row runs out of room they
+    simply move down beside the cursor, whole. Only below that does one of them
+    have to go, and only then does priority decide which.
+
+    So: `inzsh-at 40 24 20 16`, and watch the right-hand end.
 
   exit, or Ctrl-D, and none of this happened.
 HELP
