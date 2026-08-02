@@ -26,11 +26,12 @@
 # anything. The maps belong to `lib/core/engine.zsh` and `lib/core/render.zsh`; naming them here
 # is only what lets a spec — or a bundle sourced out of order — load this segment on its own.
 typeset -gA _inzsh_segment_defaults _inzsh_segment_fg_role _inzsh_segment_bg_role
-typeset -gA _inzsh_segment_importance
+typeset -gA _inzsh_segment_importance _inzsh_segment_priority
 
 _inzsh_segment_defaults[DIR]=40
 _inzsh_segment_fg_role[DIR]=text-body
 _inzsh_segment_importance[DIR]=1
+_inzsh_segment_priority[DIR]=20
 
 # The fill `INZSH_SURFACE_MODE=hue` gives it, and the only mode that reads it — see
 # `_inzsh_render_hues`. `info` is the design system's ink-blue, and the path is what it is for:

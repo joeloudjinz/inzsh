@@ -74,12 +74,13 @@
 #                 green, a dirty one madder, a staged one ink-blue, a detached head ochre. Read
 #                 only by `INZSH_SURFACE_MODE=hue` — see `_inzsh_render_hues`.
 typeset -gA _inzsh_segment_text _inzsh_segment_defaults
-typeset -gA _inzsh_segment_fg_role _inzsh_segment_bg_role _inzsh_segment_importance
+typeset -gA _inzsh_segment_fg_role _inzsh_segment_bg_role _inzsh_segment_importance _inzsh_segment_priority
 
 _inzsh_segment_defaults[GIT]=50
 _inzsh_segment_fg_role[GIT]=text-body
 _inzsh_segment_bg_role[GIT]=surface-deep
 _inzsh_segment_importance[GIT]=2
+_inzsh_segment_priority[GIT]=40
 
 # ---------------------------------------------------------------------------------------------
 # The glyphs, taken from the token layer's glyph table — `_inzsh_glyph` in

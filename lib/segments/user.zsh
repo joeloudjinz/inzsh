@@ -33,7 +33,7 @@
 # in it, so re-sourcing neither empties a map nor doubles a registration. The declaration is
 # also what makes this file sourceable on its own.
 typeset -gA _inzsh_segment_text _inzsh_segment_defaults
-typeset -gA _inzsh_segment_fg_role _inzsh_segment_bg_role _inzsh_segment_importance
+typeset -gA _inzsh_segment_fg_role _inzsh_segment_bg_role _inzsh_segment_importance _inzsh_segment_priority
 
 # The registration. Rank 2 puts the user after the root marker and before the host, so the left
 # prompt reads `user host dir` — who, where, what. `text-muted` and importance 3 because it is
@@ -41,6 +41,7 @@ typeset -gA _inzsh_segment_fg_role _inzsh_segment_bg_role _inzsh_segment_importa
 _inzsh_segment_defaults[USER]=20
 _inzsh_segment_fg_role[USER]=text-muted
 _inzsh_segment_importance[USER]=3
+_inzsh_segment_priority[USER]=50
 
 # The fill `INZSH_SURFACE_MODE=hue` gives it, and nothing else reads it — see
 # `_inzsh_render_hues`. `neutral` is the muted chip: an identity is neither good news nor bad,

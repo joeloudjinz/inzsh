@@ -32,7 +32,7 @@
 # in it, so re-sourcing neither empties a map nor doubles a registration. The declaration is
 # also what makes this file sourceable on its own.
 typeset -gA _inzsh_segment_text _inzsh_segment_defaults
-typeset -gA _inzsh_segment_fg_role _inzsh_segment_bg_role _inzsh_segment_importance
+typeset -gA _inzsh_segment_fg_role _inzsh_segment_bg_role _inzsh_segment_importance _inzsh_segment_priority
 
 # The registration. Rank 5 puts the environment after the directory, where it reads as a
 # property of the place rather than of the machine. `info-text` because that is what it is —
@@ -41,6 +41,7 @@ typeset -gA _inzsh_segment_fg_role _inzsh_segment_bg_role _inzsh_segment_importa
 _inzsh_segment_defaults[VENV]=60
 _inzsh_segment_fg_role[VENV]=info-text
 _inzsh_segment_importance[VENV]=2
+_inzsh_segment_priority[VENV]=70
 
 # The fill `INZSH_SURFACE_MODE=hue` gives it — see `_inzsh_render_hues`. The WASH rather than the
 # `info` fill: a wash has no `on-` twin, so the block keeps `info-text` above and the environment

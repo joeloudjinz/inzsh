@@ -29,7 +29,7 @@
 # in it, so re-sourcing neither empties a map nor doubles a registration, and the declaration is
 # what makes this file sourceable on its own.
 typeset -gA _inzsh_segment_text _inzsh_segment_defaults
-typeset -gA _inzsh_segment_fg_role _inzsh_segment_bg_role _inzsh_segment_importance
+typeset -gA _inzsh_segment_fg_role _inzsh_segment_bg_role _inzsh_segment_importance _inzsh_segment_priority
 
 # Registration.
 #
@@ -42,6 +42,7 @@ typeset -gA _inzsh_segment_fg_role _inzsh_segment_bg_role _inzsh_segment_importa
 _inzsh_segment_defaults[SSH]=0
 _inzsh_segment_fg_role[SSH]=caution-text
 _inzsh_segment_importance[SSH]=2
+_inzsh_segment_priority[SSH]=55
 
 # The fill `INZSH_SURFACE_MODE=hue` gives it — see `_inzsh_render_hues`. The `caution` FILL, not
 # the wash: this is the one segment on the row whose whole point is that you are somewhere else,
