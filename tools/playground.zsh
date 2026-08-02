@@ -179,11 +179,13 @@ InZsh playground — this shell is a throwaway. Nothing here touches your real s
   Helpers:
 
     inzsh-help                      this
-    inzsh-knobs [pattern]           every knob, its default, and what it is now
+    inzsh-knobs                     every knob, its default, and what it is now
+    inzsh-knobs SALAH               ...just the ones matching a word
     inzsh-segments                  what the prompt is made of, with rank and priority
-    inzsh-stub [off]                give every segment something to say
+    inzsh-stub                      give every segment something to say
+    inzsh-stub off                  and put the real ones back
     inzsh-at 100 80 60 40           the prompt at those widths, without resizing
-    inzsh-register light|dark       swap the palette register (internal — see #183)
+    inzsh-register light            swap the palette register — or 'dark' (see #183)
     inzsh-reset                     every knob back to its default
 
   To review the drop order: `inzsh-stub`, then `inzsh-at 100 80 60 40 24`.
