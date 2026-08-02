@@ -21,30 +21,114 @@ source $_inzsh_play_root/inzsh.zsh-theme
 # Read out of the registry rather than restated here, so a knob added tomorrow appears without
 # this file moving — the same reason `docs/configuration.md` is gated by a test rather than by
 # somebody remembering.
+# A validator, in words. The registry's specs are a grammar for the code that enforces them —
+# `int:0:`, `enum:arrow|round|divider` — and reading one is not the job of somebody deciding what
+# to type. Same information, said out loud.
+_inzsh_play_accepts() {
+  emulate -L zsh
+  setopt extended_glob
+
+  local spec=$1
+  case $spec in
+    (bool)        REPLY='1 or 0' ;;
+    (enum:*)      REPLY=${${spec#enum:}//\|/ · } ;;
+    (int)         REPLY='whole number' ;;
+    (int:0:)      REPLY='0 or more' ;;
+    (int:*:)      REPLY="${${spec#int:}%:} or more" ;;
+    (int::*)      REPLY="up to ${spec#int::}" ;;
+    (int:*:*)     REPLY="${${spec#int:}%%:*} to ${spec##*:}" ;;
+    (any|*)       REPLY='any text' ;;
+  esac
+  return 0
+}
+
+# The groups, in the order they print. A pattern rather than a list, so a knob added tomorrow
+# lands somewhere sensible without this file moving; anything unmatched falls into the last one.
+typeset -ga _inzsh_play_groups=(
+  'HOW IT LOOKS'          'INZSH_(SURFACE_MODE|SEPARATOR_STYLE|COLOR_DEPTH|NERD_FONT|MULTIBYTE)'
+  'THE PROMPT ITSELF'     'INZSH_(PROMPT_*|PS2|SPROMPT|RESIZE|TRANSIENT*|TITLE*|LADDER_*)'
+  'PRAYER TIMES'          'INZSH_SALAH_*'
+  'INDIVIDUAL SEGMENTS'   'INZSH_(GIT_*|TIME_*|DATE_*|DURATION_*|HOST_*|DEFAULT_USER)'
+  'EVERYTHING ELSE'       '*'
+)
+
+# `inzsh-knobs [word]` — every setting, grouped, with what it accepts and what it is now.
+#
+# Filtering is a plain substring on the NAME, so `inzsh-knobs salah` and `inzsh-knobs SALAH` do
+# the same thing and `inzsh-knobs rank` finds the family. No argument means everything — which
+# it did not, for a while: the old default was the pattern `*` fed into a substring match, so it
+# looked for knobs with a literal asterisk in the name and found only the families.
 inzsh-knobs() {
   emulate -L zsh
   setopt extended_glob
 
-  local pattern=${1:-*}
-  local name default live spec
+  local want=${(U)1-}
+  local -i shown=0
+  local title glob name value spec mark
 
-  print -r -- "KNOB                            DEFAULT      NOW"
-  for name in ${(ok)_inzsh_config_defaults}; do
-    [[ ${(U)name} == *${(U)pattern}* ]] || continue
-    default=${_inzsh_config_defaults[$name]}
-    live=${(P)name-}
-    printf '%-31s %-12s %s\n' $name "${default:-—}" "${live:-—}"
+  local -a names=(${(ok)_inzsh_config_defaults})
+  local -A taken=()
+  local -i g
+
+  for (( g = 1; g <= ${#_inzsh_play_groups}; g += 2 )); do
+    title=${_inzsh_play_groups[g]}
+    glob=${_inzsh_play_groups[g + 1]}
+
+    local -a rows=()
+    for name in $names; do
+      (( ${+taken[$name]} )) && continue
+      [[ ${(U)name} == ${~${(U)glob}} ]] || continue
+      taken[$name]=1
+      [[ -z $want || ${(U)name} == *${want}* ]] || continue
+      rows+=$name
+    done
+    (( ${#rows} )) || continue
+
+    (( shown++ )) && print
+    print -r -- "$title"
+    for name in $rows; do
+      _inzsh_play_accepts "${_inzsh_config_validators[$name]}"
+      spec=$REPLY
+      # What the prompt is using: yours if you set one, otherwise the shipped default. Marked,
+      # because "what did I change" is the question this listing is usually asked.
+      value=${(P)name-}
+      mark=' '
+      if [[ -n $value ]]; then
+        mark='*'
+      else
+        value=${_inzsh_config_defaults[$name]}
+        [[ -n $value ]] || value='(not set)'
+      fi
+      # Truncated rather than allowed to shove the last column out of line. A format string and
+      # a URL are both longer than the space a listing can give them, and the listing's job is to
+      # show you WHICH settings you have moved, not to be the place you read a value back from.
+      (( ${#value} > 13 )) && value="${value[1,12]}…"
+      printf '  %-31s %s %-13s %s\n' $name $mark "$value" "$spec"
+    done
   done
 
-  # Families are patterns, not names, so they have no current value to show — what they have is
-  # a shape, and the shape is the useful thing to print.
-  print
-  print -r -- "FAMILIES (one per segment — put the segment's name in capitals in the middle)"
+  # Families are patterns rather than names — one per segment — so they have no single current
+  # value, and printing a blank column for one would only invite the question.
+  local -a fam=()
   for spec in ${_inzsh_config_family_order}; do
-    printf '%-31s %-12s %s\n' $spec \
-      "${_inzsh_config_family_defaults[$spec]:-—}" \
-      "${_inzsh_config_family_validators[$spec]}"
+    [[ -z $want || ${(U)spec} == *${want}* ]] && fam+=$spec
   done
+
+  if (( ${#fam} )); then
+    (( shown++ )) && print
+    print -r -- "ONE PER SEGMENT — put a segment's name in the middle, e.g. INZSH_GIT_RANK"
+    for spec in $fam; do
+      _inzsh_play_accepts "${_inzsh_config_family_validators[$spec]}"
+      printf '  %-31s   %-13s %s\n' $spec \
+        "${_inzsh_config_family_defaults[$spec]:-(not set)}" "$REPLY"
+    done
+  fi
+
+  (( shown )) || { print -r -- "nothing matching '$1'"; return 1 }
+
+  print
+  print -r -- "  * = you set this. Anything else is the shipped default."
+  print -r -- "  inzsh-segments lists the segment names."
 }
 
 # `inzsh-segments` — what the prompt is made of right now, in draw order, with the two numbers
@@ -53,17 +137,40 @@ inzsh-segments() {
   emulate -L zsh
 
   # Rendered first, so the text column is what the prompt would draw NOW rather than whatever
-  # the last one happened to leave behind.
+  # the last one happened to leave behind — and the prayer table refreshed first in turn, because
+  # that is what precmd does before a render and this is standing in for a precmd.
+  (( ${+functions[_inzsh_salah_cache_refresh]} )) && _inzsh_salah_cache_refresh
   _inzsh_render
 
-  local seg
-  print -r -- "SEGMENT   RANK  PRIORITY  TEXT"
-  for seg in ${(ok)_inzsh_segment_defaults}; do
-    _inzsh_priority_of $seg
-    printf '%-9s %-5s %-9s %s\n' $seg \
-      "${_inzsh_segment_defaults[$seg]}" "$REPLY" \
-      "${_inzsh_segment_text[$seg]:-—}"
+  # Sorted by rank rather than by name — left to right, then the right-hand blocks inward — so
+  # the listing reads in the order the prompt does. Hidden ones last, since rank 0 has no place
+  # in a row it is not in.
+  local seg rank sortable
+  local -a keyed=()
+  for seg in ${(k)_inzsh_segment_defaults}; do
+    rank=${_inzsh_segment_defaults[$seg]}
+    # Positive first ascending, then negative descending (rightmost last), then hidden.
+    if (( rank > 0 ));   then (( sortable = 1000 + rank ))
+    elif (( rank < 0 )); then (( sortable = 3000 + rank ))
+    else                      (( sortable = 5000 ))
+    fi
+    keyed+=("${(l:5::0:)sortable} $seg")
   done
+
+  print -r -- "SEGMENT     RANK  PRIORITY  SHOWING"
+  local entry
+  for entry in ${(o)keyed}; do
+    seg=${entry##* }
+    _inzsh_priority_of $seg
+    rank=${_inzsh_segment_defaults[$seg]}
+    printf '  %-10s %-5s %-9s %s\n' $seg "$rank" "$REPLY" \
+      "${_inzsh_segment_text[$seg]:-(nothing to show)}"
+  done
+
+  print
+  print -r -- "  RANK      where it sits. + from the left, - from the right, 0 hidden."
+  print -r -- "  PRIORITY  what survives a narrow window. Lower lasts longer."
+  print -r -- "  Change either: INZSH_<SEGMENT>_RANK, INZSH_<SEGMENT>_PRIORITY"
 }
 
 # ---------------------------------------------------------------------------------------------
@@ -123,6 +230,7 @@ inzsh-at() {
   for cols in "$@"; do
     [[ $cols == <-> ]] || { print -ru2 -- "inzsh-at: not a width: $cols"; continue }
     COLUMNS=$cols
+    (( ${+functions[_inzsh_salah_cache_refresh]} )) && _inzsh_salah_cache_refresh
     _inzsh_render
     print -r -- "── ${cols} cols ──"
     for row in ${(f)PROMPT}; do
