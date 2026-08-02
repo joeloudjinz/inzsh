@@ -55,6 +55,18 @@ _inzsh_precmd() {
   # an escape sequence written there is corruption in somebody else's pipeline.
   [[ -o interactive ]] || return 0
 
+  # The day table, before the render rather than inside it. `lib/segments/salah.zsh` draws from
+  # `_inzsh_salah_table` and is forbidden from fetching its own data — the seam the whole of
+  # `lib/salah/` is built around — so somebody upstream has to fill it, and precmd is the only
+  # place that is neither the segment nor the draw.
+  #
+  # Cheap on every prompt but a handful a day: the warm path is one `strftime` and a compare
+  # against the key already in memory. The cold path — a new day, a moved location — computes
+  # and writes a cache entry, which is the couple of forks a day this file's no-fork rule is
+  # not about. Absent, empty or unresolvable location leaves the table empty and the segment
+  # draws nothing, which is the honest result and not an error.
+  (( ${+functions[_inzsh_salah_cache_refresh]} )) && _inzsh_salah_cache_refresh
+
   # The seam. The render layer defines `_inzsh_render` when there is something to draw; until
   # it does, the capture above is the whole of precmd and the user's prompt is untouched. The
   # test is `${+functions[...]}` — a parameter lookup, not a `whence`, because this is the
