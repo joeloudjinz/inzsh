@@ -41,15 +41,29 @@ source $_inzsh_theme_root/lib/core/hooks.zsh
 # down. Each registers its rank, role and importance and defines its build function — none of
 # them draws anything at load time. They come after `render.zsh` and `engine.zsh`, whose
 # associations they write into.
+# The prayer-time library first — a sibling leaf, not a layer. It imports nothing from the
+# engine, which is why it can be loaded before the segments and why it declares its knobs in a
+# table for `_inzsh_config_absorb_all` below rather than registering them itself. Order is
+# `calc → methods → cache → location`, the one `.claude/docs/PROJECT.md` fixes for the bundle.
+source $_inzsh_theme_root/lib/salah/calc.zsh
+source $_inzsh_theme_root/lib/salah/methods.zsh
+source $_inzsh_theme_root/lib/salah/cache.zsh
+source $_inzsh_theme_root/lib/salah/location.zsh
+
 source $_inzsh_theme_root/lib/segments/root.zsh
 source $_inzsh_theme_root/lib/segments/user.zsh
 source $_inzsh_theme_root/lib/segments/host.zsh
+source $_inzsh_theme_root/lib/segments/ssh.zsh
 source $_inzsh_theme_root/lib/segments/dir.zsh
 source $_inzsh_theme_root/lib/segments/venv.zsh
 source $_inzsh_theme_root/lib/segments/git.zsh
 source $_inzsh_theme_root/lib/segments/git-async.zsh
 source $_inzsh_theme_root/lib/segments/retval.zsh
+source $_inzsh_theme_root/lib/segments/duration.zsh
+source $_inzsh_theme_root/lib/segments/jobs.zsh
 source $_inzsh_theme_root/lib/segments/time.zsh
+source $_inzsh_theme_root/lib/segments/date.zsh
+source $_inzsh_theme_root/lib/segments/salah.zsh
 
 # Every knob declared, now that everything that declares one is loaded. Files that may call the
 # config layer registered their own on the way past; a module that may NOT call it — `lib/salah/`
