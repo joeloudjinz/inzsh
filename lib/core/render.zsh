@@ -920,42 +920,55 @@ _inzsh_render() {
   local -a survivors
   survivors=("${reply[@]}")
 
+  _inzsh_rank_split "${survivors[@]}"
+
   # What the terminal has room for. The filter above answered the user's explicit MINCOLS; this
   # answers the window. Blocks are measured as they will be DRAWN — the text plus the column of
   # padding either side, one separator between neighbours — and taken in priority order until the
-  # row is full, so what survives is always a prefix of that order.
+  # side is full, so what survives is always a prefix of that order.
+  #
+  # PER SIDE, and after the rank split rather than before it, because the two sides do not always
+  # share a row. When the gap will not hold them both the right side moves to `RPROMPT` and is
+  # drawn beside the marker instead — it has somewhere else to go, and fitting the two together
+  # would drop a block for failing to fit a row it was never going to be on. Each side is held to
+  # the terminal on its own, which is the true constraint in the shape where they are apart and
+  # still a necessary one in the shape where they are together.
   #
   # `dir` books only what it cannot give up rather than its full width, because it is the one
   # segment that shortens instead of vanishing. Reserving all of it would drop a block to make
   # room for a path that the pass below was about to truncate anyway, and the user would lose
   # their branch name to a directory name they were not going to be shown in full either way.
   #
-  # One column is held back from the budget so the row is never flush against the right edge —
-  # the same spare the truncation pass keeps, and for the same reason: a prompt that ends exactly
-  # on the last column wraps on some terminals and not others.
+  # One column is held back so the row is never flush against the right edge — the same spare the
+  # truncation pass keeps, and for the same reason: a prompt that ends exactly on the last column
+  # wraps on some terminals and not others.
   if (( ${+functions[_inzsh_layout_fit]} && ${+functions[_inzsh_width]} )); then
     _inzsh_separators
     _inzsh_width "$_inzsh_sep_left"
-    local -i sep_width=$(( REPLY + 1 ))
+    local -i sep_width
+    (( sep_width = REPLY + 1 ))
 
-    local -a fit_args=()
-    local candidate
+    local -i budget
+    (( budget = ${COLUMNS:-0} - 1 ))
+
+    local -a fit_args
+    local side candidate
     local -i block
-    for candidate in "${survivors[@]}"; do
-      [[ -n ${_inzsh_segment_text[$candidate]-} ]] || continue
-      _inzsh_width "${_inzsh_segment_text[$candidate]}"
-      block=$(( REPLY + 2 ))
-      [[ $candidate == DIR ]] && block=$_inzsh_dir_reserved
-      fit_args+=("$candidate" "$block")
+    for side in _inzsh_left _inzsh_right; do
+      fit_args=()
+      for candidate in ${(P)side}; do
+        [[ -n ${_inzsh_segment_text[$candidate]-} ]] || continue
+        _inzsh_width "${_inzsh_segment_text[$candidate]}"
+        (( block = REPLY + 2 ))
+        [[ $candidate == DIR ]] && block=$_inzsh_dir_reserved
+        fit_args+=("$candidate" "$block")
+      done
+
+      (( ${#fit_args} )) || continue
+      _inzsh_layout_fit "$budget" "$sep_width" "${fit_args[@]}"
+      set -A $side "${reply[@]}"
     done
-
-    if (( ${#fit_args} )); then
-      _inzsh_layout_fit $(( ${COLUMNS:-0} - 1 )) "$sep_width" "${fit_args[@]}"
-      survivors=("${reply[@]}")
-    fi
   fi
-
-  _inzsh_rank_split "${survivors[@]}"
 
   _inzsh_render_build right
   local right=$REPLY

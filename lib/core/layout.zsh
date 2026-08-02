@@ -303,10 +303,13 @@ _inzsh_priority_of() {
   # The knob first, then the segment's own registration, then the stranger's place. Negative is
   # allowed and means what it says — kept longer than anything at zero — because a user who wants
   # one block to outlive every default should not have to renumber the defaults to say so.
+  # Arithmetic as a COMMAND, never as an expansion. `$(( … ))` is not a subprocess, but the guard
+  # in `test/unit/layout_spec.sh` cannot tell it from `$( … )` and refuses both — which is the
+  # right trade for a file on the render path, and the reason nothing here uses the form.
   if [[ $value == (|-|+)<-> ]]; then
-    REPLY=$(( value ))
+    (( REPLY = value ))
   elif [[ ${_inzsh_segment_priority[$1]-} == (|-|+)<-> ]]; then
-    REPLY=$(( _inzsh_segment_priority[$1] ))
+    (( REPLY = _inzsh_segment_priority[$1] ))
   fi
 
   return 0
@@ -361,7 +364,7 @@ _inzsh_layout_fit() {
   local -i sortable
   for (( i = 1; i <= $#names; i++ )); do
     _inzsh_priority_of "${names[i]}"
-    sortable=$(( REPLY + 1000000 ))
+    (( sortable = REPLY + 1000000 ))
     keys+=("${(l:9::0:)sortable}:${(l:4::0:)i}")
   done
 

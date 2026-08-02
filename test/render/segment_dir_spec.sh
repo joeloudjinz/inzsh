@@ -36,10 +36,10 @@ inzsh_spec_dir() {
 # Snapshots go to files rather than to locals, so that holding one cannot perturb the other.
 # RANDOM and SECONDS move between any two snapshots on their own; they are the only volatile
 # names zsh reports here.
-# The four maps registration writes, in the sorted order the snapshot reports them. Assembled
+# The five maps registration writes, in the sorted order the snapshot reports them. Assembled
 # rather than wrapped: the matcher takes one argument, and a continuation would make it two.
 inzsh_spec_dir_maps='_inzsh_segment_bg_role _inzsh_segment_defaults _inzsh_segment_fg_role'
-inzsh_spec_dir_maps+=' _inzsh_segment_importance'
+inzsh_spec_dir_maps+=' _inzsh_segment_importance _inzsh_segment_priority'
 
 inzsh_spec_dir_touches() {
   local snap=${SHELLSPEC_TMPBASE:-${TMPDIR:-/tmp}}/inzsh-dir-registration
@@ -112,7 +112,7 @@ Describe 'the dir segment'
       The output should eq '1'
     End
 
-    It 'writes the three maps and nothing else — no text, no state, no side effect'
+    It 'writes the five maps and nothing else — no text, no state, no side effect'
       When call inzsh_spec_dir_touches 0
       The output should eq "$inzsh_spec_dir_maps"
       The stderr should eq ''

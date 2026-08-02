@@ -1191,3 +1191,140 @@ Describe 'path truncation'
     End
   End
 End
+
+# Priority — the order segments are given up in, and the fit that uses it.
+#
+# The pair below is what makes the no-wrap rule true rather than likely. MINCOLS is a fixed number
+# compared against a segment whose width changes every render, so it can only ever approximate;
+# `_inzsh_layout_fit` measures what is actually about to be drawn. These examples are about the
+# ORDER and the STOPPING, because those are the two things a user can predict from.
+Describe 'priority'
+  Describe 'resolving one'
+    inzsh_spec_priority_setup() {
+      unset -m 'INZSH_*_PRIORITY'
+      typeset -gA _inzsh_segment_priority
+      _inzsh_segment_priority=(DIR 20 GIT 40 TIME 80)
+    }
+    BeforeEach 'inzsh_spec_priority_setup'
+
+    It 'reads what the segment registered for itself'
+      registered() { _inzsh_priority_of GIT; print -r -- "$REPLY" }
+      When call registered
+      The output should eq '40'
+    End
+
+    It 'lets the knob win, because the knob is the user speaking'
+      knob() { INZSH_GIT_PRIORITY=5 _inzsh_priority_of GIT; print -r -- "$REPLY" }
+      When call knob
+      The output should eq '5'
+    End
+
+    # Negative is not an error and not a special case: it is "kept longer than anything at zero",
+    # which is how a user pins one block above every default without renumbering the defaults.
+    It 'takes a negative as an ordinary answer'
+      below() { INZSH_TIME_PRIORITY=-5 _inzsh_priority_of TIME; print -r -- "$REPLY" }
+      When call below
+      The output should eq '-5'
+    End
+
+    # Same asymmetry the rest of this file follows. A typo'd knob must not silently reorder the
+    # prompt, so it falls back to what the segment registered rather than to any reading of it.
+    It 'ignores a knob that is not an integer'
+      rubbish() { INZSH_GIT_PRIORITY=soon _inzsh_priority_of GIT; print -r -- "$REPLY" }
+      When call rubbish
+      The output should eq '40'
+    End
+
+    It 'puts a segment it has never heard of last'
+      stranger() { _inzsh_priority_of NOSUCH; print -r -- "$REPLY" }
+      When call stranger
+      The output should eq "$_inzsh_priority_unknown"
+    End
+
+    # `${(P)}` on something that cannot name a variable is fatal mid-render. The guard is the same
+    # one `_inzsh_mincols_of` carries, and it is asserted rather than assumed for the same reason.
+    It 'answers a name that could not be a variable instead of dying on it'
+      hostile() { _inzsh_priority_of 'a b'; print -r -- "$REPLY" }
+      When call hostile
+      The output should eq "$_inzsh_priority_unknown"
+    End
+  End
+
+  Describe 'fitting a row'
+    inzsh_spec_fit_setup() {
+      unset -m 'INZSH_*_PRIORITY'
+      typeset -gA _inzsh_segment_priority
+      # Deliberately disagreeing with the argument order below, so nothing here can pass by
+      # dropping from the right-hand end instead of by priority.
+      _inzsh_segment_priority=(DIR 20 RETVAL 30 GIT 40 VENV 70 TIME 80 SALAH 90)
+    }
+    BeforeEach 'inzsh_spec_fit_setup'
+
+    # Widths as they are drawn: text plus a column of padding either side. The separator is two
+    # columns, which is the glyph and the space after it.
+    inzsh_spec_row() {
+      print -r -- DIR 12 GIT 7 VENV 7 RETVAL 8 TIME 8 SALAH 18
+    }
+
+    inzsh_spec_fit_at() {
+      _inzsh_layout_fit "$1" 2 $(inzsh_spec_row)
+      print -r -- "${reply[*]}"
+    }
+
+    It 'keeps everything when the row fits'
+      When call inzsh_spec_fit_at 100
+      The output should eq 'DIR GIT VENV RETVAL TIME SALAH'
+    End
+
+    # The whole point, in one example: the widest block goes first not because it is widest but
+    # because it is last in the order, and it sits in the middle of the arguments.
+    It 'drops the lowest priority first, wherever it sits in the row'
+      When call inzsh_spec_fit_at 62
+      The output should eq 'DIR GIT VENV RETVAL TIME'
+    End
+
+    It 'keeps going down the order as the window narrows'
+      When call inzsh_spec_fit_at 40
+      The output should eq 'DIR GIT VENV RETVAL'
+    End
+
+    It 'answers in the order it was given, not in priority order'
+      # RETVAL outranks GIT and VENV in priority and follows them in the arguments. Position is
+      # the rank layer's business and this function may not touch it.
+      When call inzsh_spec_fit_at 30
+      The output should eq 'DIR RETVAL'
+    End
+
+    # Stopping rather than skipping. At 34 columns there is room for TIME (8) after DIR, RETVAL
+    # and GIT, but not for VENV (7) which comes first in the order — and TIME must NOT slip into
+    # the gap VENV was refused. What survives is a prefix of the order or the rule is unlearnable.
+    It 'stops at the first refusal instead of packing what still fits'
+      fit() {
+        _inzsh_segment_priority=(DIR 20 RETVAL 30 GIT 40 VENV 70 TIME 80)
+        _inzsh_layout_fit 40 2 DIR 12 GIT 7 VENV 20 RETVAL 8 TIME 3
+        print -r -- "${reply[*]}"
+      }
+      When call fit
+      The output should eq 'DIR GIT RETVAL'
+    End
+
+    It 'hides nothing when the width is unknown'
+      # Same rule as `_inzsh_layout_filter`: assuming room too readily wraps a prompt, assuming
+      # none empties it, and only one of those can be recovered by looking at it.
+      When call inzsh_spec_fit_at 'not-a-width'
+      The output should eq 'DIR GIT VENV RETVAL TIME SALAH'
+    End
+
+    It 'answers empty for an empty row rather than inventing one'
+      empty() { _inzsh_layout_fit 80 2; print -r -- "${#reply}" }
+      When call empty
+      The output should eq '0'
+    End
+
+    # A budget that fits nothing at all still has to answer, and the honest answer is nothing.
+    It 'drops everything when even the first block will not fit'
+      When call inzsh_spec_fit_at 3
+      The output should eq ''
+    End
+  End
+End
