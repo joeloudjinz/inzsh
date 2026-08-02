@@ -255,6 +255,139 @@ _inzsh_layout_filter() {
 }
 
 # ---------------------------------------------------------------------------------------------
+# PRIORITY — the order things are given up in
+# ---------------------------------------------------------------------------------------------
+
+# `INZSH_<SEG>_PRIORITY` is the survival order: LOWER SURVIVES LONGER. It answers a different
+# question from `INZSH_<SEG>_RANK`, which is why it is a second number rather than a reading of
+# the first — rank is WHERE a segment sits, priority is WHEN it goes, and the segment nearest the
+# edge is not necessarily the one to lose first.
+#
+# MINCOLS still works and still means what it meant: a hard floor the user sets by hand. The
+# difference is what happens when nothing is set. A MINCOLS default can only ever be a guess,
+# because it is a fixed number compared against a segment whose width changes every render — the
+# path grows a directory, the branch name is longer on one repo than another, `Maghrib` is two
+# columns wider than `Isha`. Fitting the row from measured widths at the moment it is drawn is
+# not a better guess, it is the absence of one.
+#
+# The default is EMPTY for the reason `INZSH_*_RANK` registers empty: nothing set is not a
+# missing answer, it is the instruction to use what the segment registered for itself in
+# `_inzsh_segment_priority`. A segment that registered nothing either lands last.
+
+# Where an unregistered segment lands. Not a magic number buried in the arithmetic: a stranger
+# has to sort somewhere, and this is the one place that says where.
+typeset -gi _inzsh_priority_unknown=99999
+
+# Declared here as well as in `lib/core/render.zsh` so that this file answers sensibly when it is
+# sourced on its own — the same courtesy `_inzsh_ladder_defaults` paid the breakpoints.
+typeset -gA _inzsh_segment_priority
+
+_inzsh_priority_of() {
+  emulate -L zsh
+  setopt extended_glob
+
+  # Last, not first. An unregistered segment is one this file knows nothing about, and the safe
+  # place for a stranger in a survival order is the end of it — being wrong there costs a
+  # segment nobody configured, where being wrong at the front costs one they did.
+  typeset -g REPLY=$_inzsh_priority_unknown
+
+  local var=INZSH_${(U)1}_PRIORITY
+  [[ $var == [A-Za-z_][A-Za-z0-9_]# ]] || return 0
+
+  local value=${(P)var-}
+  if (( ${+functions[_inzsh_config_get]} )); then
+    _inzsh_config_get "$var"
+    value=$REPLY
+  fi
+
+  # The knob first, then the segment's own registration, then the stranger's place. Negative is
+  # allowed and means what it says — kept longer than anything at zero — because a user who wants
+  # one block to outlive every default should not have to renumber the defaults to say so.
+  if [[ $value == (|-|+)<-> ]]; then
+    REPLY=$(( value ))
+  elif [[ ${_inzsh_segment_priority[$1]-} == (|-|+)<-> ]]; then
+    REPLY=$(( _inzsh_segment_priority[$1] ))
+  fi
+
+  return 0
+}
+
+# `_inzsh_layout_fit <budget> <sep-width> <NAME> <WIDTH> [<NAME> <WIDTH>...]` — the segments that
+# fit, IN THE ORDER THEY WERE GIVEN, in `reply`.
+#
+# This is the function that makes the no-wrap rule true rather than likely. Segments are taken in
+# priority order, each one's real measured width added to what is already kept, and the moment
+# one does not fit the walk STOPS.
+#
+# Stopping rather than skipping is deliberate, and it is the difference between a prompt you can
+# predict and one you cannot. Skipping packs the row tighter — an 8-column clock would slip into
+# the gap an 18-column prayer block was refused — but it means a LESS important segment can
+# outlive a MORE important one, and which of them you get depends on arithmetic no one watching
+# the window resize can follow. What survives here is always a PREFIX of the priority order, so
+# the rule a user learns is one sentence: things go in the order you listed them.
+#
+# A budget that is not a non-negative integer keeps everything, the same rule and for the same
+# reason as `_inzsh_layout_filter`: assuming room too readily wraps a prompt, assuming none
+# empties it, and only one of those is recoverable by looking at it.
+_inzsh_layout_fit() {
+  emulate -L zsh
+  setopt extended_glob
+
+  typeset -ga reply
+  reply=()
+
+  local budget=$1 sep=$2
+  shift 2
+
+  local -a args=("$@")
+  local -a names=() widths=()
+  local -i i
+  for (( i = 1; i <= $#args; i += 2 )); do
+    names+=("${args[i]}")
+    widths+=("${args[i + 1]}")
+  done
+
+  (( $#names )) || return 0
+
+  if [[ $budget != (|+)<-> ]]; then
+    reply=("${names[@]}")
+    return 0
+  fi
+
+  # Sorted by priority, ties by the order given. Zero-padded and offset so that a plain string
+  # sort orders them numerically and negatives sort below zero — `${(n)…}` reads a leading `-` as
+  # part of no number at all, and the numbers here are exactly the ones it gets wrong.
+  local -a keys=()
+  local -i sortable
+  for (( i = 1; i <= $#names; i++ )); do
+    _inzsh_priority_of "${names[i]}"
+    sortable=$(( REPLY + 1000000 ))
+    keys+=("${(l:9::0:)sortable}:${(l:4::0:)i}")
+  done
+
+  local -a kept_widths=()
+  local -A kept=()
+  local key
+  local -i idx
+  for key in ${(o)keys}; do
+    idx=${key##*:}
+    kept_widths+=("${widths[idx]}")
+    _inzsh_layout_total "$sep" "${kept_widths[@]}"
+    if (( REPLY > budget )); then
+      kept_widths[-1]=()
+      break
+    fi
+    kept[${names[idx]}]=1
+  done
+
+  for (( i = 1; i <= $#names; i++ )); do
+    (( ${+kept[${names[i]}]} )) && reply+=("${names[i]}")
+  done
+
+  return 0
+}
+
+# ---------------------------------------------------------------------------------------------
 # The degradation ladder
 # ---------------------------------------------------------------------------------------------
 
