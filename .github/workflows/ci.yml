@@ -50,6 +50,27 @@ jobs:
       - name: L1 unit + L2 render
         run: shellspec test/unit test/render
 
+  # The installer suite — install, reinstall and uninstall, each against a HOME the spec
+  # builds with `mktemp -d` and removes afterwards. The runner's own HOME is never touched,
+  # which is the same property that makes the suite safe to run locally; CI is still where
+  # it is authoritative. The spec-guard step is the same defence the other suites get from
+  # `make test`: a spec file that silently defines no examples is a failure, not a pass.
+  install:
+    needs: syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install zsh
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+      - name: Install ShellSpec
+        run: |
+          git clone --depth 1 https://github.com/shellspec/shellspec.git "$HOME/.shellspec-src"
+          echo "$HOME/.shellspec-src" >> "$GITHUB_PATH"
+      - name: Guard against a silent skip
+        run: zsh tools/spec-guard.zsh test/install
+      - name: Installer suite against a throwaway HOME
+        run: shellspec test/install
+
   # L3 terminal grid — pty + pyte. `make test-ui` skips itself when the venv is
   # absent, so this job builds one and then *proves* the suite ran: a green job
   # that silently tested nothing is worse than no job at all.
@@ -128,5 +149,5 @@ jobs:
       - uses: actions/checkout@v7
       - name: Install ShellSpec
         run: git clone --depth 1 https://github.com/shellspec/shellspec.git /opt/shellspec
-      - name: L1 unit + L2 render under zsh 5.8
-        run: /opt/shellspec/shellspec test/unit test/render
+      - name: L1 unit + L2 render + installer under zsh 5.8
+        run: /opt/shellspec/shellspec test/unit test/render test/install
