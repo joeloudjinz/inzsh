@@ -55,8 +55,10 @@ grid: ## the theme as a terminal grid, per-cell colours (default COLS=80); needs
 play: ## a live prompt in a throwaway shell — every knob takes effect as you type
 	@zsh tools/play.zsh
 
-demo: ## VHS visual render
-	@echo "make demo: tapes land at M8"
+# Local generation only, by design: no CI job renders these. Each tape runs inside the
+# pinned fixture environment (tools/tape-env.zsh); output lands in demo-out/, gitignored.
+demo: ## render every VHS tape in test/tapes to demo-out/
+	@for tape in test/tapes/*.tape; do zsh tools/tape-run.zsh $$tape; done
 
 watch: ## re-render on save
 	@echo "make watch: nothing to watch yet — the token layer lands at M1"
