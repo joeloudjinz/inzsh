@@ -270,7 +270,9 @@ Describe 'separator style'
     It 'gives the two sides the same rule under divider and different wedges otherwise'
       # The mirror is a property of a POINT, and a thin rule has none. So `divider` is the one
       # style where the two sides are identical, and a build that mirrored it anyway would be
-      # drawing a distinction that is not there.
+      # drawing a distinction that is not there. The single-byte register has no point on
+      # either side, so the distinction exists only where the wedges do.
+      Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
       mirroring() {
         local style; local -a wrong=()
         for style in arrow round divider; do

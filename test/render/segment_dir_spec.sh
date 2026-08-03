@@ -224,6 +224,7 @@ Describe 'the dir segment'
       End
 
       It "fits /spec/home/a/bb/ccc/dddd into $1 columns as $2"
+        Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
         When call inzsh_spec_dir /spec/home/a/bb/ccc/dddd "$1"
         The output should eq "$2"
       End

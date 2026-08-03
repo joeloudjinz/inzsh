@@ -265,7 +265,9 @@ Describe 'the exit-status segment'
 
     It 'separates stages with a character the ribbon never uses'
       # The separator is the pipe the user typed. A powerline glyph here would read as a block
-      # boundary that is not there, in a colour that belongs to a neighbour.
+      # boundary that is not there, in a colour that belongs to a neighbour. The single-byte
+      # ribbon draws bars itself, so "never uses" holds only in the multibyte register.
+      Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
       separated() {
         _inzsh_segment_retval_build 0 1 0 127
         local text=${_inzsh_segment_text[RETVAL]}

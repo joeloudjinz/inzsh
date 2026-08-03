@@ -486,6 +486,7 @@ Describe 'the terminal title'
     # A `find` invocation three screens long must not become a three-screen title. The marker
     # is part of the budget, not added on top of it.
     It 'truncates a long command to the cap, marker included'
+      Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
       truncated() {
         inzsh_spec_prompts '
           source "$1/lib/core/prompts.zsh"

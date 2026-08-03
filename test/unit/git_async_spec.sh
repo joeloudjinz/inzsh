@@ -27,6 +27,10 @@ Include lib/segments/git-async.zsh
 # `mktemp -d` and removed afterwards, so no example can read an entry another one wrote and
 # nothing is ever written to the real `$XDG_CACHE_HOME`.
 
+# The end-to-end fragments pin the glyph the multibyte table draws; the single-byte table
+# draws a different one, which is a real difference rather than a defect — those examples are
+# skipped there, through the guard in `test/spec_helper.sh`.
+
 # A scratch cache directory, in REPLY. Named so the cleanup below can refuse anything else.
 inzsh_spec_git_cache() {
   emulate -L zsh
@@ -710,6 +714,7 @@ Describe 'the git status worker'
     End
 
     It "renders a $1 repository as $2"
+      Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
       When call inzsh_spec_git_worker "$1"
       The output should eq "$2"
       The stderr should eq ''
@@ -718,6 +723,7 @@ Describe 'the git status worker'
 
   Describe 'the worker, on a detached HEAD'
     It 'draws the abbreviated commit and no divergence'
+      Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
       # Split out from the table above because the commit id is the one thing the fixture cannot
       # pin across git object formats. The shape is asserted, never the value.
       detached() {

@@ -16,11 +16,7 @@ Include lib/core/layout.zsh
 # `${(m)#…}` counts BYTES rather than cells outside a multibyte locale, so every expectation
 # about a non-ASCII glyph is also an expectation about the locale. CI pins `LC_ALL=C.UTF-8`; a
 # developer running under `LC_ALL=C` skips those rather than watching them fail for a reason that
-# is not the code's.
-inzsh_spec_bytes_not_cells() {
-  local sample=$'é'
-  (( ${#sample} != 1 ))
-}
+# is not the code's. The guard itself lives in `test/spec_helper.sh`, one copy for the suite.
 
 # The fragments the width table measures, held by name so that a `Parameters` line never has to
 # carry an escape through the spec parser. Every one of them is three visible columns unless the

@@ -48,13 +48,8 @@ inzsh_spec_glyph_ascii=(
   behind          '-'
 )
 
-# The suite's own locale is the one UTF-8 locale this machine is known to have, and a real
-# locale name is not portable across machines — so the multibyte examples ask zsh rather than
-# the environment.
-inzsh_spec_bytes_not_cells() {
-  local sample=$'é'
-  (( ${#sample} != 1 ))
-}
+# The multibyte examples ask zsh rather than the environment, through the guard in
+# `test/spec_helper.sh` — a real locale name is not portable across machines.
 
 Describe 'the glyph table'
   # ------------------------------------------------------------------------------------------
@@ -185,6 +180,7 @@ Describe 'the glyph table'
     # prompt they belong to. A rule has no point, so it does not mirror — and that difference has
     # to survive into the ASCII table, since it is the only thing left of the style there.
     It 'gives the two sides different separators in each filled style'
+      Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
       mirrored() {
         local -a same=()
         [[ ${_inzsh_glyph[sep-left]}       != ${_inzsh_glyph[sep-right]} ]]       || same+=arrow
@@ -207,6 +203,7 @@ Describe 'the glyph table'
 
     It 'keeps the four separators distinct from one another'
       # Two styles that resolve to the same pair are one style with two spellings.
+      Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
       spread() {
         local key; local -a seps=()
         for key in sep-left sep-right sep-left-round sep-right-round; do
@@ -291,7 +288,9 @@ Describe 'the glyph table'
 
     It 'answers from the environment as it is now, never from a previous answer'
       # `_inzsh_multibyte` can move — a user sets `INZSH_MULTIBYTE=0` and re-runs detection — and
-      # the table has to move with it rather than keeping the answer it was built with.
+      # the table has to move with it rather than keeping the answer it was built with. The
+      # subshell inherits a single-byte locale, where "multibyte on" cannot exist to move to.
+      Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
       recomputed() {
         zsh -f -c '
           source "$1/lib/core/tokens.zsh"

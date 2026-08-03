@@ -843,6 +843,8 @@ Describe 'the prayer-time segment'
       # `·` U+00B7, taken from the token layer's table rather than written here. Pinned against
       # the byte sequence for the same reason the segment reads it from a table: a `\u` escape is
       # resolved at parse time and takes the whole file with it outside a multibyte locale.
+      # Parsing survives anywhere; the drawn mark is the single-byte register's dot there.
+      Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
       pinned() {
         [[ $_inzsh_salah_glyph_dot == $'\xc2\xb7' ]] &&
           print -r -- pinned || print -r -- "wrong:$_inzsh_salah_glyph_dot"

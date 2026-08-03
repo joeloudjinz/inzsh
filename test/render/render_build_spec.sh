@@ -367,6 +367,7 @@ Describe 'render assembly'
       End
 
       It "chains $1 segment(s) right to left"
+        Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
         render() {
           local -a pairs=(A one B two C three)
           inzsh_spec_render right "${pairs[@]:0:$(( 2 * $1 ))}"
@@ -378,7 +379,9 @@ Describe 'render assembly'
 
     It 'is not the left prompt drawn backwards — the orientation itself differs'
       # The strongest single statement of the mirror: same segments, same order, and the two
-      # sides still share no structure at all.
+      # sides still share no structure at all. The single-byte register draws one bar for both
+      # wedges, so the statement holds only where the wedges exist.
+      Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
       mirrored() {
         inzsh_spec_build left A one B two
         local left=$inzsh_spec_shaped
@@ -407,6 +410,7 @@ Describe 'render assembly'
     End
 
     It "$1 / $2 / $3 segment(s) chain correctly"
+      Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
       When call inzsh_spec_chain "$1" "$3" "$2"
       The output should eq "segments=$3 tokens=$(( $3 ? 6 * $3 + 2 : 0 )) broken="
     End
@@ -442,6 +446,7 @@ Describe 'render assembly'
     It 'draws one separator per VISIBLE segment, never one per ranked segment'
       # Counted rather than pattern-matched, on both sides and at every number of absentees, so a
       # stray separator anywhere in the row shows up as a number and not as a near-miss.
+      Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
       counted() {
         local side glyph stripped; local -i present i seps blocks
         local -a wrong=() pairs=() texts=()
