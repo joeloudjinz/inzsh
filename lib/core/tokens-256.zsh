@@ -142,87 +142,117 @@ _inzsh_palette_256=(
 )
 
 # ---------------------------------------------------------------------------------------
-# Eight colours. There is no tuning left to do at this depth, only a scheme, so here it is
-# once rather than fifty times:
+# Eight colours, and the prompt needs exactly eight. That is the whole scheme, and the
+# arithmetic is worth writing down because it leaves no slack at all:
 #
-#   surfaces, fills and dark ink            0   every dark background and every dark text
-#   creams, and neutral text on dark        7
-#   caramel and ochre                       3   the warm accent and caution share a yellow
-#   madder                                  1
-#   sage                                    2
-#   ink-blue                                4
-#   light washes                            7   a tint on cream is still cream
-#   dark washes                             0   a tint on navy is still navy
+#   FIVE INKS. The four state hues a segment can register — madder, sage, ochre, ink-blue —
+#   plus the register's body text. Nothing may be dropped: a caution that reads as a failure
+#   is a prompt lying, and colour is only ever half the signal anyway.
+#   THREE SURFACES. `_inzsh_surface_cycle` in `lib/core/render.zsh` is `surface-deep`,
+#   `neutral-wash`, `surface`. `ramp` can put any two of them side by side, and a filled
+#   boundary IS the colour change, so all three have to differ from each other AND from every
+#   ink that can be drawn on them.
 #
-# Collisions are the medium: fifty tokens into eight slots. The one invariant that survives
-# is the one that has to — in the default (dark) register, no role used as a foreground shares
-# an index with a role used as the background under it. `negative-text` on `surface` is the
-# case that matters, because a non-zero exit status that cannot be seen is worse than no
-# colour at all. Every dark surface, fill and wash is 0 and every foreground is 1-4 or 7,
-# which makes that hold by construction rather than by luck.
+# 5 + 3 = 8. Every index is spoken for, which is why the layout below is per REGISTER rather
+# than one table read twice — the registers are never both live, so a dark-only token and a
+# light-only one may share, and here they must:
 #
-# Hairlines take 0 on light and 7 on dark. Heavy for a divider, and the alternative is a
-# divider that is not there.
+#              ink                                        surface
+#   dark   7 creams   1 madder  2 sage  3 ochre  6 ink-blue | 0 navy-deep  4 navy  5 slate-wash
+#   light  0 chocs    1 madder  2 sage  3 ochre  4 ink-blue | 7 cream  6 cream-bright  5 putty-wash
+#
+# Read across: the register's text colour and its base surface swap ends — 7 is ink on dark
+# and surface on light, 0 the reverse — and 5 sits under both registers' neutral chip. Two
+# consequences are deliberate and neither is obvious:
+#
+#   NAVY TAKES 4, THE BLUE. Navy is a blue, and at this depth blue is the only chromatic
+#   colour dark enough to hold white text; the 256 table spends its one hand-set index on the
+#   same fact. `navy-deep` goes under it at 0 — the deepest of the ramp, and the ink every
+#   `on-` role wants on a saturated fill.
+#   INK-BLUE SPLITS ACROSS THE REGISTERS. `ink-blue` #41507A is a dark blue drawn on cream and
+#   takes 4; `ink-blue-bright` #8F9BC4 is a light blue drawn on navy and takes 6, because at
+#   eight colours ANSI blue on ANSI black is a 2:1 read and cyan is what a lifted blue
+#   degrades to. Same role, two registers, two answers — which is the split the two tokens
+#   exist for.
+#
+# WHAT THE SHORTAGE COSTS, stated rather than discovered later:
+#
+#   The cream ramp inverts. There is one white and `cream` has it, because the dark register's
+#   body text needs a white more than the light register's raised surface needs to be above
+#   its base; `cream-bright` takes the next lightest left, which puts it under `cream`. The
+#   ordering rule that governs the 256 table cannot survive a table with one light value in it.
+#   `surface-soft` and `neutral-wash` collapse on dark. #2A3350 and #2F3341 are four points a
+#   channel apart in the design system itself, and no engine path draws `surface-soft` — the
+#   cycle above is the surface vocabulary.
+#   A `-wash` used as a FILL shares with `surface`. The four dark washes take navy's index and
+#   the four light ones cream's — a tint on navy is still navy — so `info-wash`, the one wash
+#   any segment declares, is distinct from both surfaces `hue` assigns positionally and equal
+#   to the third. There is no ninth index to give it.
 
 typeset -gA _inzsh_palette_8
 _inzsh_palette_8=(
-  cream               '7'
-  cream-soft          '7'
-  cream-bright        '7'
-  cream-muted         '7'
-  cream-deep          '7'
+  cream               '7'  # light surface, and the dark register's body text. The one
+                           # white, claimed twice and by the two roles that most need it
+  cream-soft          '7'  # light surface-soft, with cream
+  cream-bright        '6'  # light surface-deep, and the ink of every light on- role.
+                           # Under cream rather than above it — see the ramp note above
+  cream-muted         '7'  # dark text-muted / neutral; must be light, so it is 7
+  cream-deep          '7'  # no role of its own; stays with cream
 
-  choc                '0'
+  choc                '0'  # light body text, and the dark register's on-accent
   choc-soft           '0'
   choc-ink            '0'
 
-  navy                '0'
-  navy-soft           '0'
-  navy-deep           '0'
+  navy                '4'  # dark surface — the blue, for the reason above
+  navy-soft           '5'  # above navy, and shares with slate-wash; neither is in the cycle
+                           # together and the design system keeps them four points apart
+  navy-deep           '0'  # dark surface-deep, and the ink of every dark on- role
 
-  caramel             '3'
+  caramel             '3'  # the accent, unchanged across registers, so it is ink in both and
+                           # may not be taken for a caution ring — which shares this yellow
   caramel-bright      '3'
 
   sage                '2'
   sage-bright         '2'
-  ink-blue            '4'
-  ink-blue-bright     '4'
+  ink-blue            '4'  # light info — a dark blue on cream
+  ink-blue-bright     '6'  # dark info — a light blue on navy, so cyan, not blue
 
   sage-deep           '2'
-  sage-wash           '7'
-  sage-wash-dark      '0'
+  sage-wash           '7'  # a tint on cream is still cream
+  sage-wash-dark      '4'  # a tint on navy is still navy
   sage-edge           '2'
   sage-edge-dark      '2'
   ink-blue-wash       '7'
-  ink-blue-wash-dark  '0'
+  ink-blue-wash-dark  '4'
   ink-blue-edge       '4'
-  ink-blue-edge-dark  '4'
+  ink-blue-edge-dark  '6'  # rings the dark info ink, so it follows it to cyan
 
   madder              '1'
   madder-bright       '1'
   madder-wash         '7'
-  madder-wash-dark    '0'
+  madder-wash-dark    '4'
   madder-edge         '1'
   madder-edge-dark    '1'
 
   ochre               '3'
   ochre-bright        '3'
   ochre-wash          '7'
-  ochre-wash-dark     '0'
+  ochre-wash-dark     '4'
   ochre-edge          '3'
   ochre-edge-dark     '3'
 
-  putty-wash          '7'
+  putty-wash          '5'  # light neutral-wash — the third surface, clear of every ink
   putty-line          '0'
   putty-text          '0'
-  putty-fill          '7'
+  putty-fill          '5'  # a fill, so it belongs with the surfaces, not with cream
   putty-hair          '0'
-  slate-wash          '0'
+  slate-wash          '5'  # dark neutral-wash — the third surface, the other register's
   slate-line          '7'
   slate-text          '7'
   slate-fill          '0'
   slate-hair          '7'
 
-  hair-light          '0'
-  hair-dark           '7'
+  hair-light          '0'  # a rule on cream
+  hair-dark           '7'  # a rule on navy. Heavy for a divider, and the alternative is a
+                           # divider that is not there
 )
