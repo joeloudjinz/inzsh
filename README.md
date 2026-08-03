@@ -5,8 +5,8 @@
 A calm, configurable zsh prompt — built from a design system, with an optional prayer-times
 segment.
 
-> **Status: pre-release.** Not yet installable. Development is in progress and the interface
-> may change without notice until 1.0.
+> **Status: pre-release.** Development is in progress and the interface may change without
+> notice until 1.0.
 
 ## Why another zsh theme
 
@@ -23,6 +23,16 @@ segment.
 - A supported terminal (below)
 
 Optional: [oh-my-zsh](https://ohmyz.sh). The theme works with or without it.
+
+## Install
+
+```zsh
+git clone https://github.com/joeloudjinz/inzsh.git ~/.inzsh
+cd ~/.inzsh && zsh install.zsh
+```
+
+Idempotent, backs up your `.zshrc` first, and `--uninstall` takes everything back out — the
+[install guide](docs/install.md) covers both paths, requirements and uninstall.
 
 ## Presets
 
