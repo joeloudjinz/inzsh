@@ -37,8 +37,8 @@ declaration cover everything below.
 **Families** are a shape rather than a name. `INZSH_<SEGMENT>_RANK` is not four variables, it is
 one rule that every segment has and every segment added later will have; the registry holds the
 pattern, and a concrete name resolves against it. The families are `INZSH_<SEGMENT>_RANK`,
-`_BG`, `_FG` and `_MINCOLS`, and `INZSH_SALAH_OFFSET_<PRAYER>`. `<SEGMENT>` is the segment's
-name in capitals; `<PRAYER>` is one of the six prayer names.
+`_PRIORITY`, `_BG`, `_FG` and `_MINCOLS`, and `INZSH_SALAH_OFFSET_<PRAYER>`. `<SEGMENT>` is the
+segment's name in capitals; `<PRAYER>` is one of the six prayer names.
 
 Two tests hold this page and the registry to each other: a variable the theme reads and never
 declared fails the suite, and a declared variable missing from the table below fails it too. An
@@ -87,9 +87,9 @@ theme falls back to a safe value rather than drawing the broken result:
 | `INZSH_NERD_FONT` | `1` · `0` | detected | Whether the private-use glyphs will draw. Nothing inside a shell can prove a font is installed, so detection answers `1` only for terminals that bundle the symbol range and `unknown` otherwise — it never infers a `0`. Setting `0` is you reporting your own screen, and it resolves any separator style to `divider`. Invalid values are ignored. |
 | `INZSH_PROMPT_LINES` | `1` · `2` | `2` | How many rows the prompt takes. `2` gives the segments a row of their own and puts what you type on the next one behind a short marker, so a long path never crowds the command; the right-hand side is padded onto the segment row so the clock stays where you look for it. `1` puts everything on one row. Invalid values fall back to `2`. |
 | `INZSH_PROMPT_MARKER` | any prompt string | `→` | What the second row draws in front of your input, verbatim. Outside a multibyte locale the default degrades to `>`. Set-but-empty falls through rather than blanking the line you type on. Whatever it holds is coloured by whether the last command succeeded. |
-| `INZSH_TRANSIENT` | `1` · `0` | `1` | Whether a prompt collapses to its minimal form once its command has been accepted, so scrollback reads as commands and output rather than two hundred repetitions of a seven-segment ribbon. Off keeps the full prompt in the transcript. |
+| `INZSH_TRANSIENT` | `1` · `0` · `true` · `false` · `yes` · `no` · `on` · `off`, in any case | `1` | Whether a prompt collapses to its minimal form once its command has been accepted, so scrollback reads as commands and output rather than two hundred repetitions of a seven-segment ribbon. Off keeps the full prompt in the transcript. |
 | `INZSH_TRANSIENT_FORMAT` | `marker` · `dir` | `marker` | What a collapsed prompt shows. `marker` is the marker alone; `dir` puts the directory, muted, in front of it — worth it if you move between trees mid-session and want scrollback to say where each command ran. Invalid values fall back to `marker`. |
-| `INZSH_RESIZE` | `1` · `0` | `1` | Whether the prompt is rebuilt and redrawn when the terminal changes size. A prompt is measured once against the width it was drawn at, and in the two-row shape the right-hand side is padded onto the segment row with real spaces — so without this a narrowed window leaves a row that is too wide, wraps, and is redrawn as several rows of the same ribbon until you press Enter. The redraw keeps whatever you were part-way through typing. Off if you have your own `TRAPWINCH`, or would rather the prompt only changed when you asked it to. |
+| `INZSH_RESIZE` | `1` · `0` · `true` · `false` · `yes` · `no` · `on` · `off`, in any case | `1` | Whether the prompt is rebuilt and redrawn when the terminal changes size. A prompt is measured once against the width it was drawn at, and in the two-row shape the right-hand side is padded onto the segment row with real spaces — so without this a narrowed window leaves a row that is too wide, wraps, and is redrawn as several rows of the same ribbon until you press Enter. The redraw keeps whatever you were part-way through typing. Off if you have your own `TRAPWINCH`, or would rather the prompt only changed when you asked it to. |
 
 ### One colour per segment — `INZSH_SURFACE_MODE=hue`
 

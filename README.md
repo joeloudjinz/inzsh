@@ -57,7 +57,7 @@ supported.
 INZSH_SALAH_LAT=21.4225      # your latitude
 INZSH_SALAH_LON=39.8262      # your longitude
 INZSH_SALAH_METHOD=mwl       # calculation convention
-INZSH_SALAH_SCHOOL=shafi     # or hanafi
+INZSH_SALAH_ASR=shafi        # Asr school — or hanafi
 ```
 
 ## Privacy
