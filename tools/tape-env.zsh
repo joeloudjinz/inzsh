@@ -19,9 +19,19 @@ _inzsh_tape_state=${1:-dirty}
 
 _inzsh_tape_home=$(mktemp -d "${TMPDIR:-/tmp}/inzsh-tape.XXXXXX")
 
-# The fixture repository, in the requested state, checked out as ~/work.
-_inzsh_tape_repo=$(zsh $_inzsh_tape_root/tools/fixture-repo.zsh $_inzsh_tape_state $_inzsh_tape_home)
-mv $_inzsh_tape_repo $_inzsh_tape_home/work
+# The fixture repository, in the requested state, checked out as ~/work. The state `all`
+# builds every state the generator knows as ~/s-<state> siblings — the git tour tape walks
+# them with `cd`, one real repository per render.
+if [[ $_inzsh_tape_state == all ]]; then
+  for _inzsh_tape_s in clean dirty staged ahead behind diverged detached; do
+    _inzsh_tape_repo=$(zsh $_inzsh_tape_root/tools/fixture-repo.zsh $_inzsh_tape_s $_inzsh_tape_home)
+    mv $_inzsh_tape_repo $_inzsh_tape_home/s-$_inzsh_tape_s
+  done
+  ln -s $_inzsh_tape_home/s-clean $_inzsh_tape_home/work
+else
+  _inzsh_tape_repo=$(zsh $_inzsh_tape_root/tools/fixture-repo.zsh $_inzsh_tape_state $_inzsh_tape_home)
+  mv $_inzsh_tape_repo $_inzsh_tape_home/work
+fi
 
 # A git identity for the stage: tape 8 commits inside the fixture, and the pinned HOME
 # reads no real gitconfig. Neutral, like everything else on a recording.
@@ -35,9 +45,11 @@ GITEOF
 cat > $_inzsh_tape_home/.zshrc <<EOF
 # Hygiene, with one deliberate survivor: the exec line in a tape may carry INZSH_PRESET —
 # the knob is part of what the tapes demonstrate — so it is preserved across the sweep.
-_inzsh_tape_preset=\${INZSH_PRESET-}
+_inzsh_tape_keep=(\${INZSH_PRESET:+INZSH_PRESET=\$INZSH_PRESET}
+                  \${INZSH_GIT_ASYNC:+INZSH_GIT_ASYNC=\$INZSH_GIT_ASYNC})
 unset -m 'INZSH_*' 2>/dev/null
-[[ -n \$_inzsh_tape_preset ]] && export INZSH_PRESET=\$_inzsh_tape_preset
+for _inzsh_tape_kv in \$_inzsh_tape_keep; do export \$_inzsh_tape_kv; done
+unset _inzsh_tape_keep _inzsh_tape_kv
 unset -m 'SSH_*' VIRTUAL_ENV 2>/dev/null
 export TZ=\${TZ:-UTC}
 export INZSH_HOST_ALWAYS=1
