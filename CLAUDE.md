@@ -69,8 +69,8 @@ Match the layer to the concern:
 ```zsh
 make setup          # install the native toolchain
 make test           # everything runnable locally
-make render         # print the prompt as it currently is
-make grid COLS=60   # rendered terminal grid, per-cell colours
+make play           # a live prompt in a throwaway shell
+make grid COLS=60   # the theme as a terminal grid, per-cell colours
 make demo           # VHS visual render
 make watch          # re-render on save
 ```

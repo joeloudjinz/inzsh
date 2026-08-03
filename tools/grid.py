@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Print the demonstration prompt as a terminal grid — what the cells actually hold.
+"""Print the theme's prompt as a terminal grid — what the cells actually hold.
 
 A render written to a terminal is judged by eye; a render written to a `pyte` screen
-can be read. This is the second one: it drives `tools/render.zsh` through the L3
-harness (`test/ui/grid_runner.py`) at a given width and prints, per row, the runs of
-cells that share a foreground/background pair, with the columns they occupy.
+can be read. This is the second one: it sources `inzsh.zsh-theme` — the real engine,
+real segments, the shell this repo is checked out in — through the L3 harness
+(`test/ui/grid_runner.py`) at a given width and prints, per row, the runs of cells
+that share a foreground/background pair, with the columns they occupy.
 
 That is the whole tool. It asserts nothing — `test/ui/` is where expectations live —
 and it exists so that "the separator is the wrong colour" can be answered with a
@@ -13,10 +14,11 @@ column number instead of a screenshot.
     make grid COLS=60
     python tools/grid.py --cols 60 --depth 256 --preset warm --cells
 
-`--depth`, `--preset` and `--mode` set INZSH_COLOR_DEPTH, INZSH_PRESET and
-INZSH_SURFACE_MODE for the child. Unset, the child detects: the harness pins
-TERM=xterm-256color and strips COLORTERM, so the detected depth is 256 and a
-truecolor grid has to be asked for.
+`--depth` and `--mode` set INZSH_COLOR_DEPTH and INZSH_SURFACE_MODE for the child;
+any other `INZSH_*` knob flows in from your environment. `--preset` sources the named
+preset file over the theme, the same way a zshrc would. Unset, the child detects: the
+harness pins TERM=xterm-256color and strips COLORTERM, so the detected depth is 256
+and a truecolor grid has to be asked for.
 """
 
 from __future__ import annotations
@@ -32,7 +34,29 @@ sys.path.insert(0, str(REPO_ROOT / "test" / "ui"))
 import grid_runner  # noqa: E402  — the path insert above is the point
 from grid_asserts import extract_runs  # noqa: E402
 
-DEMO = REPO_ROOT / "tools" / "render.zsh"
+THEME = REPO_ROOT / "inzsh.zsh-theme"
+PRESETS = REPO_ROOT / "presets"
+
+
+def theme_snippet(preset=None):
+    """The zsh command the harness runs: the whole theme, one prompt, printed.
+
+    `zsh -f -i -c` because the theme no-ops in a non-interactive shell, and `-f` so the
+    machine's own zshrc never loads under the harness. `_inzsh_precmd` is what the shell
+    would run before drawing — same code path, called once — and the expanded PROMPT (and
+    RPROMPT, when there is one) is what the terminal would receive.
+    """
+    lines = [f"source {shlex.quote(str(THEME))}"]
+    if preset:
+        lines.append(f"source {shlex.quote(str(PRESETS / f'inzsh-{preset}.zsh'))}")
+    lines += [
+        "_inzsh_precmd",
+        'print -rn -- "${(%%)PROMPT}"',
+        '[[ -n $RPROMPT ]] && { print; print -rn -- "${(%%)RPROMPT}" }',
+        "true",
+    ]
+    inner = "\n".join(lines)
+    return f"exec zsh -f -i -c {shlex.quote(inner)} inzsh-grid"
 
 
 def parse_args(argv=None):
@@ -45,9 +69,6 @@ def parse_args(argv=None):
     parser.add_argument(
         "--cells", action="store_true", help="also dump every cell, one line each"
     )
-    parser.add_argument(
-        "--prompt-only", action="store_true", help="drop the demo's legend line"
-    )
     return parser.parse_args(argv)
 
 
@@ -55,19 +76,17 @@ def child_env(args):
     env = {}
     if args.depth:
         env["INZSH_COLOR_DEPTH"] = args.depth
-    if args.preset:
-        env["INZSH_PRESET"] = args.preset
     if args.mode:
         env["INZSH_SURFACE_MODE"] = args.mode
     return env
 
 
 def render(args):
-    snippet = f"source {shlex.quote(str(DEMO))}"
-    if args.prompt_only:
-        snippet += " --prompt-only"
     return grid_runner.render(
-        snippet, cols=args.cols, lines=args.lines, env=child_env(args)
+        theme_snippet(preset=args.preset),
+        cols=args.cols,
+        lines=args.lines,
+        env=child_env(args),
     )
 
 

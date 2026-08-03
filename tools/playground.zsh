@@ -37,6 +37,15 @@ _inzsh_play_accepts() {
     (int:*:)      REPLY="${${spec#int:}%:} or more" ;;
     (int::*)      REPLY="up to ${spec#int::}" ;;
     (int:*:*)     REPLY="${${spec#int:}%%:*} to ${spec##*:}" ;;
+    (float)       REPLY='decimal number' ;;
+    (float:\>*:*)
+      REPLY="above ${${spec#float:\>}%%:*}"
+      [[ -n ${spec##*:} ]] && REPLY+=", up to ${spec##*:}"
+      ;;
+    (float:*:)    REPLY="${${spec#float:}%:} or more" ;;
+    (float::*)    REPLY="up to ${spec#float::}" ;;
+    (float:*:*)   REPLY="${${spec#float:}%%:*} to ${spec##*:}" ;;
+    (word:*)      REPLY=${${spec#word:}//\|/ · } ;;
     (any|*)       REPLY='any text' ;;
   esac
   return 0

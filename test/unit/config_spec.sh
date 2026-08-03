@@ -43,7 +43,7 @@ inzsh_spec_slow() {
 
 Describe 'the knob registry'
   Describe 'the validator grammar'
-    # Five forms and nothing else. $1 the spec, $2 the value, $3 the verdict.
+    # Seven forms and nothing else. $1 the spec, $2 the value, $3 the verdict.
     #
     # A value is a string and never a pattern: `INZSH_SURFACE_MODE='*'` matches no mode, it is
     # simply not one. The glob-shaped cases below are what keeps the enum comparison exact.
@@ -95,6 +95,52 @@ Describe 'the knob registry'
       enum:solo  solo         valid
       enum:solo  'sol?'       invalid
       enum:solo  'solo*'      invalid
+      float      0            valid
+      float      2.5          valid
+      float      -2.5         valid
+      float      +0.5         valid
+      float      .5           valid
+      float      -.5          valid
+      float      21.4225      valid
+      float      1e3          invalid
+      float      0x10         invalid
+      float      2.           invalid
+      float      banana       invalid
+      float      '1 2'        invalid
+      float      ''           invalid
+      'float:-90:90'   90        valid
+      'float:-90:90'   -90       valid
+      'float:-90:90'   21.4225   valid
+      'float:-90:90'   90.0001   invalid
+      'float:-90:90'   -90.0001  invalid
+      'float:-90:90'   200       invalid
+      'float:>0:30'    0         invalid
+      'float:>0:30'    0.0       invalid
+      'float:>0:30'    .1        valid
+      'float:>0:30'    18.5      valid
+      'float:>0:30'    30        valid
+      'float:>0:30'    30.1      invalid
+      'float:>0:30'    -5        invalid
+      'float::<10'     9.9       valid
+      'float::<10'     10        invalid
+      'float:1.5:'     1.5       valid
+      'float:1.5:'     1.4       invalid
+      'float::'        -3.5      valid
+      'word:standard|shafi|hanafi'  standard       valid
+      'word:standard|shafi|hanafi'  HANAFI         valid
+      'word:standard|shafi|hanafi'  Shafi          valid
+      'word:standard|shafi|hanafi'  Han-afi        valid
+      'word:standard|shafi|hanafi'  'h a n a f i'  valid
+      'word:standard|shafi|hanafi'  banana         invalid
+      'word:standard|shafi|hanafi'  standards      invalid
+      'word:standard|shafi|hanafi'  ''             invalid
+      'word:standard|shafi|hanafi'  '*'            invalid
+      'word:standard|shafi|hanafi'  '?'            invalid
+      'word:UMMALQURA'  'Umm al-Qura'  valid
+      'word:UMMALQURA'  umm_al_qura    valid
+      'word:UMMALQURA'  ummalqura      valid
+      'word:a|b'        'a|b'          invalid
+      'word:a|b'        '-'            invalid
       bogus      anything     invalid
       ''         anything     invalid
     End
@@ -126,9 +172,18 @@ Describe 'the knob registry'
       INZSH_BAD_SPEC  ''                   x         refused
       INZSH_BAD_DEF   int:1:3              4         refused
       INZSH_BAD_DEF   'enum:a|b'           c         refused
+      INZSH_FLOAT     'float:-90:90'       21.4225   accepted
+      INZSH_FLOAT_X   'float:>0:30'        ''        accepted
+      INZSH_WORD      'word:a|b'           a         accepted
+      INZSH_BAD_SPEC  'float:low:high'     1         refused
+      INZSH_NO_DEF    'float:low:'         ''        refused
+      INZSH_NO_DEF    'float:>x:30'        ''        refused
+      INZSH_BAD_DEF   'float:0:1'          2         refused
+      INZSH_BAD_DEF   'word:a|b'           c         refused
       INZSH_NO_DEF    bogus                ''        refused
       INZSH_NO_DEF    'int:low:high'       ''        refused
       INZSH_NO_DEF    'enum:'              ''        refused
+      INZSH_NO_DEF    'word:'              ''        refused
     End
 
     It "$4 $1 with spec '$2' and default '$3'"

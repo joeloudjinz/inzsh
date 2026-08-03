@@ -5,7 +5,7 @@ SHELLSPEC ?= shellspec
 PYTHON ?= ./.venv/bin/python
 COLS ?= 80
 
-.PHONY: help setup test test-ui spec-guard perf render render-matrix grid demo watch
+.PHONY: help setup test test-ui spec-guard perf grid demo watch
 .PHONY: golden-update bundle doctor
 
 help: ## list targets
@@ -38,15 +38,7 @@ test-ui: ## L3 terminal-grid tests (pty + pyte); needs the python venv
 perf: ## render budget benchmarks, gated against declared budgets
 	@zsh -f test/perf/bench.zsh
 
-# The M1 demonstration prompt, not the engine — there are no segments yet. Always a subshell:
-# work in progress is never sourced into the shell you are typing into.
-render: ## print the prompt as it currently is (INZSH_PRESET/_COLOR_DEPTH/_SURFACE_MODE)
-	@zsh -f tools/render.zsh
-
-render-matrix: ## both presets at all three colour depths, to stdout and render-out/
-	@zsh -f tools/render-matrix.zsh
-
-grid: ## rendered terminal grid, per-cell colours (default COLS=80); needs the python venv
+grid: ## the theme as a terminal grid, per-cell colours (default COLS=80); needs the python venv
 	@if [[ -x $(PYTHON) ]]; then \
 	  $(PYTHON) tools/grid.py --cols $(COLS); \
 	else \

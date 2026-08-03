@@ -310,7 +310,8 @@ Describe 'resolving the configuration'
 
   Describe 'the asr school'
     # $1 what was configured, $2 the shadow factor it resolves to. Anything unreadable is the
-    # majority school, which is also the default.
+    # majority school, which is also the default. The name is matched the way a method name
+    # is — case, spacing and punctuation ignored — so a pasted trailing space is not a typo.
     Parameters
       ''         1
       standard   1
@@ -320,9 +321,11 @@ Describe 'resolving the configuration'
       hanafi     2
       Hanafi     2
       HANAFI     2
+      'hanafi '  2
+      Han-afi    2
       banana     1
       2          1
-      'hanafi '  1
+      hanafis    1
     End
 
     It "resolves an asr setting of '$1' to a shadow factor of $2"
@@ -345,7 +348,8 @@ Describe 'resolving the configuration'
       none        none
       oneseventh  angle
       banana      angle
-      'middle '   angle
+      'middle '   middle
+      'SEV-ENTH'  seventh
     End
 
     It "resolves a high-latitude setting of '$1' to '$2'"

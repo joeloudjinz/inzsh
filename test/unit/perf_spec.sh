@@ -88,6 +88,10 @@ End
 Describe 'perf suite'
   # The table is the whole point of the file: a case that is not in it is not gated, and an
   # entry with a missing function or a missing budget is a case that silently never ran.
+  #
+  # `bench.zsh` refuses a single-byte locale by design — a width measured in bytes is not a
+  # measurement — so every example that runs it is skipped there.
+  Skip if 'the benchmark refuses a single-byte locale' inzsh_spec_bytes_not_cells
   It 'lists a table with at least one case in it'
     When run command zsh -f test/perf/bench.zsh --list
     The status should be success

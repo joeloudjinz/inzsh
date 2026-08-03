@@ -187,6 +187,7 @@ Describe 'the git segment'
     End
 
     It "draws ($1) as $2"
+      Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
       When call inzsh_spec_git_split "$1"
       The output should eq "$2"
     End
@@ -238,6 +239,7 @@ Describe 'the git segment'
       End
 
       It "draws ($1) as $2"
+        Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
         When call inzsh_spec_git_split "$1"
         The output should eq "$2"
       End
@@ -246,6 +248,7 @@ Describe 'the git segment'
     It 'writes the two counts as one word, because they are one fact'
       # `↑2 ↓3` would read as two separate reports about two separate things. There is one
       # branch and it has moved both ways.
+      Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
       spaced() {
         inzsh_spec_git_split 'repo 1 branch main ahead 2 behind 3'
       }
@@ -329,6 +332,7 @@ Describe 'the git segment'
     It 'elides a branch name that would take the row'
       # `INZSH_GIT_BRANCH_MAX` columns, through `_inzsh_truncate_path`'s own text ladder — the
       # eliding rule lives in `lib/core/layout.zsh` and is asked for, never restated.
+      Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
       long() {
         local INZSH_GIT_BRANCH_MAX=12
         inzsh_spec_git repo 1 branch feature/PROJ-1187-rewrite-the-importer
@@ -338,6 +342,7 @@ Describe 'the git segment'
     End
 
     It 'draws the name whole when the limit is turned off'
+      Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
       whole() {
         local INZSH_GIT_BRANCH_MAX=0
         inzsh_spec_git repo 1 branch feature/PROJ-1187-rewrite-the-importer
@@ -569,6 +574,7 @@ Describe 'the git segment'
     End
 
     It 'survives counts far larger than a prompt will ever show'
+      Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
       When call inzsh_spec_git_split 'repo 1 branch main ahead 100000 behind 99999'
       The output should eq '[C main A100000B99999] caution-text'
     End
@@ -678,7 +684,9 @@ Describe 'the git segment'
     It 'are the sanctioned marks, spelled as bytes so the file parses in any locale'
       # Pinned against the byte sequences rather than against the characters, for the same reason
       # the segment spells them that way: a `\u` escape is resolved at parse time and takes the
-      # whole file with it outside a multibyte locale.
+      # whole file with it outside a multibyte locale. Parsing survives anywhere; the DRAWN
+      # marks are the single-byte register's outside a multibyte locale, so the pin is skipped.
+      Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
       pinned() {
         local -a wrong=()
         [[ $_inzsh_git_glyph_clean    == $'\xe2\x9c\x93' ]] || wrong+=clean
@@ -737,6 +745,7 @@ Describe 'the git segment'
       # The one place the ASCII register reuses a character. A detached HEAD has no upstream, so
       # git reports no divergence beside one — asserted here as a property of what this file
       # DRAWS, since that is what would be ambiguous.
+      Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
       exclusive() {
         inzsh_spec_git repo 1 sha a1b2c3d4 detached 1 ahead 2 behind 3
       }

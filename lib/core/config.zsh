@@ -63,14 +63,21 @@ typeset -ga _inzsh_config_family_order
 # --------------------------------------------------------------------------------------------
 # Validators
 #
-# The grammar is deliberately tiny — five forms, no expressions, no callbacks. A validator that
-# could run arbitrary code would be a fork on the render path waiting to happen.
+# The grammar is deliberately tiny — seven forms, no expressions, no callbacks. A validator
+# that could run arbitrary code would be a fork on the render path waiting to happen.
 #
 #   any            any non-empty value
 #   bool           true false yes no on off 1 0, in any case
 #   int            an optionally signed run of digits
 #   int:MIN:MAX    an int within inclusive bounds; either bound may be empty for unbounded
 #   enum:a|b|c     exactly one of the listed alternatives, case-sensitive
+#   float          an optionally signed decimal — digits with an optional fraction, no
+#                  exponent, no hex; deliberately narrower than zsh's arithmetic grammar,
+#                  because `1e3` is almost certainly not what someone meant to type
+#   float:MIN:MAX  a float within inclusive bounds, either empty for unbounded; a MIN written
+#                  `>N` or a MAX written `<N` is exclusive, which is how "above zero" is said
+#   word:a|b|c     exactly one of the listed words, matched with case, spacing and punctuation
+#                  ignored — the rule authority names already follow
 #
 # An EMPTY value fails every form. That is the "empty means unset" rule stated once, at the
 # bottom, so no caller has to remember it.
@@ -82,13 +89,21 @@ _inzsh_config_spec_valid() {
 
   local spec=$1 rest bound
   case $spec in
-    (any|bool|int) return 0 ;;
-    (enum:?*)      return 0 ;;
+    (any|bool|int|float) return 0 ;;
+    (enum:?*|word:?*)    return 0 ;;
     (int:*:*)
       rest=${spec#int:}
       for bound in ${rest%%:*} ${rest#*:}; do
         [[ -z $bound || $bound == (|-|+)<-> ]] || return 1
       done
+      return 0
+      ;;
+    (float:*:*)
+      rest=${spec#float:}
+      bound=${${rest%%:*}#\>}
+      [[ -z $bound || $bound == (|-|+)(<->(|.<->)|.<->) ]] || return 1
+      bound=${${rest#*:}#\<}
+      [[ -z $bound || $bound == (|-|+)(<->(|.<->)|.<->) ]] || return 1
       return 0
       ;;
   esac
@@ -105,15 +120,30 @@ _inzsh_config_check() {
   [[ -n $value ]] || return 1
 
   local -a allowed
-  local rest min max
+  local rest min max entry norm
   case $spec in
-    (any)  return 0 ;;
-    (bool) [[ ${(L)value} == (true|false|yes|no|on|off|1|0) ]] && return 0 ;;
-    (int)  [[ $value == (|-|+)<-> ]] && return 0 ;;
+    (any)   return 0 ;;
+    (bool)  [[ ${(L)value} == (true|false|yes|no|on|off|1|0) ]] && return 0 ;;
+    (int)   [[ $value == (|-|+)<-> ]] && return 0 ;;
+    (float) [[ $value == (|-|+)(<->(|.<->)|.<->) ]] && return 0 ;;
 
     (enum:*)
       allowed=(${(s:|:)spec#enum:})
       (( ${allowed[(Ie)$value]} )) && return 0
+      ;;
+
+    # The comparison runs over normalised copies — upper case, letters and digits only — so
+    # `Umm al-Qura`, `umm_al_qura` and `UMMALQURA` are one word. A value that normalises to
+    # nothing matched no word, it vanished.
+    (word:*)
+      allowed=(${(s:|:)spec#word:})
+      norm=${(U)value}
+      norm=${norm//[^A-Z0-9]/}
+      [[ -n $norm ]] || return 1
+      for entry in $allowed; do
+        entry=${(U)entry}
+        [[ $norm == "${entry//[^A-Z0-9]/}" ]] && return 0
+      done
       ;;
 
     (int:*:*)
@@ -123,6 +153,28 @@ _inzsh_config_check() {
       max=${rest#*:}
       [[ -z $min ]] || (( value >= min )) || return 1
       [[ -z $max ]] || (( value <= max )) || return 1
+      return 0
+      ;;
+
+    (float:*:*)
+      [[ $value == (|-|+)(<->(|.<->)|.<->) ]] || return 1
+      rest=${spec#float:}
+      min=${rest%%:*}
+      max=${rest#*:}
+      if [[ -n $min ]]; then
+        if [[ $min == \>* ]]; then
+          (( value > ${min#\>} )) || return 1
+        else
+          (( value >= min )) || return 1
+        fi
+      fi
+      if [[ -n $max ]]; then
+        if [[ $max == \<* ]]; then
+          (( value < ${max#\<} )) || return 1
+        else
+          (( value <= max )) || return 1
+        fi
+      fi
       return 0
       ;;
   esac
