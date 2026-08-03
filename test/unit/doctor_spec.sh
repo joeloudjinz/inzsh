@@ -45,6 +45,7 @@ Describe 'the inzsh command'
     The status should be failure
     The stderr should include 'usage'
     The stderr should include 'doctor'
+    The stderr should include 'locate'
   End
 
   It 'prints the same usage when called bare'
@@ -225,6 +226,127 @@ Describe 'inzsh doctor'
     The output should include 'colour depth  truecolor'
     The output should not include 'location'
     The stderr should eq ''
+  End
+End
+
+Describe 'inzsh locate'
+  # The lookup's public face — issue #186. `INZSH_SALAH_AUTOLOCATE` permits the one network call
+  # in the theme, and this command is the only shipped way to make it: typed by a person, never
+  # reached from a hook or the render path. Every example here keeps the suite offline the way
+  # `salah_location_spec.sh` does — the only endpoint ever contacted is a port on 127.0.0.1 that
+  # nothing serves, under a one-second ceiling.
+
+  inzsh_spec_locate_now=1780315200
+
+  inzsh_spec_locate_env() {
+    emulate -L zsh
+
+    typeset -g inzsh_spec_locate_cache=
+    inzsh_spec_locate_cache=$(mktemp -d "${TMPDIR:-/tmp}/inzsh-locate-XXXXXX") || return 1
+
+    typeset -g INZSH_SALAH_CACHE_DIR=$inzsh_spec_locate_cache
+    typeset -g INZSH_SALAH_LAT= INZSH_SALAH_LON=
+    typeset -g INZSH_SALAH_AUTOLOCATE=1
+    typeset -g INZSH_SALAH_AUTOLOCATE_TTL=
+    typeset -g INZSH_SALAH_AUTOLOCATE_TIMEOUT=1
+    typeset -g INZSH_SALAH_AUTOLOCATE_URL='http://127.0.0.1:1/'
+
+    return 0
+  }
+
+  inzsh_spec_locate_clean() {
+    emulate -L zsh
+
+    [[ ${inzsh_spec_locate_cache:t} == inzsh-locate-* ]] || return 0
+    rm -rf -- "$inzsh_spec_locate_cache" 2>/dev/null
+
+    return 0
+  }
+
+  It 'refuses while the knob is off, and says which knob permits it'
+    off() {
+      inzsh_spec_locate_env
+      local INZSH_SALAH_AUTOLOCATE=0
+      inzsh locate $inzsh_spec_locate_now
+      local -i rc=$?
+      inzsh_spec_locate_clean
+      return $rc
+    }
+    When call off
+    The status should be failure
+    The stderr should include 'INZSH_SALAH_AUTOLOCATE'
+  End
+
+  # A typo may not switch a network call on — the same rule the knob itself keeps.
+  It 'reads an unreadable knob as off'
+    typo() {
+      inzsh_spec_locate_env
+      local INZSH_SALAH_AUTOLOCATE=banana
+      inzsh locate $inzsh_spec_locate_now
+      local -i rc=$?
+      inzsh_spec_locate_clean
+      return $rc
+    }
+    When call typo
+    The status should be failure
+    The stderr should include 'INZSH_SALAH_AUTOLOCATE'
+  End
+
+  It 'leaves a current position alone and says how to insist'
+    current() {
+      inzsh_spec_locate_env
+      _inzsh_salah_location_write 21.4225 39.8262 $(( inzsh_spec_locate_now - 300 )) || return 1
+      inzsh locate $inzsh_spec_locate_now
+      local -i rc=$?
+      inzsh_spec_locate_clean
+      return $rc
+    }
+    When call current
+    The status should be success
+    The output should include 'current'
+    The output should include '--force'
+  End
+
+  It 'reports a failed lookup and keeps the previous position'
+    kept() {
+      inzsh_spec_locate_env
+      local INZSH_SALAH_AUTOLOCATE_TTL=300
+      _inzsh_salah_location_write 21.4225 39.8262 $(( inzsh_spec_locate_now - 86400 )) || return 1
+      inzsh locate $inzsh_spec_locate_now
+      local -i rc=$?
+      inzsh_spec_locate_clean
+      return $rc
+    }
+    When call kept
+    The status should be failure
+    The stderr should include 'kept'
+  End
+
+  It 'says so when the lookup fails and nothing was ever stored'
+    nothing() {
+      inzsh_spec_locate_env
+      inzsh locate $inzsh_spec_locate_now
+      local -i rc=$?
+      inzsh_spec_locate_clean
+      return $rc
+    }
+    When call nothing
+    The status should be failure
+    The stderr should include 'no position'
+  End
+
+  It 'looks a current position up anyway under --force'
+    forced() {
+      inzsh_spec_locate_env
+      _inzsh_salah_location_write 21.4225 39.8262 $(( inzsh_spec_locate_now - 300 )) || return 1
+      inzsh locate --force $inzsh_spec_locate_now
+      local -i rc=$?
+      inzsh_spec_locate_clean
+      return $rc
+    }
+    When call forced
+    The status should be failure
+    The stderr should include 'kept'
   End
 End
 

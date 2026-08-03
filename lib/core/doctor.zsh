@@ -173,6 +173,76 @@ _inzsh_doctor() {
   return 0
 }
 
+# `inzsh locate [--force] [now]` — refresh the stored position, on purpose. The public face of
+# `INZSH_SALAH_AUTOLOCATE` (issue #186): the knob PERMITS the theme's one network call, and this
+# command is the only shipped way to MAKE it. It is typed by a person — never reached from a
+# hook, the segment, or the render path — which is the whole safety story of
+# `lib/salah/location.zsh` kept intact with a name you can find.
+#
+#   inzsh locate            look the position up if the stored one is older than the TTL
+#   inzsh locate --force    look it up now, whatever the stored one's age — for after you move
+#   (inzsh locate &!)       from `.zshrc`, detached, so login does not wait
+#
+# The trailing `[now]` is the injected clock every salah function takes, for the suite that
+# pins time; unset, the wall clock answers.
+#
+# The TTL gate is the same one `_inzsh_salah_locate_refresh` keeps, restated here for one
+# reason: the command has to be able to SAY which side of it you are on — "current, refreshed
+# 2h ago, --force to insist" is the answer somebody who just moved actually needs — and to step
+# over it when told to. Outcomes go to stdout; refusals and failures go to stderr with status 1.
+_inzsh_locate() {
+  emulate -L zsh
+
+  local -i force=0
+  if [[ ${1-} == (-f|--force) ]]; then
+    force=1
+    shift
+  fi
+
+  if ! (( ${+functions[_inzsh_salah_locate_fetch]} )); then
+    print -ru2 -- 'inzsh locate: the prayer library is not loaded'
+    return 1
+  fi
+
+  if ! _inzsh_salah_autolocate_on; then
+    print -ru2 -- 'inzsh locate: the lookup is off - set INZSH_SALAH_AUTOLOCATE=1 to permit it'
+    return 1
+  fi
+
+  local now=${1:-${EPOCHSECONDS-}}
+  if [[ $now != <-> ]]; then
+    print -ru2 -- 'inzsh locate: no clock to age the stored position against'
+    return 1
+  fi
+
+  if (( ! force )); then
+    _inzsh_salah_autolocate_ttl
+    local -i ttl=$REPLY
+    if _inzsh_salah_location_read "$now" &&
+       (( _inzsh_salah_location_age >= 0 && _inzsh_salah_location_age < ttl )); then
+      _inzsh_doctor_age $_inzsh_salah_location_age
+      print -r -- "position current (refreshed $REPLY ago) - 'inzsh locate --force' looks it up anyway"
+      return 0
+    fi
+  fi
+
+  if _inzsh_salah_locate_fetch "$now"; then
+    print -r -- 'position refreshed'
+    return 0
+  fi
+
+  # The lookup did not work, and the two aftermaths deserve different sentences: a stale answer
+  # still on disk is what the segment keeps running on, and no answer at all means the segment
+  # stays absent until one arrives.
+  if _inzsh_salah_location_read "$now"; then
+    print -ru2 -- 'inzsh locate: the lookup failed - the previously stored position is kept'
+  else
+    print -ru2 -- 'inzsh locate: the lookup failed and no position is stored'
+  fi
+
+  return 1
+}
+
 # The public command. One name in the user's namespace, subcommands under it, so what the theme
 # offers to be TYPED stays one word wide however many verbs it grows.
 inzsh() {
@@ -183,8 +253,12 @@ inzsh() {
       shift
       _inzsh_doctor "$@"
       ;;
+    (locate)
+      shift
+      _inzsh_locate "$@"
+      ;;
     (*)
-      print -ru2 -- 'usage: inzsh doctor'
+      print -ru2 -- 'usage: inzsh doctor | inzsh locate [--force]'
       return 1
       ;;
   esac

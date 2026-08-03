@@ -740,10 +740,12 @@ Describe 'where you are'
   # --------------------------------------------------------------------------------------------
   Describe 'unreachable from anything that draws a prompt'
     # THE guarantee the whole design rests on, and it is stronger than a timeout because it does
-    # not depend on the timeout working. `_inzsh_salah_locate_fetch` is called by exactly one
-    # function in this repository, and NOTHING CALLS THAT one.
+    # not depend on the timeout working. The lookup is reached from exactly one place outside
+    # this file — the `inzsh locate` command in `lib/core/doctor.zsh`, which a PERSON types —
+    # and from nothing that renders: not the segment, not the cache, not a hook, not the entry
+    # point.
 
-    It 'is named by no file outside `lib/salah/location.zsh`'
+    It 'is named by no file outside `lib/salah/location.zsh` and its one public face'
       contained() {
         setopt local_options extended_glob
         local root=$SHELLSPEC_PROJECT_ROOT
@@ -751,6 +753,9 @@ Describe 'where you are'
         local -a bad=()
         for file in $root/lib/**/*.zsh $root/inzsh.zsh-theme $root/presets/*.zsh(N); do
           [[ ${file#$root/} == lib/salah/location.zsh ]] && continue
+          # The command layer is the documented exception: `inzsh locate` exists to be the one
+          # attended way to run the lookup, so the name appearing there is the feature.
+          [[ ${file#$root/} == lib/core/doctor.zsh ]] && continue
           while IFS= read -r line; do
             [[ ${line##[[:space:]]#} == \#* ]] && continue
             [[ $line == *_inzsh_salah_locate_* ]] && bad+="${file#$root/}: $line"
