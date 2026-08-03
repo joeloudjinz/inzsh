@@ -167,6 +167,25 @@ Describe 'the bundle'
       The output should eq 'drawn'
     End
 
+    # The knob a concatenated bundle could easily not have had. `INZSH_PRESET` names a preset,
+    # and the theme answers the name from a table in the token layer rather than by sourcing
+    # `presets/inzsh-<name>.zsh` — which is exactly what lets it work HERE, in a temp directory
+    # with no `presets/` beside the artifact. That absence is asserted rather than assumed: a
+    # bundle that happened to sit in the tree would pass this for the wrong reason.
+    It 'honours INZSH_PRESET with no presets directory beside it'
+      preset() {
+        zsh -f -i -c '
+          [[ -d ${1:h}/presets ]] && print -r -- "a presets directory sits beside the bundle"
+          INZSH_PRESET=warm
+          source "$1"
+          print -r -- "$_inzsh_register"
+        ' inzsh-bundle-preset "$(inzsh_spec_bundle)"
+      }
+      When call preset
+      The output should eq 'light'
+      The stderr should eq ''
+    End
+
     It 'is idempotent — sourcing twice lands on the state sourcing once did'
       twice() {
         zsh -f -i -c '
