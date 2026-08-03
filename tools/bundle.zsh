@@ -32,6 +32,7 @@ typeset -ga _inzsh_bundle_manifest=(
   lib/core/transient.zsh
   lib/core/resize.zsh
   lib/core/hooks.zsh
+  lib/core/doctor.zsh
   lib/salah/calc.zsh
   lib/salah/methods.zsh
   lib/salah/cache.zsh
