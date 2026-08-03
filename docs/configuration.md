@@ -37,8 +37,8 @@ declaration cover everything below.
 **Families** are a shape rather than a name. `INZSH_<SEGMENT>_RANK` is not four variables, it is
 one rule that every segment has and every segment added later will have; the registry holds the
 pattern, and a concrete name resolves against it. The families are `INZSH_<SEGMENT>_RANK`,
-`_BG`, `_FG` and `_MINCOLS`, and `INZSH_SALAH_OFFSET_<PRAYER>`. `<SEGMENT>` is the segment's
-name in capitals; `<PRAYER>` is one of the six prayer names.
+`_PRIORITY`, `_BG`, `_FG` and `_MINCOLS`, and `INZSH_SALAH_OFFSET_<PRAYER>`. `<SEGMENT>` is the
+segment's name in capitals; `<PRAYER>` is one of the six prayer names.
 
 Two tests hold this page and the registry to each other: a variable the theme reads and never
 declared fails the suite, and a declared variable missing from the table below fails it too. An
@@ -87,9 +87,9 @@ theme falls back to a safe value rather than drawing the broken result:
 | `INZSH_NERD_FONT` | `1` · `0` | detected | Whether the private-use glyphs will draw. Nothing inside a shell can prove a font is installed, so detection answers `1` only for terminals that bundle the symbol range and `unknown` otherwise — it never infers a `0`. Setting `0` is you reporting your own screen, and it resolves any separator style to `divider`. Invalid values are ignored. |
 | `INZSH_PROMPT_LINES` | `1` · `2` | `2` | How many rows the prompt takes. `2` gives the segments a row of their own and puts what you type on the next one behind a short marker, so a long path never crowds the command; the right-hand side is padded onto the segment row so the clock stays where you look for it. `1` puts everything on one row. Invalid values fall back to `2`. |
 | `INZSH_PROMPT_MARKER` | any prompt string | `→` | What the second row draws in front of your input, verbatim. Outside a multibyte locale the default degrades to `>`. Set-but-empty falls through rather than blanking the line you type on. Whatever it holds is coloured by whether the last command succeeded. |
-| `INZSH_TRANSIENT` | `1` · `0` | `1` | Whether a prompt collapses to its minimal form once its command has been accepted, so scrollback reads as commands and output rather than two hundred repetitions of a seven-segment ribbon. Off keeps the full prompt in the transcript. |
+| `INZSH_TRANSIENT` | `1` · `0` · `true` · `false` · `yes` · `no` · `on` · `off`, in any case | `1` | Whether a prompt collapses to its minimal form once its command has been accepted, so scrollback reads as commands and output rather than two hundred repetitions of a seven-segment ribbon. Off keeps the full prompt in the transcript. |
 | `INZSH_TRANSIENT_FORMAT` | `marker` · `dir` | `marker` | What a collapsed prompt shows. `marker` is the marker alone; `dir` puts the directory, muted, in front of it — worth it if you move between trees mid-session and want scrollback to say where each command ran. Invalid values fall back to `marker`. |
-| `INZSH_RESIZE` | `1` · `0` | `1` | Whether the prompt is rebuilt and redrawn when the terminal changes size. A prompt is measured once against the width it was drawn at, and in the two-row shape the right-hand side is padded onto the segment row with real spaces — so without this a narrowed window leaves a row that is too wide, wraps, and is redrawn as several rows of the same ribbon until you press Enter. The redraw keeps whatever you were part-way through typing. Off if you have your own `TRAPWINCH`, or would rather the prompt only changed when you asked it to. |
+| `INZSH_RESIZE` | `1` · `0` · `true` · `false` · `yes` · `no` · `on` · `off`, in any case | `1` | Whether the prompt is rebuilt and redrawn when the terminal changes size. A prompt is measured once against the width it was drawn at, and in the two-row shape the right-hand side is padded onto the segment row with real spaces — so without this a narrowed window leaves a row that is too wide, wraps, and is redrawn as several rows of the same ribbon until you press Enter. The redraw keeps whatever you were part-way through typing. Off if you have your own `TRAPWINCH`, or would rather the prompt only changed when you asked it to. |
 
 ### One colour per segment — `INZSH_SURFACE_MODE=hue`
 
@@ -227,14 +227,18 @@ Off by default. This is the **only network call in the theme**, and it exists so
 would rather not look their own coordinates up have a way not to. Everything about it is arranged
 so that it cannot cost you a prompt.
 
-**Nothing on the render path can reach it.** The lookup lives in one function,
-`_inzsh_salah_locate_refresh`, and the theme never calls it. You call it — from your `.zshrc`
-detached, from a timer, or by hand after you move:
+**Nothing on the render path can reach it.** The lookup runs only when you run it, through the
+`inzsh locate` command — from your `.zshrc` detached, from a timer, or by hand after you move:
 
 ```zsh
 INZSH_SALAH_AUTOLOCATE=1
-(_inzsh_salah_locate_refresh &!)     # in .zshrc: fire and forget, login does not wait
+(inzsh locate &!)     # in .zshrc: fire and forget, login does not wait
 ```
+
+`inzsh locate` looks the position up only when the stored one is older than the TTL, so it is
+safe to run on every login. `inzsh locate --force` looks it up regardless — the one for just
+after you move. Either way the command says what it did: current, refreshed, or failed with the
+previous answer kept.
 
 **What leaves the machine.** One HTTPS `GET` to `INZSH_SALAH_AUTOLOCATE_URL`, made by `curl` or,
 failing that, `wget`. It carries what any HTTP request carries — a method, a path, a `Host`
@@ -250,7 +254,7 @@ coordinates set and nothing ever cached, the segment is simply absent.
 
 | Variable | Values | Default | Effect |
 |---|---|---|---|
-| `INZSH_SALAH_AUTOLOCATE` | `1` · `0` · `true` · `false` · `yes` · `no` · `on` · `off`, in any case | `0` | Whether the lookup is permitted at all. Anything unreadable is **off** — a typo may not switch a network call on. `INZSH_SALAH_LAT`/`LON` still win when they are set, so turning this on and then setting the coordinates by hand does the obvious thing. |
+| `INZSH_SALAH_AUTOLOCATE` | `1` · `0` · `true` · `false` · `yes` · `no` · `on` · `off`, in any case | `0` | Whether the lookup is permitted at all. Anything unreadable is **off** — a typo may not switch a network call on. Setting it permits the lookup and nothing more: run `inzsh locate` to make one. `INZSH_SALAH_LAT`/`LON` still win when they are set, so turning this on and then setting the coordinates by hand does the obvious thing. |
 | `INZSH_SALAH_AUTOLOCATE_TTL` | integer, at least `300` | `86400` | Seconds before a refresh is considered due. It bounds a refresh and never a read: an older answer is still used, because a stale city beats no prayer times. |
 | `INZSH_SALAH_AUTOLOCATE_TIMEOUT` | integer, 1–60 | `5` | The hard ceiling on the request, passed to `curl --max-time` or `wget --timeout`. Chosen against a person waiting for a terminal, not against a slow network. |
 | `INZSH_SALAH_AUTOLOCATE_URL` | an `http://` or `https://` URL returning JSON with `latitude`/`longitude` (or `lat`/`lon`) | `https://ipapi.co/json/` | Where to ask. Point it at your own service and that is where the request goes; anything that is not one of those two schemes falls back to the default, since the value reaches an external command's argument list. |

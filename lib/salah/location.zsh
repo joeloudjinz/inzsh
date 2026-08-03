@@ -23,11 +23,12 @@
 #   reachable — until somebody sets it. A theme that phoned home to draw a prompt would be a
 #   theme nobody should install.
 #
-#   NOTHING ON THE RENDER PATH CAN REACH IT.  `_inzsh_salah_locate_fetch` is called by exactly one
-#   function in this repository, `_inzsh_salah_locate_refresh`, and NOTHING CALLS THAT. Not the
-#   segment, not the cache, not a hook, not the entry point. It is a function you run — from your
-#   own `.zshrc`, backgrounded if you like, from a timer, or by hand after you move — and a prompt
-#   therefore cannot block on it, cannot be slowed by it, and cannot fail because of it. That is a
+#   NOTHING ON THE RENDER PATH CAN REACH IT.  `_inzsh_salah_locate_fetch` is reachable from
+#   exactly one place: the `inzsh locate` command (`lib/core/doctor.zsh`), directly or through
+#   `_inzsh_salah_locate_refresh` — and a command is something a PERSON types. Not the segment,
+#   not the cache, not a hook, not the entry point. Run it however you like — from your own
+#   `.zshrc`, backgrounded, from a timer, or by hand after you move — and a prompt therefore
+#   cannot block on it, cannot be slowed by it, and cannot fail because of it. That is a
 #   stronger guarantee than a timeout, because it does not depend on the timeout working.
 #
 #   THE ANSWER IS CACHED, AND THE LAST GOOD ONE NEVER EXPIRES.  A TTL says when a refresh is DUE,
@@ -415,10 +416,12 @@ _inzsh_salah_locate_fetch() {
 
 # `_inzsh_salah_locate_refresh [now]` — look the position up if one is due.
 #
-# THE ONLY CALLER OF THE FETCH, AND NOTHING CALLS THIS. Run it yourself, however you like:
+# NOTHING THAT DRAWS A PROMPT CALLS THIS. Its public face is the `inzsh locate` command in
+# `lib/core/doctor.zsh`, which keeps the same TTL gate and adds `--force`; run either yourself,
+# however you like:
 #
-#   _inzsh_salah_locate_refresh          from a shell, after you move
-#   (_inzsh_salah_locate_refresh &!)     from `.zshrc`, detached, so login does not wait
+#   inzsh locate                         from a shell — `--force` after you move
+#   (inzsh locate &!)                    from `.zshrc`, detached, so login does not wait
 #   a timer                              cron, launchd, systemd — whatever the machine has
 #
 # Status 0 when a position is available afterwards, whether it was refreshed or was already
