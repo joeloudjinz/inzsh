@@ -227,14 +227,18 @@ Off by default. This is the **only network call in the theme**, and it exists so
 would rather not look their own coordinates up have a way not to. Everything about it is arranged
 so that it cannot cost you a prompt.
 
-**Nothing on the render path can reach it.** The lookup lives in one function,
-`_inzsh_salah_locate_refresh`, and the theme never calls it. You call it — from your `.zshrc`
-detached, from a timer, or by hand after you move:
+**Nothing on the render path can reach it.** The lookup runs only when you run it, through the
+`inzsh locate` command — from your `.zshrc` detached, from a timer, or by hand after you move:
 
 ```zsh
 INZSH_SALAH_AUTOLOCATE=1
-(_inzsh_salah_locate_refresh &!)     # in .zshrc: fire and forget, login does not wait
+(inzsh locate &!)     # in .zshrc: fire and forget, login does not wait
 ```
+
+`inzsh locate` looks the position up only when the stored one is older than the TTL, so it is
+safe to run on every login. `inzsh locate --force` looks it up regardless — the one for just
+after you move. Either way the command says what it did: current, refreshed, or failed with the
+previous answer kept.
 
 **What leaves the machine.** One HTTPS `GET` to `INZSH_SALAH_AUTOLOCATE_URL`, made by `curl` or,
 failing that, `wget`. It carries what any HTTP request carries — a method, a path, a `Host`
@@ -250,7 +254,7 @@ coordinates set and nothing ever cached, the segment is simply absent.
 
 | Variable | Values | Default | Effect |
 |---|---|---|---|
-| `INZSH_SALAH_AUTOLOCATE` | `1` · `0` · `true` · `false` · `yes` · `no` · `on` · `off`, in any case | `0` | Whether the lookup is permitted at all. Anything unreadable is **off** — a typo may not switch a network call on. `INZSH_SALAH_LAT`/`LON` still win when they are set, so turning this on and then setting the coordinates by hand does the obvious thing. |
+| `INZSH_SALAH_AUTOLOCATE` | `1` · `0` · `true` · `false` · `yes` · `no` · `on` · `off`, in any case | `0` | Whether the lookup is permitted at all. Anything unreadable is **off** — a typo may not switch a network call on. Setting it permits the lookup and nothing more: run `inzsh locate` to make one. `INZSH_SALAH_LAT`/`LON` still win when they are set, so turning this on and then setting the coordinates by hand does the obvious thing. |
 | `INZSH_SALAH_AUTOLOCATE_TTL` | integer, at least `300` | `86400` | Seconds before a refresh is considered due. It bounds a refresh and never a read: an older answer is still used, because a stale city beats no prayer times. |
 | `INZSH_SALAH_AUTOLOCATE_TIMEOUT` | integer, 1–60 | `5` | The hard ceiling on the request, passed to `curl --max-time` or `wget --timeout`. Chosen against a person waiting for a terminal, not against a slow network. |
 | `INZSH_SALAH_AUTOLOCATE_URL` | an `http://` or `https://` URL returning JSON with `latitude`/`longitude` (or `lat`/`lon`) | `https://ipapi.co/json/` | Where to ask. Point it at your own service and that is where the request goes; anything that is not one of those two schemes falls back to the default, since the value reaches an external command's argument list. |

@@ -64,9 +64,11 @@ INZSH_SALAH_SCHOOL=shafi     # or hanafi
 
 No telemetry. No network calls by default — prayer times are computed locally.
 
-One exception, opt-in and off unless you enable it: `INZSH_SALAH_AUTOLOCATE=1` queries a
-third-party IP geolocation service to determine your location, which means your IP address is
-sent to that service. Setting your coordinates manually avoids this entirely.
+One exception, opt-in and off unless you enable it: `INZSH_SALAH_AUTOLOCATE=1` permits a query
+to a third-party IP geolocation service to determine your location, which means your IP address
+is sent to that service. Even then the theme never makes the request on its own — you run
+`inzsh locate` when you want the stored position refreshed. Setting your coordinates manually
+avoids all of this entirely.
 
 ## Colour accessibility
 
