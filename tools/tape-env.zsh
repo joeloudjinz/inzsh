@@ -39,7 +39,7 @@ _inzsh_tape_preset=\${INZSH_PRESET-}
 unset -m 'INZSH_*' 2>/dev/null
 [[ -n \$_inzsh_tape_preset ]] && export INZSH_PRESET=\$_inzsh_tape_preset
 unset -m 'SSH_*' VIRTUAL_ENV 2>/dev/null
-export TZ=UTC
+export TZ=\${TZ:-UTC}
 export INZSH_HOST_ALWAYS=1
 source ${(q)_inzsh_tape_root}/inzsh.zsh-theme
 functions[_inzsh_tape_time_build]=\$functions[_inzsh_segment_time_build]

@@ -1,4 +1,5 @@
-# InZsh — tape 7: the prayer-times segment — Mecca, at the pinned instant.
+# InZsh — tape 7: the prayer-times segment — Mecca, at the pinned instant, shown in
+# Mecca's own timezone so the times read the way a person there reads them.
 #
 # Every setting is pinned — width, height, font, size, framerate, padding, theme — and every
 # pause waits on what the screen must already show, never on a clock. Sleep is banned here:
@@ -24,9 +25,9 @@ Set TypingSpeed 130ms
 # Enter the pinned environment: the stage tools/tape-run.zsh builds at a fixed path.
 # Hidden — the recording opens on the theme's prompt, not on the machine's own shell.
 Hide
-Type "s=${TMPDIR:-/tmp}; s=${s%/}/inzsh-tape; HOME=$s ZDOTDIR=$s HOST=spec-host TZ=UTC INZSH_PRESET= exec zsh -d -i"
+Type "s=${TMPDIR:-/tmp}; s=${s%/}/inzsh-tape; HOME=$s ZDOTDIR=$s HOST=spec-host TZ=Asia/Riyadh INZSH_PRESET= exec zsh -d -i"
 Enter
-Wait+Screen /12:34/
+Wait+Screen /15:34/
 Show
 
 # The prompt is up when the input marker is. Pacing pauses below come AFTER a Wait has

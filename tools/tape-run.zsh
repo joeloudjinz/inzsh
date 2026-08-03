@@ -20,7 +20,9 @@ _inzsh_tape=${1:?usage: tape-run.zsh <tape-file> [fixture-state]}
 # tape renders at a time; `make demo` is a dev tool, not a parallel job.
 _inzsh_tape_stage=${${TMPDIR:-/tmp}%/}/inzsh-tape
 rm -rf -- $_inzsh_tape_stage
-_inzsh_tape_home=$(zsh $_inzsh_tape_root/tools/tape-env.zsh ${2:-dirty})
+# A tape may declare its fixture state in a header line: `# fixture: diverged`.
+_inzsh_tape_state=${2:-$(grep -m1 '^# fixture: ' $_inzsh_tape | cut -d' ' -f3)}
+_inzsh_tape_home=$(zsh $_inzsh_tape_root/tools/tape-env.zsh ${_inzsh_tape_state:-dirty})
 mv $_inzsh_tape_home $_inzsh_tape_stage
 trap 'rm -rf -- "$_inzsh_tape_stage"' EXIT INT TERM
 

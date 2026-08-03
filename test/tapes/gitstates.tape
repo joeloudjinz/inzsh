@@ -1,4 +1,6 @@
-# InZsh — tape 8: the git states — dirty, staged, committed-and-ahead.
+# InZsh — tape 8: the git states in the diverged fixture — the ahead/behind counts stay
+# on screen while the state glyph walks clean, dirty, staged, committed.
+# fixture: diverged
 #
 # Every setting is pinned — width, height, font, size, framerate, padding, theme — and every
 # pause waits on what the screen must already show, never on a clock. Sleep is banned here:
@@ -34,14 +36,19 @@ Show
 Wait+Screen /→/
 Sleep 600ms
 
-Type "git add -A; echo st-$((1))"
+Type "echo tweak >> base.txt; echo st-$((1))"
+Enter
+Wait+Screen /! main/
+Sleep 1.4s
+
+Type "git add -A; echo st-$((2))"
 Enter
 Wait+Screen /i main/
 Sleep 1.4s
 
-Type "git commit -q -m polish; echo st-$((2))"
+Type "git commit -q -m polish; echo st-$((3))"
 Enter
-Wait+Screen /↑1/
+Wait+Screen /↑3/
 Sleep 1.4s
 
 Type "true"
