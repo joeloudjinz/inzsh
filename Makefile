@@ -5,7 +5,7 @@ SHELLSPEC ?= shellspec
 PYTHON ?= ./.venv/bin/python
 COLS ?= 80
 
-.PHONY: help setup test test-ui spec-guard perf grid demo watch
+.PHONY: help setup test test-ui test-install spec-guard perf grid demo watch
 .PHONY: golden-update bundle doctor
 
 help: ## list targets
@@ -30,6 +30,13 @@ test-ui: ## L3 terminal-grid tests (pty + pyte); needs the python venv
 	else \
 	  print -- "make test-ui: no python venv — run 'make setup' first (skipped)"; \
 	fi
+
+# Deliberately not part of `make test` either: CLAUDE.md calls the installer suite CI-only,
+# and CI is where it is authoritative. Runnable locally because every example builds its own
+# HOME with `mktemp -d` — the real one is never read, written or backed up.
+test-install: ## installer suite against a throwaway HOME (never yours)
+	@zsh tools/spec-guard.zsh test/install
+	@$(SHELLSPEC) test/install
 
 # Deliberately not part of `make test`: a benchmark on a laptop that is compiling something
 # else measures the something else. It is its own target and its own CI job, and the CI job is
@@ -57,8 +64,8 @@ watch: ## re-render on save
 golden-update: ## regenerate golden files deliberately
 	@echo "make golden-update: the golden pipeline lands at M8"
 
-bundle: ## concatenate into a single distributable file
-	@echo "make bundle: the manifest lands with the engine at M2"
+bundle: ## concatenate into a single distributable file (dist/inzsh.zsh-theme)
+	@zsh -f tools/bundle.zsh
 
 doctor: ## environment diagnostic, same code path as the shipped command
 	@zsh -f tools/doctor.zsh
