@@ -269,6 +269,21 @@ _inzsh_tokens_resolve() {
   done
 }
 
+# The presets, by name. A preset is a name for a register and nothing more, so the whole of
+# `presets/inzsh-<name>.zsh` is one of these pairs — which is why the name is answered from a
+# table here rather than by sourcing that file. The single-file bundle is `lib/` concatenated
+# and has no `presets/` directory beside it; a knob that worked from a clone and not from a
+# bundle would be worse than no knob at all.
+#
+# That makes this a second copy of "warm means light", and the copy is held equal to the file
+# in `test/render/presets_spec.sh` — the same way every default restated for a partial load is
+# held equal to the registered one.
+typeset -gA _inzsh_preset_registers
+_inzsh_preset_registers=(
+  sharp dark
+  warm  light
+)
+
 # ---------------------------------------------------------------------------------------
 # Per-segment colour. The one place a segment asks "what colour am I?", so the precedence
 # lives here rather than being re-derived in every segment:
