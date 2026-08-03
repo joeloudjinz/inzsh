@@ -1,5 +1,4 @@
-# InZsh — tape 2: the warm preset. Light register via INZSH_PRESET=warm, two-line prompt,
-# inside the dirty fixture repository at the pinned instant.
+# InZsh — tape 5: the degraded palettes — 256-colour, then the 8-colour last resort.
 #
 # Every setting is pinned — width, height, font, size, framerate, padding, theme — and every
 # pause waits on what the screen must already show, never on a clock. Sleep is banned here:
@@ -7,8 +6,8 @@
 # The environment (fixture repo, clock, identity) is pinned by tools/tape-env.zsh, which
 # tools/tape-run.zsh wraps around this file.
 
-Output demo-out/gifs/warm.gif
-Output demo-out/warm.txt
+Output demo-out/gifs/depths.gif
+Output demo-out/depths.txt
 
 # bash as the OUTER shell on purpose: its prompt is plain and synchronous, so the
 # hidden pre-exec frames cannot race. The recorded shell is still zsh — the exec below.
@@ -19,13 +18,13 @@ Set FontSize 20
 Set FontFamily "MesloLGSDZ Nerd Font Mono"
 Set Framerate 24
 Set Padding 16
-Set Theme "Builtin Light"
+Set Theme "Builtin Dark"
 Set TypingSpeed 130ms
 
 # Enter the pinned environment: the stage tools/tape-run.zsh builds at a fixed path.
 # Hidden — the recording opens on the theme's prompt, not on the machine's own shell.
 Hide
-Type "s=${TMPDIR:-/tmp}; s=${s%/}/inzsh-tape; HOME=$s ZDOTDIR=$s HOST=spec-host TZ=UTC INZSH_PRESET=warm exec zsh -d -i"
+Type "s=${TMPDIR:-/tmp}; s=${s%/}/inzsh-tape; HOME=$s ZDOTDIR=$s HOST=spec-host TZ=UTC INZSH_PRESET= exec zsh -d -i"
 Enter
 Wait+Screen /12:34/
 Show
@@ -35,21 +34,15 @@ Show
 Wait+Screen /→/
 Sleep 600ms
 
-Type "echo 'salam from DZ'"
+Type "INZSH_COLOR_DEPTH=256; echo depth-$((1))"
 Enter
-Wait+Screen /salam from DZ/
-Sleep 900ms
+Wait+Screen /depth-1/
+Sleep 1.4s
 
-Type "git status -sb"
+Type "INZSH_COLOR_DEPTH=8; echo depth-$((2))"
 Enter
-Wait+Screen /origin\/main/
-Sleep 900ms
-
-# A command that fails: the exit-status segment turns and carries its glyph.
-Type "false"
-Enter
-Wait+Screen /✕/
-Sleep 900ms
+Wait+Screen /depth-2/
+Sleep 1.4s
 
 Type "true"
 Enter

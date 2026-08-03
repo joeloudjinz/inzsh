@@ -23,6 +23,14 @@ _inzsh_tape_home=$(mktemp -d "${TMPDIR:-/tmp}/inzsh-tape.XXXXXX")
 _inzsh_tape_repo=$(zsh $_inzsh_tape_root/tools/fixture-repo.zsh $_inzsh_tape_state $_inzsh_tape_home)
 mv $_inzsh_tape_repo $_inzsh_tape_home/work
 
+# A git identity for the stage: tape 8 commits inside the fixture, and the pinned HOME
+# reads no real gitconfig. Neutral, like everything else on a recording.
+cat > $_inzsh_tape_home/.gitconfig <<'GITEOF'
+[user]
+	name = spec
+	email = spec@example.invalid
+GITEOF
+
 # The rc the recorded shell reads. Same pins as the golden snippet, in rc form.
 cat > $_inzsh_tape_home/.zshrc <<EOF
 # Hygiene, with one deliberate survivor: the exec line in a tape may carry INZSH_PRESET —
@@ -40,6 +48,10 @@ functions[_inzsh_tape_date_build]=\$functions[_inzsh_segment_date_build]
 _inzsh_segment_date_build() { _inzsh_tape_date_build 978352440 }
 functions[_inzsh_tape_user_build]=\$functions[_inzsh_segment_user_build]
 _inzsh_segment_user_build() { _inzsh_tape_user_build spec '' '' }
+functions[_inzsh_tape_salah_build]=\$functions[_inzsh_segment_salah_build]
+_inzsh_segment_salah_build() { _inzsh_tape_salah_build 978352440 }
+functions[_inzsh_tape_salah_refresh]=\$functions[_inzsh_salah_cache_refresh]
+_inzsh_salah_cache_refresh() { _inzsh_tape_salah_refresh 978352440 }
 cd ~/work
 clear
 EOF

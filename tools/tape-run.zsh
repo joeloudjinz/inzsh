@@ -24,6 +24,6 @@ _inzsh_tape_home=$(zsh $_inzsh_tape_root/tools/tape-env.zsh ${2:-dirty})
 mv $_inzsh_tape_home $_inzsh_tape_stage
 trap 'rm -rf -- "$_inzsh_tape_stage"' EXIT INT TERM
 
-mkdir -p $_inzsh_tape_root/demo-out
+mkdir -p $_inzsh_tape_root/demo-out/gifs
 
 vhs $_inzsh_tape < /dev/null

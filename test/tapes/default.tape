@@ -7,7 +7,7 @@
 # The environment (fixture repo, clock, identity) is pinned by tools/tape-env.zsh, which
 # tools/tape-run.zsh wraps around this file.
 
-Output demo-out/default.gif
+Output demo-out/gifs/default.gif
 Output demo-out/default.txt
 
 # bash as the OUTER shell on purpose: its prompt is plain and synchronous, so the
