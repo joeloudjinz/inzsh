@@ -61,4 +61,4 @@ bundle: ## concatenate into a single distributable file
 	@echo "make bundle: the manifest lands with the engine at M2"
 
 doctor: ## environment diagnostic, same code path as the shipped command
-	@echo "make doctor: ships at M8"
+	@zsh -f tools/doctor.zsh

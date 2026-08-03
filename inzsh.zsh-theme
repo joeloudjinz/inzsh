@@ -35,6 +35,7 @@ source $_inzsh_theme_root/lib/core/prompts.zsh
 source $_inzsh_theme_root/lib/core/transient.zsh
 source $_inzsh_theme_root/lib/core/resize.zsh
 source $_inzsh_theme_root/lib/core/hooks.zsh
+source $_inzsh_theme_root/lib/core/doctor.zsh
 
 # The segments, listed rather than globbed. A glob would load whatever happens to be in the
 # directory in whatever order the filesystem answers; the load is a contract, so it is written
