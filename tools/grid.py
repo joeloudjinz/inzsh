@@ -15,8 +15,9 @@ column number instead of a screenshot.
     python tools/grid.py --cols 60 --depth 256 --preset warm --cells
 
 `--depth` and `--mode` set INZSH_COLOR_DEPTH and INZSH_SURFACE_MODE for the child;
-any other `INZSH_*` knob flows in from your environment. `--preset` sources the named
-preset file over the theme, the same way a zshrc would. Unset, the child detects: the
+any other `INZSH_*` knob flows in from your environment — `INZSH_PRESET=warm` among them,
+which is the theme's own way to pick a preset. `--preset` is the other way: it sources the
+named preset file over the theme, as a plugin manager might. Unset, the child detects: the
 harness pins TERM=xterm-256color and strips COLORTERM, so the detected depth is 256
 and a truecolor grid has to be asked for.
 """
