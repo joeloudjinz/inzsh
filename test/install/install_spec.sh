@@ -145,6 +145,160 @@ Describe 'the installer'
     End
   End
 
+  # The oh-my-zsh path. No real oh-my-zsh is downloaded: the fixture is the three lines of a
+  # stock omz `.zshrc` plus a one-line stand-in for `oh-my-zsh.sh` that does the one thing the
+  # installer relies on — source `$ZSH_CUSTOM/themes/$ZSH_THEME.zsh-theme`. That keeps the
+  # examples offline and pins the actual contract rather than omz's implementation.
+  Describe 'oh-my-zsh install'
+    It 'links the theme into custom/themes and takes over ZSH_THEME'
+      omz() {
+        inzsh_spec_in_home '
+          mkdir -p $home/.oh-my-zsh/custom/themes
+          print -rl -- "export ZSH=\"\$HOME/.oh-my-zsh\"" \
+            "ZSH_THEME=\"robbyrussell\"" \
+            "source \$ZSH/oh-my-zsh.sh" > $home/.zshrc
+          zsh -f $installer --omz >/dev/null || { print -r -- install-failed; return 1 }
+          [[ -L $home/.oh-my-zsh/custom/themes/inzsh.zsh-theme ]] || { print -r -- no-link; return 1 }
+          grep -q "^ZSH_THEME=\"inzsh\" # inzsh:managed$" $home/.zshrc || { print -r -- not-managed; return 1 }
+          grep -q "^#ZSH_THEME=\"robbyrussell\" # inzsh:disabled$" $home/.zshrc || { print -r -- not-disabled; return 1 }
+          print -r -- installed
+        '
+      }
+      When call omz
+      The output should eq 'installed'
+      The stderr should eq ''
+    End
+
+    It 'loads the theme through the omz theme machinery in a real shell'
+      loads() {
+        inzsh_spec_in_home '
+          mkdir -p $home/.oh-my-zsh/custom/themes
+          print -r -- "source \${ZSH_CUSTOM:-\$ZSH/custom}/themes/\$ZSH_THEME.zsh-theme" \
+            > $home/.oh-my-zsh/oh-my-zsh.sh
+          print -rl -- "export ZSH=\"\$HOME/.oh-my-zsh\"" \
+            "ZSH_THEME=\"robbyrussell\"" \
+            "source \$ZSH/oh-my-zsh.sh" > $home/.zshrc
+          zsh -f $installer --omz >/dev/null
+          HOME=$home zsh -o NO_GLOBAL_RCS -i -c \
+            "(( \${+functions[_inzsh_render]} )) && (( \${+_inzsh_segment_defaults[DIR]} )) &&
+               print -r -- loaded || print -r -- not-loaded"
+        '
+      }
+      When call loads
+      The output should eq 'loaded'
+      The stderr should eq ''
+    End
+
+    It 'is idempotent — a second run changes neither .zshrc nor the link'
+      twice() {
+        inzsh_spec_in_home '
+          mkdir -p $home/.oh-my-zsh/custom/themes
+          print -rl -- "ZSH_THEME=\"robbyrussell\"" "source \$ZSH/oh-my-zsh.sh" > $home/.zshrc
+          zsh -f $installer --omz >/dev/null
+          local before=$(<$home/.zshrc)
+          zsh -f $installer --omz >/dev/null
+          [[ $before == $(<$home/.zshrc) && \
+             $(grep -c "inzsh:managed" $home/.zshrc) == 1 ]] &&
+            print -r -- unchanged || print -r -- changed
+        '
+      }
+      When call twice
+      The output should eq 'unchanged'
+    End
+
+    It 'inserts the managed theme line before oh-my-zsh.sh when none existed'
+      no_theme_line() {
+        inzsh_spec_in_home '
+          mkdir -p $home/.oh-my-zsh/custom/themes
+          print -rl -- "export ZSH=\"\$HOME/.oh-my-zsh\"" "source \$ZSH/oh-my-zsh.sh" > $home/.zshrc
+          zsh -f $installer --omz >/dev/null
+          local -a lines=("${(@f)$(<$home/.zshrc)}")
+          local -i managed=0 omz_source=0 i
+          for i in {1..${#lines}}; do
+            [[ ${lines[i]} == *"inzsh:managed"* ]] && managed=$i
+            [[ ${lines[i]} == source*oh-my-zsh.sh* ]] && omz_source=$i
+          done
+          (( managed > 0 && managed < omz_source )) && print -r -- before || \
+            print -r -- "managed=$managed source=$omz_source"
+        '
+      }
+      When call no_theme_line
+      The output should eq 'before'
+    End
+
+    It 'honours ZSH_CUSTOM for the themes directory'
+      custom() {
+        inzsh_spec_in_home '
+          mkdir -p $home/.oh-my-zsh $home/my-custom
+          : > $home/.zshrc
+          ZSH_CUSTOM=$home/my-custom zsh -f $installer --omz >/dev/null
+          [[ -L $home/my-custom/themes/inzsh.zsh-theme ]] && print -r -- linked || print -r -- not-linked
+        '
+      }
+      When call custom
+      The output should eq 'linked'
+    End
+
+    It 'refuses --omz when there is no oh-my-zsh to install into'
+      refuses() {
+        inzsh_spec_in_home '
+          zsh -f $installer --omz >/dev/null 2>&1 && print -r -- accepted || print -r -- refused
+        '
+      }
+      When call refuses
+      The output should eq 'refused'
+    End
+
+    It 'auto-detects oh-my-zsh when no path flag is given'
+      auto() {
+        inzsh_spec_in_home '
+          mkdir -p $home/.oh-my-zsh/custom/themes
+          print -rl -- "ZSH_THEME=\"robbyrussell\"" "source \$ZSH/oh-my-zsh.sh" > $home/.zshrc
+          zsh -f $installer >/dev/null
+          [[ -L $home/.oh-my-zsh/custom/themes/inzsh.zsh-theme ]] && print -r -- omz-chosen || \
+            print -r -- plain-chosen
+        '
+      }
+      When call auto
+      The output should eq 'omz-chosen'
+    End
+
+    It 'still installs plain when --plain says so, oh-my-zsh or not'
+      forced_plain() {
+        inzsh_spec_in_home '
+          mkdir -p $home/.oh-my-zsh/custom/themes
+          print -rl -- "ZSH_THEME=\"robbyrussell\"" "source \$ZSH/oh-my-zsh.sh" > $home/.zshrc
+          zsh -f $installer --plain >/dev/null
+          [[ -L $home/.oh-my-zsh/custom/themes/inzsh.zsh-theme ]] && { print -r -- linked-anyway; return 1 }
+          grep -q ">>> inzsh >>>" $home/.zshrc && print -r -- plain || print -r -- neither
+        '
+      }
+      When call forced_plain
+      The output should eq 'plain'
+    End
+
+    It 'uninstall restores .zshrc exactly and removes the link'
+      restores() {
+        inzsh_spec_in_home '
+          mkdir -p $home/.oh-my-zsh/custom/themes
+          print -rl -- "export ZSH=\"\$HOME/.oh-my-zsh\"" \
+            "ZSH_THEME=\"robbyrussell\"" \
+            "source \$ZSH/oh-my-zsh.sh" > $home/.zshrc
+          local before=$(<$home/.zshrc)
+          zsh -f $installer --omz >/dev/null
+          zsh -f $installer --uninstall >/dev/null
+          [[ -L $home/.oh-my-zsh/custom/themes/inzsh.zsh-theme ]] && { print -r -- link-left; return 1 }
+          [[ $before == $(<$home/.zshrc) ]] && print -r -- restored || {
+            print -r -- different; print -r -- "$(<$home/.zshrc)"
+          }
+        '
+      }
+      When call restores
+      The output should eq 'restored'
+      The stderr should eq ''
+    End
+  End
+
   Describe 'uninstall'
     It 'restores the pre-install .zshrc exactly'
       restores() {

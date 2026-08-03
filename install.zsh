@@ -100,18 +100,162 @@ _inzsh_install_plain() {
   print -r -- "open a new shell to see the prompt"
 }
 
-_inzsh_install_uninstall() {
-  local -a lines
-  _inzsh_install_read; lines=("${(@)reply}")
-  _inzsh_install_strip "${(@)lines}"
+# ── the oh-my-zsh path ──────────────────────────────────────────────────────────────────────
+#
+# Two edits instead of a block: a symlink in the custom themes directory, and the `ZSH_THEME`
+# line. The previous theme line is not deleted — it is commented out and tagged, so uninstall
+# can put back exactly what was there:
+#
+#   #ZSH_THEME="robbyrussell" # inzsh:disabled
+#   ZSH_THEME="inzsh" # inzsh:managed
+#
+# The tags are the reversibility: `inzsh:managed` lines are ours to remove, `inzsh:disabled`
+# lines are the user's to get back.
 
-  if [[ "${(pj:\n:)lines}" == "${(pj:\n:)reply}" ]]; then
-    print -r -- "nothing installed — nothing to do"
+typeset -g _inzsh_install_tag_managed='# inzsh:managed'
+typeset -g _inzsh_install_tag_disabled='# inzsh:disabled'
+typeset -g _inzsh_install_theme_line="ZSH_THEME=\"inzsh\" $_inzsh_install_tag_managed"
+
+# The oh-my-zsh root, or failure: `$ZSH` when it points at a directory, the stock location
+# otherwise. Printed rather than assigned so the caller can `$(…)` it.
+_inzsh_install_omz_root() {
+  if [[ -n ${ZSH:-} && -d ${ZSH:-} ]]; then
+    print -r -- $ZSH
+    return 0
+  fi
+  if [[ -d $HOME/.oh-my-zsh ]]; then
+    print -r -- $HOME/.oh-my-zsh
+    return 0
+  fi
+  return 1
+}
+
+# Lines with the omz edits undone, in `reply` — managed lines out, disabled lines restored.
+# Used by uninstall, and by install to compute its target from a clean base whatever state
+# the file is in now.
+_inzsh_install_omz_restore() {
+  local -a out=()
+  local line
+  for line in "$@"; do
+    if [[ $line == *" $_inzsh_install_tag_managed" ]]; then
+      continue
+    fi
+    if [[ $line == \#*" $_inzsh_install_tag_disabled" ]]; then
+      line=${line% $_inzsh_install_tag_disabled}
+      out+=("${line#\#}")
+      continue
+    fi
+    out+=("$line")
+  done
+  typeset -ga reply=("${(@)out}")
+}
+
+# Lines with the omz edits applied, in `reply`. The managed line lands where the old theme
+# line was; with no theme line it goes just above the `oh-my-zsh.sh` source, which is the
+# last place omz still reads it; with neither it is appended.
+_inzsh_install_omz_apply() {
+  local -a out=()
+  local line
+  local -i placed=0
+  for line in "$@"; do
+    if [[ ${line##[[:space:]]#} == ZSH_THEME=* ]]; then
+      out+=("#$line $_inzsh_install_tag_disabled")
+      if (( ! placed )); then
+        out+=("$_inzsh_install_theme_line")
+        placed=1
+      fi
+      continue
+    fi
+    if (( ! placed )) && [[ ${line##[[:space:]]#} == source*oh-my-zsh.sh* ]]; then
+      out+=("$_inzsh_install_theme_line" "$line")
+      placed=1
+      continue
+    fi
+    out+=("$line")
+  done
+  if (( ! placed )); then
+    out+=("$_inzsh_install_theme_line")
+  fi
+  typeset -ga reply=("${(@)out}")
+}
+
+# The symlink into the custom themes directory. A correct link is left alone; a stale one —
+# ours, pointing at a checkout that moved — is replaced; anything that is NOT a symlink is
+# somebody's file and refusing is the only safe answer.
+_inzsh_install_omz_link() {
+  local themes=$1/themes link=$1/themes/inzsh.zsh-theme
+  mkdir -p -- $themes
+  if [[ -L $link ]]; then
+    if [[ ${link:A} != ${_inzsh_install_theme:A} ]]; then
+      ln -sfn -- $_inzsh_install_theme $link
+      print -r -- "relinked: ${link/#$HOME/~} → the current checkout"
+    fi
+    return 0
+  fi
+  if [[ -e $link ]]; then
+    print -ru2 -- "install.zsh: ${link/#$HOME/~} exists and is not a symlink — move it aside first"
+    return 1
+  fi
+  ln -s -- $_inzsh_install_theme $link
+  print -r -- "linked: ${link/#$HOME/~}"
+}
+
+_inzsh_install_omz() {
+  local omz
+  if ! omz=$(_inzsh_install_omz_root); then
+    print -ru2 -- 'install.zsh: no oh-my-zsh found ($ZSH unset, no ~/.oh-my-zsh) — try --plain'
+    return 1
+  fi
+  _inzsh_install_omz_link ${ZSH_CUSTOM:-$omz/custom}
+
+  local -a lines want
+  _inzsh_install_read; lines=("${(@)reply}")
+  _inzsh_install_omz_restore "${(@)lines}"
+  _inzsh_install_omz_apply "${(@)reply}"
+  want=("${(@)reply}")
+
+  if [[ "${(pj:\n:)lines}" == "${(pj:\n:)want}" ]]; then
+    print -r -- "already installed — nothing to do"
     return 0
   fi
 
-  _inzsh_install_write "${(@)reply}"
-  print -r -- "uninstalled: the managed block is out of ${_inzsh_install_zshrc/#$HOME/~}"
+  _inzsh_install_backup_once
+  _inzsh_install_write "${(@)want}"
+  print -r -- "installed: ZSH_THEME is \"inzsh\" in ${_inzsh_install_zshrc/#$HOME/~}"
+  print -r -- "open a new shell to see the prompt"
+}
+
+# Uninstall undoes BOTH paths, whichever was used — the managed block, the theme-line edits,
+# and the symlink — so one verb takes everything back out. The backup is deliberately left:
+# it is the user's pre-inzsh state, and deleting a backup is never the installer's call.
+_inzsh_install_uninstall() {
+  local -i changed=0
+
+  local -a lines
+  _inzsh_install_read; lines=("${(@)reply}")
+  _inzsh_install_strip "${(@)lines}"
+  _inzsh_install_omz_restore "${(@)reply}"
+
+  if [[ "${(pj:\n:)lines}" != "${(pj:\n:)reply}" ]]; then
+    _inzsh_install_write "${(@)reply}"
+    print -r -- "uninstalled: ${_inzsh_install_zshrc/#$HOME/~} is back to its pre-install content"
+    changed=1
+  fi
+
+  local omz
+  if omz=$(_inzsh_install_omz_root); then
+    local link=${ZSH_CUSTOM:-$omz/custom}/themes/inzsh.zsh-theme
+    if [[ -L $link ]]; then
+      rm -- $link
+      print -r -- "removed: ${link/#$HOME/~}"
+      changed=1
+    fi
+  fi
+
+  if (( ! changed )); then
+    print -r -- "nothing installed — nothing to do"
+    return 0
+  fi
   if [[ -f $_inzsh_install_backup ]]; then
     print -r -- "your pre-install backup is untouched: ${_inzsh_install_backup/#$HOME/~}"
   fi
@@ -119,18 +263,21 @@ _inzsh_install_uninstall() {
 }
 
 _inzsh_install_usage() {
-  print -r -- 'usage: zsh install.zsh [--plain] [--uninstall]'
-  print -r -- '  --plain      source the theme from .zshrc (the default)'
-  print -r -- '  --uninstall  remove everything the installer added'
+  print -r -- 'usage: zsh install.zsh [--plain|--omz] [--uninstall]'
+  print -r -- '  --plain      source the theme from .zshrc'
+  print -r -- '  --omz        install as an oh-my-zsh custom theme'
+  print -r -- '  (no flag)    oh-my-zsh when one is found, plain otherwise'
+  print -r -- '  --uninstall  remove everything the installer added, whichever path put it there'
 }
 
 _inzsh_install_main() {
   # NOT named `path` — that is zsh's tied PATH array, and a `local path=…` here would
   # unbind every external command for the rest of the run.
-  local mode=install via=plain arg
+  local mode=install via=auto arg
   for arg in "$@"; do
     case $arg in
       --plain)     via=plain ;;
+      --omz)       via=omz ;;
       --uninstall) mode=uninstall ;;
       -h|--help)   _inzsh_install_usage; return 0 ;;
       *) print -ru2 -- "install.zsh: unknown option: $arg"; _inzsh_install_usage >&2; return 1 ;;
@@ -146,7 +293,19 @@ _inzsh_install_main() {
     print -ru2 -- "install.zsh: cannot find $_inzsh_install_theme — run from a full checkout"
     return 1
   }
-  _inzsh_install_plain
+
+  if [[ $via == auto ]]; then
+    if _inzsh_install_omz_root >/dev/null; then
+      via=omz
+    else
+      via=plain
+    fi
+  fi
+  if [[ $via == omz ]]; then
+    _inzsh_install_omz
+  else
+    _inzsh_install_plain
+  fi
 }
 
 _inzsh_install_main "$@"
