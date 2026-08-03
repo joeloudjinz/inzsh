@@ -50,6 +50,47 @@ class GridToolTest(unittest.TestCase):
         self.assertEqual(grid.exit_status, 0)
         self.assertGreaterEqual(grid.rows_occupied(), 1)
 
+    def test_the_preset_knob_draws_what_sourcing_the_preset_file_draws(self):
+        """`INZSH_PRESET=warm` is the theme's own knob, and it reaches the screen.
+
+        The claim is comparative on purpose — no colour value appears here, so a palette
+        change cannot fail this test. Three renders: the default, the knob, and `--preset`
+        sourcing the file over the theme. The knob has to draw what the file draws, and
+        neither may draw what the default does; between them that is "the knob switched the
+        register" rather than "the knob was accepted and ignored".
+
+        The git block is ranked out of all three. It is the one segment whose colour depends
+        on a cache filled by a background worker, so leaving it in would compare two renders
+        that could legitimately differ.
+        """
+        base = {"INZSH_GIT_RANK": "0"}
+
+        def backgrounds(grid):
+            return {
+                grid.cell(row, col).bg
+                for row in range(grid.lines)
+                if grid.row_text(row)
+                for col in range(grid.cols)
+            }
+
+        default = self.render(env=base)
+        knob = self.render(env={**base, "INZSH_PRESET": "warm"})
+        sourced = self.render(env=base, preset="warm")
+        for name, grid in (("default", default), ("knob", knob), ("file", sourced)):
+            self.assertEqual(grid.exit_status, 0, msg=f"{name} exited non-zero")
+            self.assertGreaterEqual(grid.rows_occupied(), 1, msg=f"{name} drew nothing")
+
+        self.assertEqual(
+            backgrounds(knob),
+            backgrounds(sourced),
+            msg="INZSH_PRESET=warm draws different colours from sourcing inzsh-warm.zsh",
+        )
+        self.assertNotEqual(
+            backgrounds(knob),
+            backgrounds(default),
+            msg="INZSH_PRESET=warm drew the default register",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
