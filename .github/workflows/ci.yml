@@ -102,6 +102,38 @@ jobs:
             exit 1
           }
 
+  # Whole-prompt appearance — the golden text files in test/golden. The gate: the prompt
+  # is re-rendered from fixtures (temp git repository, pinned clock and identity) and
+  # diffed against the committed goldens, so a visual change blocks the merge until the
+  # goldens are regenerated with `make golden-update` and committed in the same PR.
+  golden:
+    needs: syntax
+    runs-on: ubuntu-latest
+    # pty renders can wedge; fail fast rather than burn the default 360 minutes.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install zsh
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install pinned L3 deps into .venv
+        # .venv is exactly where the Makefile's default PYTHON ?= ./.venv/bin/python looks
+        run: |
+          python3 -m venv .venv
+          ./.venv/bin/pip install --quiet --requirement test/ui/requirements.txt
+      - name: Golden render gate
+        run: |
+          set -o pipefail
+          make golden-check 2>&1 | tee golden.log
+      - name: Guard against a silent skip
+        run: |
+          grep -Eq '^golden: [1-9][0-9]* case' golden.log || {
+            echo "::error::make golden-check reported no cases — the gate skipped instead of running"
+            exit 1
+          }
+
   # The render budget. CLAUDE.md calls it CI-enforced, and this is the enforcement.
   #
   # There is no renderer yet — segments land at M3 — so the suite benchmarks the machinery a
