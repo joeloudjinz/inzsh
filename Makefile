@@ -6,7 +6,7 @@ PYTHON ?= ./.venv/bin/python
 COLS ?= 80
 
 .PHONY: help setup test test-ui test-install spec-guard perf grid demo watch
-.PHONY: golden-update bundle doctor
+.PHONY: golden-update golden-check bundle doctor
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*## "}{printf "  %-14s %s\n", $$1, $$2}'
@@ -61,8 +61,27 @@ demo: ## VHS visual render
 watch: ## re-render on save
 	@echo "make watch: nothing to watch yet — the token layer lands at M1"
 
-golden-update: ## regenerate golden files deliberately
-	@echo "make golden-update: the golden pipeline lands at M8"
+# The golden pipeline. Both targets render the real theme against fixtures — a temp git
+# repository, a pinned clock, pinned identity — through tools/golden.py and the L3 harness.
+# `golden-update` is the ONLY sanctioned way to change test/golden (and it never writes
+# under test/fixtures); `golden-check` is the gate, run locally and by the CI golden job.
+# Deliberately not part of `make test`: like the installer suite it has its own CI job,
+# and a gate that failed inside `make test` would bury its diff in the suite's noise.
+# A missing venv FAILS rather than skips — both targets are deliberate invocations, and a
+# gate that silently skipped would gate nothing.
+golden-update: ## regenerate golden files deliberately (never touches test/fixtures)
+	@if [[ -x $(PYTHON) ]]; then \
+	  $(PYTHON) tools/golden.py --update; \
+	else \
+	  print -- "make golden-update: no python venv — run 'make setup' first"; exit 1; \
+	fi
+
+golden-check: ## fail when the prompt no longer matches test/golden
+	@if [[ -x $(PYTHON) ]]; then \
+	  $(PYTHON) tools/golden.py --check; \
+	else \
+	  print -- "make golden-check: no python venv — run 'make setup' first"; exit 1; \
+	fi
 
 bundle: ## concatenate into a single distributable file (dist/inzsh.zsh-theme)
 	@zsh -f tools/bundle.zsh
