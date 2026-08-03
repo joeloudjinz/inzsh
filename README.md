@@ -74,6 +74,18 @@ Every foreground/background pairing is verified against WCAG AA, in both presets
 colour depths. The palette is checked under protanopia, deuteranopia and tritanopia simulation,
 and no state is signalled by colour alone — each carries a glyph.
 
+## Something looks wrong?
+
+Run the built-in diagnostic and paste its output into the issue:
+
+```zsh
+inzsh doctor
+```
+
+One block covering zsh version, terminal, `$TERM`, colour depth, locale, Nerd Font and tmux —
+everything the bug template asks for, and nothing private: your coordinates, if the prayer
+segment has any, are never printed.
+
 ## Contributing
 
 Issues are welcome. Pull requests are considered case-by-case — see
