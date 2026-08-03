@@ -1,4 +1,4 @@
-# InZsh — tape 1: the default look. Dark register, alternate surfaces, two-line prompt,
+# InZsh — tape 2: the warm preset. Light register via INZSH_PRESET=warm, two-line prompt,
 # inside the dirty fixture repository at the pinned instant.
 #
 # Every setting is pinned — width, height, font, size, framerate, padding, theme — and every
@@ -7,8 +7,8 @@
 # The environment (fixture repo, clock, identity) is pinned by tools/tape-env.zsh, which
 # tools/tape-run.zsh wraps around this file.
 
-Output demo-out/default.gif
-Output demo-out/default.txt
+Output demo-out/warm.gif
+Output demo-out/warm.txt
 
 # bash as the OUTER shell on purpose: its prompt is plain and synchronous, so the
 # hidden pre-exec frames cannot race. The recorded shell is still zsh — the exec below.
@@ -19,13 +19,13 @@ Set FontSize 20
 Set FontFamily "MesloLGSDZ Nerd Font Mono"
 Set Framerate 24
 Set Padding 16
-Set Theme "Builtin Dark"
+Set Theme "Builtin Light"
 Set TypingSpeed 130ms
 
 # Enter the pinned environment: the stage tools/tape-run.zsh builds at a fixed path.
 # Hidden — the recording opens on the theme's prompt, not on the machine's own shell.
 Hide
-Type "s=${TMPDIR:-/tmp}; s=${s%/}/inzsh-tape; HOME=$s ZDOTDIR=$s HOST=spec-host TZ=UTC INZSH_PRESET= exec zsh -d -i"
+Type "s=${TMPDIR:-/tmp}; s=${s%/}/inzsh-tape; HOME=$s ZDOTDIR=$s HOST=spec-host TZ=UTC INZSH_PRESET=warm exec zsh -d -i"
 Enter
 Wait+Screen /12:34/
 Show

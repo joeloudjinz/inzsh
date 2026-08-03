@@ -25,7 +25,11 @@ mv $_inzsh_tape_repo $_inzsh_tape_home/work
 
 # The rc the recorded shell reads. Same pins as the golden snippet, in rc form.
 cat > $_inzsh_tape_home/.zshrc <<EOF
+# Hygiene, with one deliberate survivor: the exec line in a tape may carry INZSH_PRESET —
+# the knob is part of what the tapes demonstrate — so it is preserved across the sweep.
+_inzsh_tape_preset=\${INZSH_PRESET-}
 unset -m 'INZSH_*' 2>/dev/null
+[[ -n \$_inzsh_tape_preset ]] && export INZSH_PRESET=\$_inzsh_tape_preset
 unset -m 'SSH_*' VIRTUAL_ENV 2>/dev/null
 export TZ=UTC
 export INZSH_HOST_ALWAYS=1
