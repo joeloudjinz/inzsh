@@ -18,7 +18,7 @@ Set FontFamily "MesloLGSDZ Nerd Font Mono"
 Set Framerate 24
 Set Padding 16
 Set Theme "Builtin Dark"
-Set TypingSpeed 60ms
+Set TypingSpeed 130ms
 
 # Enter the pinned environment: the stage tools/tape-run.zsh builds at a fixed path.
 # Hidden — the recording opens on the theme's prompt, not on the machine's own shell.
@@ -28,22 +28,28 @@ Enter
 Wait+Screen /12:34/
 Show
 
-# The prompt is up when the input marker is.
+# The prompt is up when the input marker is. Pacing pauses below come AFTER a Wait has
+# proven the state — the ban is on sleeping INSTEAD of waiting, never on breathing room.
 Wait+Screen /→/
+Sleep 600ms
 
-Type "echo salam"
+Type "echo 'salam from DZ'"
 Enter
-Wait+Screen /salam/
+Wait+Screen /salam from DZ/
+Sleep 900ms
 
 Type "git status -sb"
 Enter
-Wait+Screen /main/
+Wait+Screen /origin\/main/
+Sleep 900ms
 
 # A command that fails: the exit-status segment turns and carries its glyph.
 Type "false"
 Enter
-Wait+Screen /✕|1/
+Wait+Screen /✕/
+Sleep 900ms
 
 Type "true"
 Enter
 Wait+Screen /→/
+Sleep 1s
