@@ -255,9 +255,10 @@ inzsh-at() {
 # `inzsh-register light|dark` — swap the palette register and redraw.
 #
 # NOT a knob, and deliberately named as a helper rather than dressed up as one: `_inzsh_register`
-# is internal, there is no `INZSH_REGISTER`, and the light register is currently unreachable from
-# configuration at all. That is issue #183's other half — worth seeing here precisely because
-# reviewing both registers is what the visual sign-off is for.
+# is internal and there is no `INZSH_REGISTER`. Configuration reaches the same choice by name —
+# `INZSH_PRESET=warm` — but that one is read when the theme is sourced, so it is not something
+# you can type at a prompt. This is what a running shell has instead, and reviewing both
+# registers is what the visual sign-off is for.
 inzsh-register() {
   emulate -L zsh
 
@@ -290,7 +291,8 @@ Type a setting, press return, and the next prompt uses it.
     INZSH_SURFACE_MODE=hue        block colours: alternate · ramp · flat · hue
     INZSH_SEPARATOR_STYLE=round   the shape between blocks: arrow · round · divider
     INZSH_PROMPT_LINES=1          type on the same line as the blocks, not below
-    inzsh-register light          the light palette instead of the dark one
+    inzsh-register light          the light palette instead of the dark one. In your own
+                                  .zshrc this is INZSH_PRESET=warm, read as the theme loads
 
   WHAT IS SHOWN, AND WHERE
 

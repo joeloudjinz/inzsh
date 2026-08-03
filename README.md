@@ -41,6 +41,15 @@ Idempotent, backs up your `.zshrc` first, and `--uninstall` takes everything bac
 | `inzsh-sharp` | dark | the default |
 | `inzsh-warm` | light | warmer, editorial |
 
+Pick one in `.zshrc`, above the line that sources the theme:
+
+```zsh
+INZSH_PRESET=warm
+```
+
+Read when the theme loads rather than at each prompt — the [configuration
+reference](docs/configuration.md) says why, and how to switch in a shell already running.
+
 ## Supported terminals
 
 | Environment | Notes |

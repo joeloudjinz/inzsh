@@ -73,6 +73,22 @@ source $_inzsh_theme_root/lib/segments/salah.zsh
 # that pulled in no such module.
 _inzsh_config_absorb_all
 
+# The chosen look, before anything is installed. `INZSH_PRESET` names a preset — the same
+# overlay `presets/inzsh-<name>.zsh` is a file of — and this is the one knob the theme reads at
+# SOURCE time rather than at draw time. Two reasons, and the second is the real one:
+#
+#   a preset is a load-time overlay to begin with. Sourcing the file does exactly this, and it
+#   has always been something you do while the theme loads.
+#
+#   PS2, SPROMPT and the title are built ONCE, from the roles resolved at the moment
+#   `_inzsh_prompts_install` runs. A register applied after that would leave the continuation
+#   prompt in the other one — a knob that moved most of the theme and quietly not all of it.
+#
+# So it runs here, above the installers, and an empty, unset or unrecognised value leaves the
+# built-in register alone. Changing it at a prompt does nothing until the theme is sourced
+# again; `docs/configuration.md` says so, and says how to switch in a shell already running.
+_inzsh_preset_apply
+
 # Hooks first, and first for a weaker reason than it looks. zsh restores `$?` and `$pipestatus`
 # around EACH precmd function, so a hook registered ahead of `_inzsh_precmd` does not in fact
 # cost it the status — measured, not assumed. What the capture is really defending against is a

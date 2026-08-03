@@ -24,7 +24,9 @@ gives the detected one. Nothing you can type into a config file can stop the pro
 drawing.
 
 **Read at render time.** Values are read fresh on every prompt, never cached at load. Change a
-variable at the command line and the next prompt reflects it — no re-source, no new shell.
+variable at the command line and the next prompt reflects it — no re-source, no new shell. One
+knob is deliberately not like this: `INZSH_PRESET` is read once, when the theme is sourced, and
+its row below says why.
 
 ## Every knob is declared
 
@@ -80,6 +82,7 @@ theme falls back to a safe value rather than drawing the broken result:
 
 | Variable | Values | Default | Effect |
 |---|---|---|---|
+| `INZSH_PRESET` | `sharp` · `warm`, matched with case, spacing and punctuation ignored | `sharp` | Which of the two shipped looks the theme draws: `sharp` is the dark register, `warm` the light one. Both are the same design system read in a different register, so nothing but colour changes. **This one is read when the theme is sourced, not at each prompt** — set it in `.zshrc` *above* the line that sources the theme. The reason is that `PS2`, `SPROMPT` and the title are built once, from the palette resolved at that moment, and a register applied later would move the prompt and quietly leave those behind. In a shell that is already running, `source <install>/presets/inzsh-warm.zsh` switches everything the next prompt draws. Values that are not preset names — the register names `light` and `dark` among them — leave the default in place. |
 | `INZSH_SURFACE_MODE` | `alternate` · `ramp` · `flat` · `hue` | `alternate` | How segment backgrounds are assigned. The first three assign by **elevation** — how far a block sits from the base surface — and differ only in the rule that picks a level: `alternate` swings between the two ends of the surface ramp, so every powerline separator stays visible; `ramp` assigns by per-segment importance, bumping equal neighbours apart; `flat` uses one surface for everything (no filled-powerline look). `hue` changes the axis — see below. Invalid values fall back to `alternate`. |
 | `INZSH_SEPARATOR_STYLE` | `arrow` · `round` · `divider` | `arrow` | Which glyph draws the boundary between two segments. `arrow` is the filled powerline wedge, `round` the same ribbon with rounded caps, `divider` a thin rule with no filled boundary at all. `arrow` and `round` need a Nerd Font; `divider` needs only box drawing. Invalid values fall back to `arrow`. Setting `INZSH_NERD_FONT=0` resolves any style to `divider`, since the powerline glyphs cannot be drawn without the font. |
 | `INZSH_COLOR_DEPTH` | `truecolor` · `256` · `8` | detected | Overrides colour-depth detection for terminals that misreport. The palette degrades through hand-tuned fallback tables; invalid values are ignored and detection wins. |

@@ -59,6 +59,49 @@ Describe 'presets'
     End
   End
 
+  Describe 'named in the token layer'
+    # The preset files are not the only way to reach a register — `INZSH_PRESET` names one from
+    # configuration, and it is answered from `_inzsh_preset_registers` rather than by sourcing a
+    # file, because a single-file bundle carries no `presets/` directory beside it.
+    #
+    # That is a second copy of "warm means light", so it is held equal here the way the restated
+    # defaults in `test/unit/config_registry_spec.sh` are: the table is asserted against what the
+    # FILE does, in a fresh `zsh -f` where nothing else has chosen a register.
+    Describe 'the same register the file picks'
+      Parameters
+        warm
+        sharp
+      End
+
+      It "names the register inzsh-$1.zsh selects"
+        agrees() {
+          local from_file
+          from_file=$(zsh -f -c '
+            source "$1/presets/inzsh-$2.zsh"
+            print -r -- "$_inzsh_register"
+          ' inzsh-preset-table "$SHELLSPEC_PROJECT_ROOT" "$1")
+          [[ ${_inzsh_preset_registers[$1]} == $from_file ]] && print -r -- same ||
+            print -r -- "table=${_inzsh_preset_registers[$1]} file=$from_file"
+        }
+        When call agrees "$1"
+        The output should eq 'same'
+      End
+    End
+
+    It 'names every preset the repository ships, and nothing it does not'
+      shipped() {
+        local -a files=()
+        local file
+        for file in "$SHELLSPEC_PROJECT_ROOT"/presets/inzsh-*.zsh; do
+          files+=${${file:t:r}#inzsh-}
+        done
+        print -r -- "${(oj: :)files} / ${(koj: :)_inzsh_preset_registers}"
+      }
+      When call shipped
+      The output should eq 'sharp warm / sharp warm'
+    End
+  End
+
   Describe 'source order'
     # A preset may land either side of the token layer — a plugin manager decides the order,
     # not us. Sourced after, the preset re-resolves itself; sourced before, it only leaves the

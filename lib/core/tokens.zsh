@@ -269,6 +269,53 @@ _inzsh_tokens_resolve() {
   done
 }
 
+# The presets, by name. A preset is a name for a register and nothing more, so the whole of
+# `presets/inzsh-<name>.zsh` is one of these pairs — which is why the name is answered from a
+# table here rather than by sourcing that file. The single-file bundle is `lib/` concatenated
+# and has no `presets/` directory beside it; a knob that worked from a clone and not from a
+# bundle would be worse than no knob at all.
+#
+# That makes this a second copy of "warm means light", and the copy is held equal to the file
+# in `test/render/presets_spec.sh` — the same way every default restated for a partial load is
+# held equal to the registered one.
+typeset -gA _inzsh_preset_registers
+_inzsh_preset_registers=(
+  sharp dark
+  warm  light
+)
+
+# Apply `INZSH_PRESET`, if it names a preset. Called once, by the entry point, at source time —
+# the note there says why this is the one knob that is not read again at draw time.
+#
+# Nothing here can fail loudly. An empty, unset or unrecognised value leaves the register exactly
+# as it was found, which is the built-in one unless a preset file already chose otherwise; the
+# status is always 0 and neither stream is written to. That is the config layer's own rule, kept
+# here by hand because the token layer may be loaded without the config layer at all — in which
+# case the variable is read raw and the table below is the only vocabulary there is.
+_inzsh_preset_apply() {
+  emulate -L zsh
+
+  local name=${INZSH_PRESET-}
+  if (( ${+functions[_inzsh_config_get]} )); then
+    _inzsh_config_get INZSH_PRESET
+    name=$REPLY
+  fi
+
+  # Normalised the way the registered `word:` spec matched it — case, spacing and punctuation
+  # ignored — so a name the validator blessed is a name this table can find. A value that
+  # normalises to nothing was never a name.
+  name=${(L)name}
+  name=${name//[^a-z0-9]/}
+
+  local register=${_inzsh_preset_registers[$name]-}
+  [[ -n $register ]] || return 0
+
+  typeset -g _inzsh_register=$register
+  _inzsh_tokens_resolve
+
+  return 0
+}
+
 # ---------------------------------------------------------------------------------------
 # Per-segment colour. The one place a segment asks "what colour am I?", so the precedence
 # lives here rather than being re-derived in every segment:
