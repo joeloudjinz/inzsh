@@ -1,0 +1,3 @@
+inzsh golden — preset=default lines=1 cols=80 state=dirty epoch=978352440 user=spec host=spec-host
+row 0 | spec  spec-host  ~/work  ! main |
+row 1 | 12:34|
