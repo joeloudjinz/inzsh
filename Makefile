@@ -57,8 +57,8 @@ watch: ## re-render on save
 golden-update: ## regenerate golden files deliberately
 	@echo "make golden-update: the golden pipeline lands at M8"
 
-bundle: ## concatenate into a single distributable file
-	@echo "make bundle: the manifest lands with the engine at M2"
+bundle: ## concatenate into a single distributable file (dist/inzsh.zsh-theme)
+	@zsh -f tools/bundle.zsh
 
 doctor: ## environment diagnostic, same code path as the shipped command
 	@zsh -f tools/doctor.zsh
