@@ -693,6 +693,17 @@ _inzsh_config_register_family 'INZSH_*_MINCOLS'  int:0:   0
 # nothing set is not a missing answer, it is the instruction to trust `lib/core/detect.zsh`.
 # `INZSH_SEPARATOR_STYLE`, by contrast, has a real default — `arrow` is what an unset, empty or
 # misspelled value gives.
+
+# The preset. `word:` rather than `enum:` because these are names a person types rather than
+# tokens a machine emits — `Warm` and `warm` are one request, the way the prayer authorities
+# already are. The default is EMPTY for the reason the detection overrides are: nothing set is
+# not a missing answer, it is the instruction to leave the token layer's own register alone.
+#
+# `lib/core/tokens.zsh` holds which register each name selects and applies it; the entry point
+# calls that once, at source time. This is the only knob read there rather than at draw time —
+# `docs/configuration.md` says so in the row, and says why.
+_inzsh_config_register INZSH_PRESET           'word:sharp|warm'               ''
+
 _inzsh_config_register INZSH_SURFACE_MODE     'enum:alternate|ramp|flat|hue'  alternate
 _inzsh_config_register INZSH_SEPARATOR_STYLE  'enum:arrow|round|divider'      arrow
 _inzsh_config_register INZSH_COLOR_DEPTH      'enum:truecolor|256|8'          ''
