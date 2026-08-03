@@ -77,20 +77,18 @@ typeset -gi _inzsh_salah_interval_limit=240
 # `test/unit/salah_calc_spec.sh` fails on, by prefix, deliberately. Nothing below refers to
 # anything outside this file. Sourced on its own, it is an array nothing reads.
 #
-# Five of the seven declare `any`, and that is not laziness. The registry's spec grammar has
-# five forms and none of them can say "one of three words, in any case" or "a real number above
-# zero and no higher than thirty" — and a spec that is NEARLY right is worse than one that says
-# the module decides, because it would make the registry disagree with the code below about what
-# a value means. The vocabulary each one accepts is in `docs/configuration.md`; the two the
-# grammar can state exactly are built from the limits above rather than restating them, so a
-# bound cannot be raised in one place only.
+# Every spec here states exactly what the code below accepts, and none of it twice: the method
+# vocabulary is joined from the table and the aliases above, the angle and interval bounds from
+# the limits above, so a method added or a bound raised is one edit. `word:` matches the way
+# `_inzsh_salah_method_key` does — case, spacing and punctuation ignored — and `float:>0:`
+# is `_inzsh_salah_angle_ok`'s "strictly above zero", said in the grammar.
 typeset -ga _inzsh_salah_knobs
 _inzsh_salah_knobs=(
-  INZSH_SALAH_METHOD         any  $_inzsh_salah_default_method
-  INZSH_SALAH_ASR            any  standard
-  INZSH_SALAH_HIGHLAT        any  angle
-  INZSH_SALAH_FAJR_ANGLE     any  ''
-  INZSH_SALAH_ISHA_ANGLE     any  ''
+  INZSH_SALAH_METHOD  "word:${(j:|:)${(@ok)_inzsh_salah_methods}}|${(j:|:)${(@ok)_inzsh_salah_method_aliases}}"  $_inzsh_salah_default_method
+  INZSH_SALAH_ASR            'word:standard|shafi|hanafi'      standard
+  INZSH_SALAH_HIGHLAT        'word:angle|seventh|middle|none'  angle
+  INZSH_SALAH_FAJR_ANGLE     "float:>0:$_inzsh_salah_angle_limit"  ''
+  INZSH_SALAH_ISHA_ANGLE     "float:>0:$_inzsh_salah_angle_limit"  ''
   INZSH_SALAH_ISHA_INTERVAL  "int:1:$_inzsh_salah_interval_limit"  ''
   'INZSH_SALAH_OFFSET_*'  "int:-$_inzsh_salah_offset_limit:$_inzsh_salah_offset_limit"  0
 )
@@ -191,15 +189,20 @@ _inzsh_salah_params() {
     isha=
   fi
 
-  local factor=1
-  case ${(L)INZSH_SALAH_ASR} in
+  # Both words are matched the way a method name is — case, spacing and punctuation ignored —
+  # so a pasted trailing space is not a silent fall to the default, and the registry's `word:`
+  # validator and this file agree exactly on what a value means.
+  local factor=1 school=${(L)INZSH_SALAH_ASR}
+  school=${school//[^a-z0-9]/}
+  case $school in
     (hanafi)              factor=2 ;;
     (standard|shafi|'')   factor=1 ;;
   esac
 
-  local convention=angle
-  case ${(L)INZSH_SALAH_HIGHLAT} in
-    (seventh|middle|none|angle) convention=${(L)INZSH_SALAH_HIGHLAT} ;;
+  local convention=angle norm=${(L)INZSH_SALAH_HIGHLAT}
+  norm=${norm//[^a-z0-9]/}
+  case $norm in
+    (seventh|middle|none|angle) convention=$norm ;;
   esac
 
   local -a out=()

@@ -83,15 +83,14 @@ typeset -gi _inzsh_salah_location_age=-1
 # `lib/core/config.zsh`, so the registry finds the table by name instead. Nothing below names the
 # engine.
 #
-# The two coordinates declare `any`, and that is not laziness. The registry's grammar has no form
-# for "a real number between -90 and 90"; the nearest one it has would refuse `21.4225`, and a
-# validator that is NEARLY right is worse than one that says the module decides, because it would
-# make the registry disagree with the code below about what a value means. The bounds are checked
-# here, against `lib/salah/calc.zsh`'s own range test, which is the same one the arithmetic uses.
+# The two coordinates declare the ranges the reference states — decimal degrees, and the same
+# bounds `lib/salah/calc.zsh`'s own range test enforces, so the registry and the arithmetic
+# agree on what a position is. The bounds are geographic constants, not tunables, which is why
+# they may be written here as literals.
 typeset -ga _inzsh_salah_location_knobs
 _inzsh_salah_location_knobs=(
-  INZSH_SALAH_LAT                  any   ''
-  INZSH_SALAH_LON                  any   ''
+  INZSH_SALAH_LAT                  'float:-90:90'    ''
+  INZSH_SALAH_LON                  'float:-180:180'  ''
   INZSH_SALAH_AUTOLOCATE           bool  0
   INZSH_SALAH_AUTOLOCATE_TTL       'int:300:'  $_inzsh_salah_autolocate_ttl_default
   INZSH_SALAH_AUTOLOCATE_TIMEOUT   'int:1:60'  $_inzsh_salah_autolocate_timeout_default

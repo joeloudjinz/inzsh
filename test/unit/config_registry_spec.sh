@@ -250,6 +250,46 @@ Describe 'a module that may not call the registry'
     The output should eq ''
     The stderr should eq ''
   End
+
+  It 'validates the salah knobs the way the reference states them'
+    # One probe per documented bound: the value the reference blesses comes back as itself,
+    # the value it refuses comes back as the registered default — never carried.
+    validated() {
+      zsh -f -c '
+        source $1/lib/core/config.zsh
+        source $1/lib/salah/calc.zsh
+        source $1/lib/salah/methods.zsh
+        source $1/lib/salah/location.zsh
+        _inzsh_config_absorb_all || print -r -- absorb-failed
+        local -a wrong=()
+        probe() {
+          typeset -g "$1"="$2"
+          _inzsh_config_get "$1"
+          [[ $REPLY == "$3" ]] || wrong+="$1=$2->$REPLY"
+        }
+        probe INZSH_SALAH_LAT 21.4225 21.4225
+        probe INZSH_SALAH_LAT 200 ""
+        probe INZSH_SALAH_LAT banana ""
+        probe INZSH_SALAH_LON -180 -180
+        probe INZSH_SALAH_LON 180.5 ""
+        probe INZSH_SALAH_METHOD "Umm al-Qura" "Umm al-Qura"
+        probe INZSH_SALAH_METHOD banana MWL
+        probe INZSH_SALAH_ASR Hanafi Hanafi
+        probe INZSH_SALAH_ASR banana standard
+        probe INZSH_SALAH_HIGHLAT Seventh Seventh
+        probe INZSH_SALAH_HIGHLAT banana angle
+        probe INZSH_SALAH_FAJR_ANGLE 18.5 18.5
+        probe INZSH_SALAH_FAJR_ANGLE 0 ""
+        probe INZSH_SALAH_FAJR_ANGLE 31 ""
+        probe INZSH_SALAH_ISHA_ANGLE 17.5 17.5
+        probe INZSH_SALAH_ISHA_ANGLE -1 ""
+        print -r -- "${wrong[*]}"
+      ' inzsh-salah-validated "$SHELLSPEC_PROJECT_ROOT"
+    }
+    When call validated
+    The output should eq ''
+    The stderr should eq ''
+  End
 End
 
 Describe 'defaults restated for a partial load'
