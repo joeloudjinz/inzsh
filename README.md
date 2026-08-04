@@ -116,13 +116,16 @@ One exception, opt-in and off unless you enable it: `INZSH_SALAH_AUTOLOCATE=1` p
 to a third-party IP geolocation service to determine your location, which means your IP address
 is sent to that service. Even then the theme never makes the request on its own — you run
 `inzsh locate` when you want the stored position refreshed. Setting your coordinates manually
-avoids all of this entirely.
+avoids all of this entirely. The precise statement of what leaves the machine is in
+[known limitations, privacy and colour accessibility](docs/limitations.md).
 
 ## Colour accessibility
 
 Every foreground/background pairing is verified against WCAG AA, in both presets and at both
 colour depths. The palette is checked under protanopia, deuteranopia and tritanopia simulation,
-and no state is signalled by colour alone — each carries a glyph.
+and no state is signalled by colour alone — each carries a glyph. The scope of that claim —
+and what it deliberately does not cover — is stated in
+[known limitations, privacy and colour accessibility](docs/limitations.md).
 
 ## Something looks wrong?
 
