@@ -1,0 +1,67 @@
+name: release
+
+# main moves only when a release cuts from dev, so a push to main *is* the release
+# trigger: verify, build the bundle, then let semantic-release read the commits
+# since the last tag, pick the version, tag it, and publish the GitHub release
+# with the bundle attached. Config lives in .releaserc.yml; flow in docs/releasing.md.
+
+on:
+  push:
+    branches: [main]
+
+# semantic-release pushes the tag and creates the release — contents is the only
+# scope it needs; issue/PR commenting is switched off in .releaserc.yml.
+permissions:
+  contents: write
+
+# ${(m)#…} width accounting counts bytes, not cells, outside a UTF-8 locale —
+# pin one so every job measures the same thing (the 5.8 container defaults to C).
+env:
+  LC_ALL: C.UTF-8
+
+jobs:
+  # The gate: the locally-runnable suite, same steps as ci.yml's test job. The full
+  # ci workflow (installer, ui, golden, perf, zsh 5.8) runs on the same push; this
+  # job exists so a release can never outrun the basics even while ci is queued.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install zsh
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+      - name: Install ShellSpec
+        run: |
+          git clone --depth 1 https://github.com/shellspec/shellspec.git "$HOME/.shellspec-src"
+          echo "$HOME/.shellspec-src" >> "$GITHUB_PATH"
+      - name: Guard against a silent skip
+        run: zsh tools/spec-guard.zsh
+      - name: L1 unit + L2 render
+        run: shellspec test/unit test/render
+
+  release:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      # Full history — semantic-release walks every commit since the last tag to
+      # compute the version, and a shallow clone would hide them.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install zsh
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+      - name: Build the single-file bundle
+        run: make bundle
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      # npx with pinned versions, no package.json — the repo is zsh and this is the
+      # whole node footprint. The preset package rides along because the analyzer
+      # loads it at runtime.
+      - name: semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          npx --yes
+          --package semantic-release@25.0.8
+          --package conventional-changelog-conventionalcommits@10.2.1
+          semantic-release
