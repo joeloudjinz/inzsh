@@ -53,6 +53,19 @@ if [[ ${(t)_inzsh_glyph} == association* && -n ${_inzsh_glyph[ellipsis]} ]]; the
   _inzsh_layout_ellipsis=${_inzsh_glyph[ellipsis]}
 fi
 
+# The same read, repeated at call time by both truncators, so an `INZSH_GLYPH_ELLIPSIS` override
+# resolved into the table has moved the marker by the next draw — the source-time read above is
+# what a layout layer with no token layer keeps.
+_inzsh_layout_marker() {
+  emulate -L zsh
+
+  if [[ ${(t)_inzsh_glyph} == association* && -n ${_inzsh_glyph[ellipsis]} ]]; then
+    typeset -g _inzsh_layout_ellipsis=${_inzsh_glyph[ellipsis]}
+  fi
+
+  return 0
+}
+
 # Display width of a literal string, nothing stripped. The one place `${(m)#...}` is spelled
 # out, so the locale caveat above has a single home. Answer in REPLY.
 _inzsh_width_raw() {
@@ -420,6 +433,8 @@ _inzsh_truncate_path() {
   emulate -L zsh
   setopt extended_glob
 
+  _inzsh_layout_marker
+
   typeset -g REPLY=
 
   # $HOME collapses first, because it is the shortening that costs nothing: `~` is not an
@@ -495,6 +510,8 @@ _inzsh_truncate_path() {
 _inzsh_truncate_text() {
   emulate -L zsh
   setopt extended_glob
+
+  _inzsh_layout_marker
 
   typeset -g REPLY=
 

@@ -954,8 +954,12 @@ Describe 'path truncation'
       # In a UTF-8 locale the ellipsis is one column and this can never happen, which is exactly
       # why it is asserted with a marker forced wider: `${(m)#…}` counts BYTES outside a
       # multibyte locale, so on that path the marker really is three columns, and a marker that
-      # does not fit must give way to the text rather than overflow.
+      # does not fit must give way to the text rather than overflow. Forced through the GLYPH
+      # TABLE rather than through `_inzsh_layout_ellipsis`, because the truncators re-read the
+      # table on every call — that is what lets `INZSH_GLYPH_ELLIPSIS` move the marker at the
+      # next prompt, and a pinned local would be overwritten by that same read.
       wide_marker() {
+        local -A _inzsh_glyph=(ellipsis '...')
         local _inzsh_layout_ellipsis='...'
         local -a seen=()
         _inzsh_truncate_text 'abcdef' 2; seen+="[$REPLY]"

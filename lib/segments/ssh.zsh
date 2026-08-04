@@ -95,6 +95,13 @@ typeset -g _inzsh_ssh_label='ssh'
 _inzsh_segment_ssh_build() {
   emulate -L zsh
 
+  # The mark, re-read from the table on every build so an `INZSH_GLYPH_WARN` override set at one
+  # prompt has moved by the next. The source-time copy above stays as the fallback for a shell
+  # with no table at all.
+  if [[ ${(t)_inzsh_glyph} == association* && -n ${_inzsh_glyph[warn]} ]]; then
+    typeset -g _inzsh_ssh_glyph=${_inzsh_glyph[warn]}
+  fi
+
   typeset -gA _inzsh_segment_text
   _inzsh_segment_text[SSH]=
 

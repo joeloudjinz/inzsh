@@ -3,6 +3,10 @@ Include lib/core/tokens.zsh
 Include lib/core/layout.zsh
 Include lib/core/engine.zsh
 Include lib/core/render.zsh
+Include lib/segments/retval.zsh
+Include lib/segments/git.zsh
+Include lib/segments/ssh.zsh
+Include lib/segments/jobs.zsh
 
 # The glyph knobs — `INZSH_GLYPH_<MARK>`, one family over every key of the token layer's glyph
 # table. Issue #176: every fixed visual choice becomes a knob, and the marks were the largest
@@ -210,6 +214,96 @@ Describe 'the glyph knob family'
       }
       When call live
       The output should eq ''
+      The stderr should eq ''
+    End
+
+    It 'reaches the state marks the segments carry, at the next build'
+      # The reason the mechanism is the TABLE: a segment's mark moves with the knob because the
+      # segment re-reads the table it always read, at build time — no per-segment glyph knob
+      # exists, and none may. One example per source-time copy that used to be fixed.
+      segments() {
+        local INZSH_GLYPH_ERROR=E INZSH_GLYPH_WARN=W INZSH_GLYPH_AHEAD='^' INZSH_GLYPH_INFO=J
+        _inzsh_glyphs_resolve
+
+        local -a wrong=()
+        _inzsh_segment_text=()
+
+        _inzsh_segment_retval_build 1
+        [[ ${_inzsh_segment_text[RETVAL]} == 'E 1' ]] || wrong+=retval:${_inzsh_segment_text[RETVAL]}
+
+        local -A pinned=(repo 1 branch main dirty 2 ahead 1)
+        _inzsh_segment_git_build pinned
+        [[ ${_inzsh_segment_text[GIT]} == 'W main ^1' ]] || wrong+=git:${_inzsh_segment_text[GIT]}
+
+        _inzsh_segment_ssh_build somewhere
+        [[ ${_inzsh_segment_text[SSH]} == 'W ssh' ]] || wrong+=ssh:${_inzsh_segment_text[SSH]}
+
+        _inzsh_segment_jobs_build 2 0
+        [[ ${_inzsh_segment_text[JOBS]} == 'J 2' ]] || wrong+=jobs:${_inzsh_segment_text[JOBS]}
+
+        print -r -- "${wrong[*]}"
+      }
+      When call segments
+      The output should eq ''
+    End
+
+    It 'lets go of an override at the next build, back to the theme"s own mark'
+      restored() {
+        local INZSH_GLYPH_ERROR=E
+        _inzsh_glyphs_resolve
+        _inzsh_segment_retval_build 1
+        local overridden=${_inzsh_segment_text[RETVAL]}
+        unset INZSH_GLYPH_ERROR
+        _inzsh_glyphs_resolve
+        _inzsh_segment_retval_build 1
+        local after=${_inzsh_segment_text[RETVAL]}
+        local -a wrong=()
+        [[ $overridden == 'E 1' ]]                    || wrong+=set:$overridden
+        [[ $after == "${_inzsh_glyph[error]} 1" ]]    || wrong+=unset:$after
+        print -r -- "${wrong[*]}"
+      }
+      When call restored
+      The output should eq ''
+    End
+
+    It 'reaches the truncation marker the path shortens with'
+      ellipsis() {
+        local INZSH_GLYPH_ELLIPSIS='..'
+        _inzsh_glyphs_resolve
+        _inzsh_truncate_path /aaa/bbb/ccc 8
+        local path=$REPLY
+        _inzsh_truncate_text abcdef 5
+        local text=$REPLY
+        unset INZSH_GLYPH_ELLIPSIS
+        _inzsh_glyphs_resolve
+        print -r -- "$path $text"
+      }
+      When call ellipsis
+      The output should eq '../ccc abc..'
+    End
+
+    It 'reaches the kicker between the prayer and its time'
+      # In its own shell because the salah segment carries real state; the table is the same
+      # fixture day `segment_salah_spec` pins, reduced to the one moment this claim needs.
+      kicker() {
+        zsh -f -c '
+          local root=$1
+          source $root/lib/core/tokens.zsh
+          source $root/lib/salah/calc.zsh
+          source $root/lib/segments/salah.zsh
+          local -x TZ=UTC
+          local -A table=(fajr 1780284600 sunrise 1780290000 dhuhr 1780315200
+                          asr 1780327800 maghrib 1780340400 isha 1780345800)
+          typeset -g INZSH_GLYPH_DOT=,
+          _inzsh_glyphs_resolve
+          typeset -gA _inzsh_segment_text
+          _inzsh_segment_text=()
+          _inzsh_segment_salah_build 1780336800 table
+          print -r -- "${_inzsh_segment_text[SALAH]}"
+        ' inzsh-glyph-kicker "$SHELLSPEC_PROJECT_ROOT"
+      }
+      When call kicker
+      The output should eq 'Maghrib , 19:00'
       The stderr should eq ''
     End
 

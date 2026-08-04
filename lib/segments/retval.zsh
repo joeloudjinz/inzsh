@@ -134,6 +134,14 @@ _inzsh_retval_signal() {
 _inzsh_segment_retval_build() {
   emulate -L zsh
 
+  # The mark, re-read from the table on every build so an `INZSH_GLYPH_ERROR` set at one prompt
+  # has moved by the next — the render core re-resolves the table per draw, and a source-time
+  # copy would keep the mark the theme loaded with. The copy above stays as the fallback for a
+  # shell with no table at all.
+  if [[ ${(t)_inzsh_glyph} == association* && -n ${_inzsh_glyph[error]} ]]; then
+    typeset -g _inzsh_retval_glyph=${_inzsh_glyph[error]}
+  fi
+
   typeset -gA _inzsh_segment_text
   _inzsh_segment_text[RETVAL]=
 

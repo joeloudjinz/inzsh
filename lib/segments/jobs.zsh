@@ -146,6 +146,14 @@ _inzsh_jobs_tally() {
 _inzsh_segment_jobs_build() {
   emulate -L zsh
 
+  # The two marks, re-read from the table on every build so an `INZSH_GLYPH_*` override set at
+  # one prompt has moved by the next. The source-time copies above stay as the fallback for a
+  # shell with no table at all.
+  if [[ ${(t)_inzsh_glyph} == association* ]]; then
+    [[ -n ${_inzsh_glyph[info]} ]] && typeset -g _inzsh_jobs_glyph_running=${_inzsh_glyph[info]}
+    [[ -n ${_inzsh_glyph[dash]} ]] && typeset -g _inzsh_jobs_glyph_suspended=${_inzsh_glyph[dash]}
+  fi
+
   typeset -gA _inzsh_segment_text
   _inzsh_segment_text[JOBS]=
 
