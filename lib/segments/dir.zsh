@@ -66,8 +66,20 @@ _inzsh_segment_dir_build() {
   local shown=${1-$PWD}
   [[ -n $shown ]] || shown=$PWD
 
+  # How the path shortens, before any budget is asked: keep at most this many trailing
+  # components, the ellipsis standing for the rest. `0` — the default — is the whole path. Read
+  # through the registry where it is loaded; the grammar below is the same rule for a segment
+  # sourced without the config layer, and anything unreadable means no cap — a typo shows a
+  # longer path, where obeying it could hide one.
+  local keep=${INZSH_DIR_COMPONENTS-}
+  if (( ${+functions[_inzsh_config_get]} )); then
+    _inzsh_config_get INZSH_DIR_COMPONENTS
+    keep=$REPLY
+  fi
+  [[ $keep == (|+)<-> ]] || keep=0
+
   if (( ${+functions[_inzsh_truncate_path]} )); then
-    _inzsh_truncate_path "$shown" "${2-}"
+    _inzsh_truncate_path "$shown" "${2-}" "$keep"
     shown=$REPLY
   fi
 
@@ -82,3 +94,11 @@ _inzsh_segment_dir_build() {
 
   return 0
 }
+
+# The knob this segment reads, declared beside the code that reads it — the pattern
+# `lib/segments/git.zsh` follows. Guarded, because this file is independently sourceable. The
+# floor is 0 — no cap, the whole path — and there is deliberately no ceiling: a cap wider than
+# the path is simply never reached, and the budget above still owns the row.
+if (( ${+functions[_inzsh_config_register]} )); then
+  _inzsh_config_register INZSH_DIR_COMPONENTS 'int:0:' 0
+fi
