@@ -1,3 +1,4 @@
+Include lib/core/config.zsh
 Include lib/core/tokens.zsh
 Include lib/core/layout.zsh
 Include lib/core/engine.zsh
@@ -346,6 +347,134 @@ Describe 'the exit-status segment'
     It 'names signals inside a chain too, so one rule reads both ways'
       When call inzsh_spec_retval_split '0 0 141'
       The output should eq '[G 0|SIGPIPE]'
+    End
+  End
+
+  # --------------------------------------------------------------------------------------------
+  Describe 'how a failure is written — the knobs'
+    # Issue #176: the two decisions this file took at design time — the signal as a NAME, the
+    # whole PIPELINE chain — become knobs with those decisions as their defaults. Every example
+    # above this group runs with both unset, so the defaults stay pinned by the groups that
+    # argued for them.
+
+    Describe 'INZSH_RETVAL_SIGNAL'
+      It 'is registered with the config layer, validator and default'
+        registered() {
+          print -r -- "${_inzsh_config_validators[INZSH_RETVAL_SIGNAL]-missing}"
+          print -r -- "${_inzsh_config_defaults[INZSH_RETVAL_SIGNAL]-missing}"
+        }
+        When call registered
+        The line 1 of output should eq 'enum:name|number'
+        The line 2 of output should eq 'name'
+      End
+
+      Describe 'what a value draws for status 130'
+        # `number` keeps the encoded status — for the reader who greps logs by code and would
+        # rather undo the 128+n themselves. Everything unreadable lands on the default, which
+        # is the name and the argument for it.
+        Parameters
+          name    '[G SIGINT]'
+          number  '[G 130]'
+          Number  '[G SIGINT]'
+          banana  '[G SIGINT]'
+          ''      '[G SIGINT]'
+          131     '[G SIGINT]'
+        End
+
+        It "draws 130 as $2 when the knob is '$1'"
+          signal() {
+            local INZSH_RETVAL_SIGNAL=$1
+            inzsh_spec_retval 130
+          }
+          When call signal "$1"
+          The output should eq "$2"
+        End
+      End
+
+      It 'keeps the number inside a chain too, so one rule reads both ways'
+        chained() {
+          local INZSH_RETVAL_SIGNAL=number
+          inzsh_spec_retval_split '0 0 141'
+        }
+        When call chained
+        The output should eq '[G 0|141]'
+      End
+
+      It 'leaves a status no signal answers to exactly as it was'
+        plain() {
+          local INZSH_RETVAL_SIGNAL=number
+          inzsh_spec_retval 7
+        }
+        When call plain
+        The output should eq '[G 7]'
+      End
+    End
+
+    Describe 'INZSH_RETVAL_PIPELINE'
+      It 'is registered with the config layer, validator and default'
+        registered() {
+          print -r -- "${_inzsh_config_validators[INZSH_RETVAL_PIPELINE]-missing}"
+          print -r -- "${_inzsh_config_defaults[INZSH_RETVAL_PIPELINE]-missing}"
+        }
+        When call registered
+        The line 1 of output should eq 'bool'
+        The line 2 of output should eq '1'
+      End
+
+      Describe 'off trusts the status alone'
+        # The chain exists because `$?` is only the last stage; turning it off is choosing to
+        # trust `$?` after all, and the drawn result must be exactly what the status says —
+        # including saying nothing when the status is 0, which is the trade the row documents.
+        Parameters
+          '0 1 0'        '[]'
+          '1 1 0'        '[G 1]'
+          '130 130 0'    '[G SIGINT]'
+          '0 0 0'        '[]'
+        End
+
+        It "draws ($1) as $2 with the chain off"
+          off() {
+            local INZSH_RETVAL_PIPELINE=0
+            inzsh_spec_retval_split "$1"
+          }
+          When call off "$1"
+          The output should eq "$2"
+        End
+      End
+
+      Describe 'every off spelling works and everything unreadable stays on'
+        # $1 the value, $2 what a failed three-stage pipeline draws under it.
+        Parameters
+          false    '[G 1]'
+          OFF      '[G 1]'
+          no       '[G 1]'
+          1        '[G 1|0|0]'
+          banana   '[G 1|0|0]'
+          ''       '[G 1|0|0]'
+        End
+
+        It "draws (1 1 0 0) as $2 when the knob is '$1'"
+          spelled() {
+            local INZSH_RETVAL_PIPELINE=$1
+            inzsh_spec_retval_split '1 1 0 0'
+          }
+          When call spelled "$1"
+          The output should eq "$2"
+        End
+      End
+    End
+
+    It 'reads both knobs fresh on every build rather than caching the first answer'
+      live() {
+        local -a seen=()
+        local INZSH_RETVAL_SIGNAL=number INZSH_RETVAL_PIPELINE=0
+        seen+="$(inzsh_spec_retval_split '130 1 130')"
+        INZSH_RETVAL_SIGNAL=name INZSH_RETVAL_PIPELINE=1
+        seen+="$(inzsh_spec_retval_split '130 1 130')"
+        print -r -- "${(j: :)seen}"
+      }
+      When call live
+      The output should eq '[G 130] [G 1|SIGINT]'
     End
   End
 
