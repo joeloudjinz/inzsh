@@ -175,6 +175,18 @@ _inzsh_segment_git_build() {
   emulate -L zsh
   setopt extended_glob
 
+  # The six marks, re-read from the table on every build so an `INZSH_GLYPH_*` override set at
+  # one prompt has moved by the next. The source-time copies above stay as the fallback for a
+  # shell with no table at all.
+  if [[ ${(t)_inzsh_glyph} == association* ]]; then
+    [[ -n ${_inzsh_glyph[ok]} ]]     && typeset -g _inzsh_git_glyph_clean=${_inzsh_glyph[ok]}
+    [[ -n ${_inzsh_glyph[warn]} ]]   && typeset -g _inzsh_git_glyph_dirty=${_inzsh_glyph[warn]}
+    [[ -n ${_inzsh_glyph[info]} ]]   && typeset -g _inzsh_git_glyph_staged=${_inzsh_glyph[info]}
+    [[ -n ${_inzsh_glyph[dash]} ]]   && typeset -g _inzsh_git_glyph_detached=${_inzsh_glyph[dash]}
+    [[ -n ${_inzsh_glyph[ahead]} ]]  && typeset -g _inzsh_git_glyph_ahead=${_inzsh_glyph[ahead]}
+    [[ -n ${_inzsh_glyph[behind]} ]] && typeset -g _inzsh_git_glyph_behind=${_inzsh_glyph[behind]}
+  fi
+
   typeset -gA _inzsh_segment_text _inzsh_segment_fg_role _inzsh_segment_bg_role
   _inzsh_segment_text[GIT]=
   _inzsh_segment_fg_role[GIT]=text-body

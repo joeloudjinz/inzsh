@@ -458,7 +458,8 @@ _inzsh_glyph_ascii=(
 )
 
 # Rebuild `_inzsh_glyph` (role → the mark to draw) from whichever of the two tables the
-# terminal can actually show. Parameter operations only: no subprocesses, no forks.
+# terminal can actually show. Parameter operations only: no subprocesses, no forks — the render
+# core re-runs this before every draw, so an override typed at one prompt has moved by the next.
 #
 # Two independent ways to fail, and both land on ASCII:
 #
@@ -472,6 +473,22 @@ _inzsh_glyph_ascii=(
 #
 # A key with no fallback is a theme bug rather than a user one, and it costs a legible mark
 # rather than the prompt: `?` is visibly wrong, an empty string is invisibly wrong.
+#
+# ON TOP OF BOTH sits the user's own answer: `INZSH_GLYPH_<KEY>` — the key uppercased, dashes as
+# underscores, so `sep-left` is `INZSH_GLYPH_SEP_LEFT` — replaces the mark for every reader of
+# the table at once. It wins over the ASCII degradation too, deliberately: like `INZSH_NERD_FONT`
+# it is a user reporting their own screen, and two knobs that both mean that must not fight.
+#
+# The override is read RAW, though the family is registered with the config layer. It answers
+# `any` with an empty default, so the registry's answer IS the parameter, character for
+# character — the same argument `_inzsh_seg_color` makes for the colour families, on the same
+# hot path. What the registration buys is discoverability, and the gate in
+# `test/unit/config_registry_spec.sh` holds the read to it.
+#
+# Refused whole, never sanitised: a `%` opens a prompt escape wherever the mark is drawn, and a
+# control character breaks the row the renderer just measured — either would change whether the
+# prompt draws, which no knob may. A mark the theme had to edit is a mark the user did not set,
+# so the table's own stands instead. Empty means unset, as everywhere.
 _inzsh_glyphs_resolve() {
   emulate -L zsh
 
@@ -481,17 +498,28 @@ _inzsh_glyphs_resolve() {
   local -i multibyte=1
   [[ ${_inzsh_multibyte-1} == 0 ]] && multibyte=0
 
-  local key value
+  local key value var override
   for key value in "${(@kv)_inzsh_glyph_utf8}"; do
     if (( multibyte )) && (( ${#value} == 1 )); then
       _inzsh_glyph[$key]=$value
     else
       _inzsh_glyph[$key]=${_inzsh_glyph_ascii[$key]:-'?'}
     fi
+
+    var=INZSH_GLYPH_${(U)key//-/_}
+    override=${(P)var-}
+    [[ -n $override && $override != *[[:cntrl:]%]* ]] && _inzsh_glyph[$key]=$override
   done
 
   return 0
 }
+
+# The glyph family, declared beside the table it overrides — the pattern every segment follows
+# for its own knobs. Guarded because this file is independently sourceable; the entry point
+# sources `lib/core/config.zsh` first, so in any whole load the registration runs.
+if (( ${+functions[_inzsh_config_register_family]} )); then
+  _inzsh_config_register_family 'INZSH_GLYPH_*' any ''
+fi
 
 _inzsh_tokens_resolve
 _inzsh_glyphs_resolve

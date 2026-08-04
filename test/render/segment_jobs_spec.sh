@@ -493,7 +493,11 @@ build=0 []'
           [[ $line == *'_inzsh_glyph[info]'* ]] && found+=running
           [[ $line == *'_inzsh_glyph[dash]'* ]] && found+=suspended
         done
-        (( ${#found} == 2 )) || bad+=table-reads:${#found}
+        # Each mark is read twice — once at source time for the fallback, once per build so an
+        # `INZSH_GLYPH_*` override is live — so the claim is that BOTH marks are read, not that
+        # each is read once.
+        local -a unique=(${(u)found})
+        (( ${#unique} == 2 )) || bad+=table-reads:${(j:,:)unique}
         print -rl -- $bad
       }
       When call glyphs

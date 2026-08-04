@@ -31,17 +31,14 @@ jobs:
           done < <(find . -path ./.git -prune -o \( -name '*.zsh' -o -name '*.zsh-theme' \) -print)
           [ "$found" = 1 ] || echo "no zsh sources yet"
 
+  # macOS is covered by `.github/workflows/macos.yml`, dispatched by hand — the runner
+  # minutes cost ten times Linux's, and the macOS leg has only ever caught one flake.
   test:
     needs: syntax
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Install zsh (Linux)
-        if: runner.os == 'Linux'
+      - name: Install zsh
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
       - name: Install ShellSpec
         run: |

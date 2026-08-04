@@ -1,3 +1,4 @@
+Include lib/core/config.zsh
 Include lib/core/tokens.zsh
 Include lib/core/layout.zsh
 Include lib/core/engine.zsh
@@ -56,7 +57,10 @@ inzsh_spec_dir_touches() {
     for line in $after;  do (( ${before[(Ie)$line]} )) || touched+=${${line%%=*}##* }; done
     for line in $before; do (( ${after[(Ie)$line]} ))  || touched+=${${line%%=*}##* }; done
     touched=(${(ou)touched})
-    touched=(${touched:#(RANDOM|SECONDS)})
+    # `functions` is zsh/parameter surfacing on its first reference — the guarded knob
+    # registration at the foot of the file asks `${+functions[...]}` — not state the segment
+    # wrote. RANDOM and SECONDS move between any two snapshots on their own.
+    touched=(${touched:#(RANDOM|SECONDS|functions)})
     print -r -- "${touched[*]}"
   ' inzsh-dir-registration "$SHELLSPEC_PROJECT_ROOT" "$snap" "$1"
 }
@@ -227,6 +231,85 @@ Describe 'the dir segment'
         Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
         When call inzsh_spec_dir /spec/home/a/bb/ccc/dddd "$1"
         The output should eq "$2"
+      End
+    End
+
+    Describe 'how the path shortens — INZSH_DIR_COMPONENTS'
+      # The knob for the SHAPE of the shortening rather than its trigger: keep at most this many
+      # trailing components, ellipsis in front, before any budget is even asked. `0` — the
+      # default — is the whole path. The ladder below the kept tail is unchanged, so a narrow
+      # terminal can still shorten further.
+      Describe 'what a value keeps of /spec/home/a/bb/ccc/dddd'
+        # $1 the knob, $2 the fragment.
+        Parameters
+          2    '…/ccc/dddd'
+          1    '…/dddd'
+          4    '~/a/bb/ccc/dddd'
+          0    '~/a/bb/ccc/dddd'
+          -1   '~/a/bb/ccc/dddd'
+          abc  '~/a/bb/ccc/dddd'
+          2.5  '~/a/bb/ccc/dddd'
+          ''   '~/a/bb/ccc/dddd'
+        End
+
+        It "draws '$2' when the knob is '$1'"
+          Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
+          kept() {
+            local INZSH_DIR_COMPONENTS=$1
+            inzsh_spec_dir /spec/home/a/bb/ccc/dddd
+          }
+          When call kept "$1"
+          The output should eq "$2"
+        End
+      End
+
+      It 'is registered with the config layer, validator and default'
+        registered() {
+          print -r -- "${_inzsh_config_validators[INZSH_DIR_COMPONENTS]-missing}"
+          print -r -- "[${_inzsh_config_defaults[INZSH_DIR_COMPONENTS]-missing}]"
+        }
+        When call registered
+        The line 1 of output should eq 'int:0:'
+        The line 2 of output should eq '[0]'
+      End
+
+      It 'still obeys the budget below the kept tail'
+        Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
+        both() {
+          local INZSH_DIR_COMPONENTS=2
+          inzsh_spec_dir /spec/home/a/bb/ccc/dddd 9
+        }
+        When call both
+        The output should eq '…/dddd'
+      End
+
+      It 'reads the knob fresh on every build rather than caching the first answer'
+        Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
+        live() {
+          local -a seen=()
+          local INZSH_DIR_COMPONENTS=1
+          seen+="[$(inzsh_spec_dir /spec/home/a/bb/ccc/dddd)]"
+          INZSH_DIR_COMPONENTS=0
+          seen+="[$(inzsh_spec_dir /spec/home/a/bb/ccc/dddd)]"
+          print -r -- "${seen[*]}"
+        }
+        When call live
+        The output should eq '[…/dddd] [~/a/bb/ccc/dddd]'
+      End
+
+      It 'shortens with the marker the glyph knob chose'
+        # Item 5 of #176 in one example: the HOW is this knob, the MARKER is the glyph family's
+        # `INZSH_GLYPH_ELLIPSIS`, and the two compose because both are read at build time.
+        marked() {
+          local INZSH_DIR_COMPONENTS=1 INZSH_GLYPH_ELLIPSIS='>>'
+          _inzsh_glyphs_resolve
+          local out=$(inzsh_spec_dir /spec/home/a/bb/ccc/dddd)
+          unset INZSH_GLYPH_ELLIPSIS
+          _inzsh_glyphs_resolve
+          print -r -- "$out"
+        }
+        When call marked
+        The output should eq '>>/dddd'
       End
     End
 

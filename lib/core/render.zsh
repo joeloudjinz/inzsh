@@ -217,8 +217,9 @@ typeset -gA _inzsh_segment_priority
 # What `dir` books when the row is fitted, rather than the width it currently happens to be. It is
 # the one segment that shortens instead of vanishing, so what it truly needs is the ellipsis, one
 # path component and the padding around them — everything past that is negotiable, and the
-# truncation pass negotiates it. Four columns of content plus the two of padding.
-typeset -gi _inzsh_dir_reserved=6
+# truncation pass negotiates it. Four columns of CONTENT: the padding is added where the booking
+# is made, from the resolved `INZSH_SEGMENT_PAD`, the same way every other block's is.
+typeset -gi _inzsh_dir_reserved=4
 
 # The visible width of the last build, in columns. Tracked as the string is assembled rather than
 # measured off the finished one: the result is escape-laden and its width cannot be recovered from
@@ -341,6 +342,36 @@ _inzsh_separators() {
 }
 
 _inzsh_separators
+
+# ---------------------------------------------------------------------------------------------
+# The padding — how many columns of air sit either side of a block's text. One by default, which
+# is the block shape the theme shipped with; `0` packs the row and `4` spreads it. Bounded above
+# because padding is LITERAL SPACES, the one thing in a prompt that can push a row past the edge
+# of the terminal: a bound the validator states is a wrap nobody can configure into existence,
+# which is the same argument `_inzsh_render_gap` makes about the gap.
+typeset -g _inzsh_render_pad_resolved=1
+
+# Resolve INZSH_SEGMENT_PAD into `_inzsh_render_pad_resolved`. Unset, empty, out of bounds,
+# unparseable — all of it lands on 1, exactly as `_inzsh_surface_mode` lands on `alternate` and
+# for the same reason. The pattern repeats the validator rather than trusting what came back,
+# because this file is independently sourceable; the arithmetic assignment normalises `+3` and
+# `03` to the number they name.
+_inzsh_render_pad() {
+  emulate -L zsh
+
+  local want=${INZSH_SEGMENT_PAD-}
+  if (( ${+functions[_inzsh_config_get]} )); then
+    _inzsh_config_get INZSH_SEGMENT_PAD
+    want=$REPLY
+  fi
+
+  typeset -g _inzsh_render_pad_resolved=1
+  if [[ $want == (|+)<-> ]] && (( want <= 4 )); then
+    (( _inzsh_render_pad_resolved = want ))
+  fi
+
+  return 0
+}
 
 # `%K{value}` or `%F{value}` for channel $1 (`K` or `F`) and colour $2, in REPLY. An EMPTY value
 # resets the channel instead — `%k` / `%f`. That case is real: `_inzsh_seg_color` answers empty
@@ -503,8 +534,9 @@ _inzsh_render_hues() {
 # reset escape: an "empty" prompt that still writes `%f%k` is an empty prompt with an escape in
 # it.
 #
-# A block is `<pad><text><pad>`, one column of padding either side, so a block is
-# `_inzsh_width` of its text plus 2. A side of n visible segments draws n separators, not n-1:
+# A block is `<pad><text><pad>`, `INZSH_SEGMENT_PAD` columns of padding either side (one by
+# default), so a block is `_inzsh_width` of its text plus twice the resolved padding. A side of
+# n visible segments draws n separators, not n-1:
 # the extra one is the cap the ribbon ends (left) or starts (right) with, over the terminal's own
 # background.
 #
@@ -589,8 +621,12 @@ _inzsh_render_build() {
 
   # The style is resolved before the surfaces are, because it decides which invariant they are
   # held to, and re-read on every build for the same reason the surface mode is: a knob is
-  # whatever the user's shell says right now, and the next prompt is when it takes effect.
+  # whatever the user's shell says right now, and the next prompt is when it takes effect. The
+  # padding follows the same rule; `${(l:pad:):-}` is `pad` spaces, and none at 0.
   _inzsh_separators
+  _inzsh_render_pad
+  local -i pad=$_inzsh_render_pad_resolved
+  local air=${(l:pad:):-}
 
   _inzsh_render_surfaces $n "${importances[@]}"
   _inzsh_render_hues "${visible[@]}"
@@ -650,7 +686,7 @@ _inzsh_render_build() {
   local -i used=0
   if [[ $1 == left ]]; then
     for (( i = 1; i <= n; i++ )); do
-      drawn+="${fill[i]}${face[i]} ${texts[i]} "
+      drawn+="${fill[i]}${face[i]}${air}${texts[i]}${air}"
       if (( i < n )); then
         drawn+="${fill[i+1]}${ink[i]}${glyph}"
       else
@@ -659,7 +695,7 @@ _inzsh_render_build() {
       if (( measure )); then
         _inzsh_width "${texts[i]}"
         _inzsh_width_add used $REPLY
-        _inzsh_width_add used $(( 2 + sep ))
+        _inzsh_width_add used $(( 2 * pad + sep ))
       fi
     done
   else
@@ -669,11 +705,11 @@ _inzsh_render_build() {
       else
         drawn+="${fill[i-1]}${ink[i]}${glyph}"
       fi
-      drawn+="${fill[i]}${face[i]} ${texts[i]} "
+      drawn+="${fill[i]}${face[i]}${air}${texts[i]}${air}"
       if (( measure )); then
         _inzsh_width "${texts[i]}"
         _inzsh_width_add used $REPLY
-        _inzsh_width_add used $(( 2 + sep ))
+        _inzsh_width_add used $(( 2 * pad + sep ))
       fi
     done
   fi
@@ -872,15 +908,16 @@ _inzsh_render_marker() {
   return 0
 }
 
-# The two knobs this section reads, declared where they are read — the pattern
-# `lib/segments/git.zsh` follows. Guarded, because this file is independently sourceable and the
-# config layer may not be in the shell at all.
+# The knobs this file reads, declared where they are read — the pattern `lib/segments/git.zsh`
+# follows. Guarded, because this file is independently sourceable and the config layer may not
+# be in the shell at all.
 #
 # `INZSH_PROMPT_MARKER` registers an EMPTY default for the reason `INZSH_PS2` does: there is no
 # value that means "the theme's own", there is only not setting it.
 if (( ${+functions[_inzsh_config_register]} )); then
   _inzsh_config_register INZSH_PROMPT_LINES  'enum:1|2'  2
   _inzsh_config_register INZSH_PROMPT_MARKER any         ''
+  _inzsh_config_register INZSH_SEGMENT_PAD   'int:0:4'   1
 fi
 
 # ---------------------------------------------------------------------------------------
@@ -906,6 +943,11 @@ _inzsh_render() {
   # it to tell a resize that moved the prompt from one that did not, and a draw that is about to
   # happen is a draw for the width it is happening at.
   typeset -g _inzsh_render_cols=${COLUMNS:-0}
+
+  # The glyph table, re-resolved before anything reads it, so the `INZSH_GLYPH_*` overrides are
+  # whatever the user's shell says right now — the rule every knob in this tree follows, applied
+  # to the one table every mark is read from. Guarded: this file is independently sourceable.
+  (( ${+functions[_inzsh_glyphs_resolve]} )) && _inzsh_glyphs_resolve
 
   local segment builder
   for segment in ${(k)_inzsh_segment_defaults}; do
@@ -944,6 +986,7 @@ _inzsh_render() {
   # wraps on some terminals and not others.
   if (( ${+functions[_inzsh_layout_fit]} && ${+functions[_inzsh_width]} )); then
     _inzsh_separators
+    _inzsh_render_pad
     _inzsh_width "$_inzsh_sep_left"
     local -i sep_width
     (( sep_width = REPLY + 1 ))
@@ -959,8 +1002,9 @@ _inzsh_render() {
       for candidate in ${(P)side}; do
         [[ -n ${_inzsh_segment_text[$candidate]-} ]] || continue
         _inzsh_width "${_inzsh_segment_text[$candidate]}"
-        (( block = REPLY + 2 ))
-        [[ $candidate == DIR ]] && block=$_inzsh_dir_reserved
+        (( block = REPLY + 2 * _inzsh_render_pad_resolved ))
+        [[ $candidate == DIR ]] &&
+          (( block = _inzsh_dir_reserved + 2 * _inzsh_render_pad_resolved ))
         fit_args+=("$candidate" "$block")
       done
 

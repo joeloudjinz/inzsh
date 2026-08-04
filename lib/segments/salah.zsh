@@ -260,6 +260,13 @@ _inzsh_segment_salah_build() {
   emulate -L zsh
   setopt extended_glob
 
+  # The kicker, re-read from the table on every build so an `INZSH_GLYPH_DOT` override set at
+  # one prompt has moved by the next. The source-time copy above stays as the fallback for a
+  # shell with no table at all.
+  if [[ ${(t)_inzsh_glyph} == association* && -n ${_inzsh_glyph[dot]} ]]; then
+    typeset -g _inzsh_salah_glyph_dot=${_inzsh_glyph[dot]}
+  fi
+
   typeset -gA _inzsh_segment_text
   _inzsh_segment_text[SALAH]=
 

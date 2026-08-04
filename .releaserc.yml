@@ -1,0 +1,25 @@
+# Release configuration. The release workflow (.github/workflows/release.yml) runs
+# semantic-release against this on every push to main; nothing here runs locally.
+#
+# The conventionalcommits preset, not the default angular one — our commits are one
+# line with no body, so breaking changes are marked with `!` (feat(config)!: …) and
+# only this preset reads the `!`. feat → minor, fix → patch, `!` → major.
+branches: [main]
+tagFormat: v${version}
+plugins:
+  - - "@semantic-release/commit-analyzer"
+    - preset: conventionalcommits
+  - - "@semantic-release/release-notes-generator"
+    - preset: conventionalcommits
+  # No CHANGELOG.md committed back: that would need a bot commit pushed straight to
+  # main, which the branch rules forbid. The generated notes live on the GitHub
+  # release itself — the releases page is the changelog.
+  - - "@semantic-release/github"
+    - assets:
+        - path: dist/inzsh.zsh-theme
+          label: inzsh.zsh-theme — single-file bundle
+      # Keep GITHUB_TOKEN at contents:write only — no issue/PR comments, no labels.
+      successComment: false
+      failComment: false
+      failTitle: false
+      releasedLabels: false

@@ -74,14 +74,18 @@ _inzsh_retval_readable() {
 
 # How a status reads, in REPLY: `130` becomes `SIGINT`, everything else stays the number.
 #
-# THE DECISION, and only one of the two is implemented: a status above 128 is rendered as the
-# SIGNAL NAME where zsh knows one, never as the number and never as both. `✕ 130` is honest but
-# it is an encoding — the user has to know that shells report a signal as 128 + n, and then
-# which n `2` is — while `✕ SIGINT` is the fact itself. The number is recoverable from the name;
-# the name is not recoverable from the number without a table the reader has to be carrying.
-# A status that is genuinely an exit code above 128 is misread by this rule, which is the price:
-# the ambiguity is in the convention, not in the rendering, and the far commoner case by orders
-# of magnitude is the signal.
+# THE DECISION, and it is now the DEFAULT of a knob rather than the only behaviour: a status
+# above 128 is rendered as the SIGNAL NAME where zsh knows one, never as the number and never as
+# both. `✕ 130` is honest but it is an encoding — the user has to know that shells report a
+# signal as 128 + n, and then which n `2` is — while `✕ SIGINT` is the fact itself. The number
+# is recoverable from the name; the name is not recoverable from the number without a table the
+# reader has to be carrying. A status that is genuinely an exit code above 128 is misread by
+# this rule, which is the price: the ambiguity is in the convention, not in the rendering, and
+# the far commoner case by orders of magnitude is the signal.
+#
+# `INZSH_RETVAL_SIGNAL=number` takes the other side of that trade — for the reader who greps
+# logs by code and would rather undo the encoding themselves. Anything unreadable is the
+# default, which is the name and the argument above.
 #
 # The table is zsh's own `signals` parameter, so nothing here transcribes a signal list that
 # would then have to track a platform. Its shape is the one piece of knowledge required: index 1
@@ -94,6 +98,17 @@ _inzsh_retval_signal() {
 
   typeset -g REPLY=$1
   _inzsh_retval_readable "$1" || return 0
+
+  # The knob, read before the table is consulted. `_inzsh_config_get` answers in REPLY, so the
+  # status is put back afterwards; only the exact word `number` switches, which is what the
+  # registered enum validates and what a segment sourced without the config layer repeats here.
+  local want=${INZSH_RETVAL_SIGNAL-}
+  if (( ${+functions[_inzsh_config_get]} )); then
+    _inzsh_config_get INZSH_RETVAL_SIGNAL
+    want=$REPLY
+    typeset -g REPLY=$1
+  fi
+  [[ $want == number ]] && return 0
 
   local -i code=$1
   (( code > 128 )) || return 0
@@ -134,6 +149,14 @@ _inzsh_retval_signal() {
 _inzsh_segment_retval_build() {
   emulate -L zsh
 
+  # The mark, re-read from the table on every build so an `INZSH_GLYPH_ERROR` set at one prompt
+  # has moved by the next — the render core re-resolves the table per draw, and a source-time
+  # copy would keep the mark the theme loaded with. The copy above stays as the fallback for a
+  # shell with no table at all.
+  if [[ ${(t)_inzsh_glyph} == association* && -n ${_inzsh_glyph[error]} ]]; then
+    typeset -g _inzsh_retval_glyph=${_inzsh_glyph[error]}
+  fi
+
   typeset -gA _inzsh_segment_text
   _inzsh_segment_text[RETVAL]=
 
@@ -161,10 +184,22 @@ _inzsh_segment_retval_build() {
     (( stage )) && failed=1
   done
 
+  # Whether the whole chain is drawn at all. The chain exists because `$?` is only the last
+  # stage; `INZSH_RETVAL_PIPELINE` off is choosing to trust `$?` after all, so what is drawn is
+  # exactly what the status says — including nothing when the status is 0. Only an explicit off
+  # value switches it off: a typo may not silently hide a failed stage.
+  local -i chain=1
+  local want=${INZSH_RETVAL_PIPELINE-}
+  if (( ${+functions[_inzsh_config_get]} )); then
+    _inzsh_config_get INZSH_RETVAL_PIPELINE
+    want=$REPLY
+  fi
+  [[ ${(L)want} == (0|false|no|off) ]] && chain=0
+
   # A single stage says nothing the status does not, so the chain is drawn only where there is
   # more than one of them and at least one failed. Otherwise the status is the whole story.
   local -a shown
-  if (( ${#stages} > 1 && failed )); then
+  if (( chain && ${#stages} > 1 && failed )); then
     for stage in "${stages[@]}"; do
       _inzsh_retval_signal "$stage"
       shown+=$REPLY
@@ -179,3 +214,11 @@ _inzsh_segment_retval_build() {
 
   return 0
 }
+
+# The knobs this segment reads, declared beside the code that reads them — the pattern
+# `lib/segments/git.zsh` follows. Guarded, because this file is independently sourceable. Both
+# defaults are the design decisions argued above, written down where a `doctor` can find them.
+if (( ${+functions[_inzsh_config_register]} )); then
+  _inzsh_config_register INZSH_RETVAL_SIGNAL   'enum:name|number' name
+  _inzsh_config_register INZSH_RETVAL_PIPELINE bool               1
+fi

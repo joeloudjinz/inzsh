@@ -651,7 +651,7 @@ End
 
 inzsh_spec_truncate() {
   local HOME=/spec/home
-  _inzsh_truncate_path "$1" "$2"
+  _inzsh_truncate_path "$1" "$2" "${3-}"
   print -r -- "$REPLY"
 }
 
@@ -678,6 +678,57 @@ Describe 'path truncation'
       Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
       When call inzsh_spec_truncate '/spec/home/dev/inzsh/lib' "$1"
       The output should eq "$2"
+    End
+  End
+
+  Describe 'the components cap — the ladder entered part-way down'
+    # The third argument: keep at most that many trailing components, whatever the budget says.
+    # It is the same ladder — the cap picks the rung the walk STARTS at, so `2` begins at
+    # `…/inzsh/lib` and the budget can still walk further down from there. `0`, absent and
+    # anything unreadable mean no cap, which is the whole ladder from the top.
+    Describe 'what a cap keeps of /spec/home/dev/inzsh/lib'
+      # $1 the cap, $2 the budget, $3 the answer.
+      Parameters
+        2     40  '…/inzsh/lib'
+        1     40  '…/lib'
+        3     40  '~/dev/inzsh/lib'
+        9     40  '~/dev/inzsh/lib'
+        0     40  '~/dev/inzsh/lib'
+        2     10  '…/lib'
+        2     ''  '…/inzsh/lib'
+        abc   40  '~/dev/inzsh/lib'
+        -1    40  '~/dev/inzsh/lib'
+        2.5   40  '~/dev/inzsh/lib'
+        ''    40  '~/dev/inzsh/lib'
+      End
+
+      It "keeps '$3' at a cap of '$1' and a budget of '$2'"
+        Skip if 'the locale is not multibyte' inzsh_spec_bytes_not_cells
+        When call inzsh_spec_truncate '/spec/home/dev/inzsh/lib' "$2" "$1"
+        The output should eq "$3"
+      End
+    End
+
+    It 'leaves a bare root alone at any cap'
+      When call inzsh_spec_truncate '/' 10 2
+      The output should eq '/'
+    End
+
+    It 'never comes back wider than the budget, capped or not'
+      # The result is still `_inzsh_truncate_path`'s result: the cap picks a starting rung, and
+      # every guarantee below that rung — including the basename cut — is unchanged.
+      bounded() {
+        local -i budget
+        local -a over=()
+        for budget in {0..14}; do
+          inzsh_spec_truncate '/spec/home/dev/inzsh/lib' $budget 2 > /dev/null
+          _inzsh_width_raw "$REPLY"
+          (( REPLY <= budget )) || over+=$budget
+        done
+        print -r -- "${over[*]}"
+      }
+      When call bounded
+      The output should eq ''
     End
   End
 
@@ -954,8 +1005,12 @@ Describe 'path truncation'
       # In a UTF-8 locale the ellipsis is one column and this can never happen, which is exactly
       # why it is asserted with a marker forced wider: `${(m)#…}` counts BYTES outside a
       # multibyte locale, so on that path the marker really is three columns, and a marker that
-      # does not fit must give way to the text rather than overflow.
+      # does not fit must give way to the text rather than overflow. Forced through the GLYPH
+      # TABLE rather than through `_inzsh_layout_ellipsis`, because the truncators re-read the
+      # table on every call — that is what lets `INZSH_GLYPH_ELLIPSIS` move the marker at the
+      # next prompt, and a pinned local would be overwritten by that same read.
       wide_marker() {
+        local -A _inzsh_glyph=(ellipsis '...')
         local _inzsh_layout_ellipsis='...'
         local -a seen=()
         _inzsh_truncate_text 'abcdef' 2; seen+="[$REPLY]"

@@ -53,6 +53,19 @@ if [[ ${(t)_inzsh_glyph} == association* && -n ${_inzsh_glyph[ellipsis]} ]]; the
   _inzsh_layout_ellipsis=${_inzsh_glyph[ellipsis]}
 fi
 
+# The same read, repeated at call time by both truncators, so an `INZSH_GLYPH_ELLIPSIS` override
+# resolved into the table has moved the marker by the next draw — the source-time read above is
+# what a layout layer with no token layer keeps.
+_inzsh_layout_marker() {
+  emulate -L zsh
+
+  if [[ ${(t)_inzsh_glyph} == association* && -n ${_inzsh_glyph[ellipsis]} ]]; then
+    typeset -g _inzsh_layout_ellipsis=${_inzsh_glyph[ellipsis]}
+  fi
+
+  return 0
+}
+
 # Display width of a literal string, nothing stripped. The one place `${(m)#...}` is spelled
 # out, so the locale caveat above has a single home. Answer in REPLY.
 _inzsh_width_raw() {
@@ -394,8 +407,8 @@ _inzsh_layout_fit() {
 # Progressive path truncation
 # ---------------------------------------------------------------------------------------------
 
-# `_inzsh_truncate_path <path> <budget>` — the path, shortened to at most `budget` columns, in
-# REPLY.
+# `_inzsh_truncate_path <path> <budget> [components]` — the path, shortened to at most `budget`
+# columns, in REPLY.
 #
 # This is TRUNCATION, not hiding, and the two never stand in for each other. A directory segment
 # that has run out of room gets shorter and keeps saying something; it does not vanish. Whether
@@ -416,9 +429,18 @@ _inzsh_layout_fit() {
 #
 # A budget that is not a non-negative integer means no budget is known, and the path comes back
 # collapsed but untruncated — the same "assume room" rule the rest of this file follows.
+#
+# `components` is the caller's own cap — `INZSH_DIR_COMPONENTS`, read by `lib/segments/dir.zsh`
+# and injected here, so this file stays pure over its arguments. It picks the rung the walk
+# STARTS at: `2` enters the ladder at `…/c/d` whatever the budget says, and the budget can still
+# walk further down from there. It caps a shape and never invents one — a path with that many
+# components or fewer is untouched. `0`, absent and anything unreadable mean no cap, which is
+# the whole ladder from the top; a typo shows a longer path, where obeying it could hide one.
 _inzsh_truncate_path() {
   emulate -L zsh
   setopt extended_glob
+
+  _inzsh_layout_marker
 
   typeset -g REPLY=
 
@@ -456,19 +478,28 @@ _inzsh_truncate_path() {
     full+=${(j:/:)comps}
   fi
 
-  local budget=$2
-  if [[ $budget != <-> ]]; then
-    REPLY=$full
-    return 0
-  fi
-  local -i cap=$budget
-
   local -a rungs=("$full")
   local -i k
   for (( k = 1; k < n; k++ )); do
     rungs+=("${_inzsh_layout_ellipsis}/${(j:/:)comps[k + 1,-1]}")
   done
   (( n )) && rungs+=("${comps[-1]}")
+
+  # The components cap enters the ladder part-way down: rung 1 is the full path and rung k+1
+  # has k leading components dropped, so keeping the last `keep` of n starts at rung n-keep+1.
+  # Everything below — the budget walk, the basename, the cut — is unchanged.
+  local -i keep=0
+  [[ $3 == (|+)<-> ]] && (( keep = $3 ))
+  if (( keep > 0 && n > keep )); then
+    rungs=("${(@)rungs[n - keep + 1, -1]}")
+  fi
+
+  local budget=$2
+  if [[ $budget != <-> ]]; then
+    REPLY=${rungs[1]-$full}
+    return 0
+  fi
+  local -i cap=$budget
 
   local rung
   local -i width
@@ -495,6 +526,8 @@ _inzsh_truncate_path() {
 _inzsh_truncate_text() {
   emulate -L zsh
   setopt extended_glob
+
+  _inzsh_layout_marker
 
   typeset -g REPLY=
 
