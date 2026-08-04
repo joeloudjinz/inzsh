@@ -9,8 +9,8 @@ with prayer times computed on your machine.
 
 [![CI](https://github.com/joeloudjinz/inzsh/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/joeloudjinz/inzsh/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-slategray?style=flat-square)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/joeloudjinz/inzsh?style=flat-square&color=seagreen)](https://github.com/joeloudjinz/inzsh/releases)
 ![zsh 5.8+](https://img.shields.io/badge/zsh-5.8%2B-steelblue?style=flat-square)
-![Offline](https://img.shields.io/badge/offline-no%20telemetry-seagreen?style=flat-square)
 
 <img src="docs/assets/showcase.gif" alt="InZsh showcase — both registers, live styles, prayer times from Mecca" width="800">
 
