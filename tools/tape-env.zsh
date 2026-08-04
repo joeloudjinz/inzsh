@@ -59,7 +59,7 @@ _inzsh_segment_time_build() { _inzsh_tape_time_build 978352440 }
 functions[_inzsh_tape_date_build]=\$functions[_inzsh_segment_date_build]
 _inzsh_segment_date_build() { _inzsh_tape_date_build 978352440 }
 functions[_inzsh_tape_user_build]=\$functions[_inzsh_segment_user_build]
-_inzsh_segment_user_build() { _inzsh_tape_user_build spec '' '' }
+_inzsh_segment_user_build() { _inzsh_tape_user_build \${TAPE_USER:-spec} '' '' }
 functions[_inzsh_tape_salah_build]=\$functions[_inzsh_segment_salah_build]
 _inzsh_segment_salah_build() { _inzsh_tape_salah_build 978352440 }
 functions[_inzsh_tape_salah_refresh]=\$functions[_inzsh_salah_cache_refresh]
