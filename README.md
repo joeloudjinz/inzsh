@@ -1,9 +1,20 @@
+<div align="center">
+
 # InZsh
 
-*(“in-zee-shell”)*
+**“inz-ze-shell”**
 
-A calm, configurable zsh prompt — built from a design system, with an optional prayer-times
-segment.
+A calm, configurable zsh prompt — built from a design system,
+with prayer times computed on your machine.
+
+[![CI](https://github.com/joeloudjinz/inzsh/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/joeloudjinz/inzsh/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-slategray?style=flat-square)](LICENSE)
+![zsh 5.8+](https://img.shields.io/badge/zsh-5.8%2B-steelblue?style=flat-square)
+![Offline](https://img.shields.io/badge/offline-no%20telemetry-seagreen?style=flat-square)
+
+<img src="docs/assets/showcase.gif" alt="InZsh showcase — both registers, live styles, prayer times from Mecca" width="800">
+
+</div>
 
 > **Status: pre-release.** Development is in progress and the interface may change without
 > notice until 1.0.
@@ -49,6 +60,24 @@ INZSH_PRESET=warm
 
 Read when the theme loads rather than at each prompt — the [configuration
 reference](docs/configuration.md) says why, and how to switch in a shell already running.
+
+## The looks
+
+**Sharp** — dark, full colour. The default.
+
+<img src="docs/assets/shot-sharp.png" alt="The sharp preset" width="800">
+
+**Warm** — light, editorial.
+
+<img src="docs/assets/shot-warm.png" alt="The warm preset" width="800">
+
+**256 colours** — what macOS Terminal.app shows. Deliberately pictured: the palette is
+hand-tuned for this case and holds the theme's shape, but it is close rather than identical.
+
+<img src="docs/assets/shot-256.png" alt="The 256-colour fallback" width="800">
+
+Every still and recording here is generated from fixtures — `make shots` and `make demo`
+rebuild them; nothing is hand-edited.
 
 ## Supported terminals
 
