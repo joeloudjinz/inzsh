@@ -47,6 +47,7 @@ cat > $_inzsh_tape_home/.zshrc <<EOF
 # the knob is part of what the tapes demonstrate — so it is preserved across the sweep.
 _inzsh_tape_keep=(\${INZSH_PRESET:+INZSH_PRESET=\$INZSH_PRESET}
                   \${INZSH_GIT_ASYNC:+INZSH_GIT_ASYNC=\$INZSH_GIT_ASYNC}
+                  \${INZSH_COLOR_DEPTH:+INZSH_COLOR_DEPTH=\$INZSH_COLOR_DEPTH}
                   \${INZSH_SALAH_LAT:+INZSH_SALAH_LAT=\$INZSH_SALAH_LAT}
                   \${INZSH_SALAH_LON:+INZSH_SALAH_LON=\$INZSH_SALAH_LON})
 unset -m 'INZSH_*' 2>/dev/null
