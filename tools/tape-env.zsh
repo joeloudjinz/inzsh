@@ -46,7 +46,9 @@ cat > $_inzsh_tape_home/.zshrc <<EOF
 # Hygiene, with one deliberate survivor: the exec line in a tape may carry INZSH_PRESET —
 # the knob is part of what the tapes demonstrate — so it is preserved across the sweep.
 _inzsh_tape_keep=(\${INZSH_PRESET:+INZSH_PRESET=\$INZSH_PRESET}
-                  \${INZSH_GIT_ASYNC:+INZSH_GIT_ASYNC=\$INZSH_GIT_ASYNC})
+                  \${INZSH_GIT_ASYNC:+INZSH_GIT_ASYNC=\$INZSH_GIT_ASYNC}
+                  \${INZSH_SALAH_LAT:+INZSH_SALAH_LAT=\$INZSH_SALAH_LAT}
+                  \${INZSH_SALAH_LON:+INZSH_SALAH_LON=\$INZSH_SALAH_LON})
 unset -m 'INZSH_*' 2>/dev/null
 for _inzsh_tape_kv in \$_inzsh_tape_keep; do export \$_inzsh_tape_kv; done
 unset _inzsh_tape_keep _inzsh_tape_kv

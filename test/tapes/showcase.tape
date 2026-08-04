@@ -21,6 +21,7 @@ Set Theme "Builtin Dark"
 Set TypingSpeed 130ms
 
 Hide
+Wait+Screen />/
 Type "s=${TMPDIR:-/tmp}; s=${s%/}/inzsh-tape; HOME=$s ZDOTDIR=$s HOST=joeinz-pc TAPE_USER=joeinz TZ=Asia/Riyadh INZSH_PRESET= exec zsh -d -i"
 Enter
 Wait+Screen /15:34/
@@ -33,6 +34,11 @@ Type "echo 'salam alikoum — ahla w sahla'"
 Enter
 Wait+Screen /ahla w sahla/
 Sleep 1.4s
+
+Type "INZSH_SALAH_LAT=21.4225 INZSH_SALAH_LON=39.8262; echo 'prayer times from Mecca — offline 🕌'"
+Enter
+Wait+Screen /Maghrib/
+Sleep 1.8s
 
 Type "mkdir -p tassili/ahaggar && cd tassili/ahaggar"
 Enter
@@ -54,32 +60,27 @@ Enter
 Wait+Screen /oasis/
 Sleep 1.6s
 
-Type "INZSH_SEPARATOR_STYLE=round; echo 'curves of the dunes'"
+Type "INZSH_SEPARATOR_STYLE=round; echo 'curves of the dunes 🐪'"
 Enter
 Wait+Screen /curves of/
 Sleep 1.6s
 
-Type "INZSH_SURFACE_MODE=flat; echo 'flat as the erg'"
+Type "INZSH_SURFACE_MODE=flat; echo 'flat and calm, like the Sahara 🏜️'"
 Enter
-Wait+Screen /erg/
+Wait+Screen /flat and calm/
 Sleep 1.6s
 
 # The register flip. The new shell clears to a prompt that is textually identical to the
 # one before it, so there is nothing to wait on — this Sleep is the one synchronisation
 # by clock in the tapes, with a margin ten times the restart it covers.
-Type "INZSH_PRESET=warm exec zsh -d -i"
+Type "INZSH_SALAH_LAT=$INZSH_SALAH_LAT INZSH_SALAH_LON=$INZSH_SALAH_LON INZSH_PRESET=warm exec zsh -d -i"
 Enter
 Sleep 2.5s
 
-Type "INZSH_SEPARATOR_STYLE=round; echo 'the same curves, sunlit'"
+Type "INZSH_SEPARATOR_STYLE=round; echo 'the same curves, sunlit ☀️'"
 Enter
 Wait+Screen /sunlit/
 Sleep 1.6s
-
-Type "INZSH_SALAH_LAT=21.4225 INZSH_SALAH_LON=39.8262; echo 'prayer times — computed offline 🕌'"
-Enter
-Wait+Screen /Maghrib/
-Sleep 1.8s
 
 Type "echo 'bslama — from the Sahara, with salam'"
 Enter
