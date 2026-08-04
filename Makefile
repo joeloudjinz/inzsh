@@ -6,7 +6,7 @@ PYTHON ?= ./.venv/bin/python
 COLS ?= 80
 
 .PHONY: help setup test test-ui test-install spec-guard perf grid demo watch
-.PHONY: golden-update golden-check bundle doctor
+.PHONY: golden-update golden-check bundle doctor shots
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*## "}{printf "  %-14s %s\n", $$1, $$2}'
@@ -55,8 +55,10 @@ grid: ## the theme as a terminal grid, per-cell colours (default COLS=80); needs
 play: ## a live prompt in a throwaway shell — every knob takes effect as you type
 	@zsh tools/play.zsh
 
-demo: ## VHS visual render
-	@echo "make demo: tapes land at M8"
+# Local generation only, by design: no CI job renders these. Each tape runs inside the
+# pinned fixture environment (tools/tape-env.zsh); output lands in demo-out/, gitignored.
+demo: ## render every VHS tape in test/tapes to demo-out/
+	@for tape in test/tapes/*.tape; do zsh tools/tape-run.zsh $$tape; done
 
 watch: ## re-render on save
 	@echo "make watch: nothing to watch yet — the token layer lands at M1"
@@ -69,6 +71,14 @@ watch: ## re-render on save
 # and a gate that failed inside `make test` would bury its diff in the suite's noise.
 # A missing venv FAILS rather than skips — both targets are deliberate invocations, and a
 # gate that silently skipped would gate nothing.
+# The README's three stills — sharp, warm, and the honest 256-colour case — are the final
+# frames of three one-prompt tapes, extracted with the same ffmpeg VHS already requires.
+shots: ## regenerate the README screenshots from fixtures into docs/assets
+	@for s in sharp warm 256; do \
+	  zsh tools/tape-run.zsh test/tapes/shot-$$s.tape; \
+	  ffmpeg -y -loglevel error -i demo-out/shot-$$s.gif -filter_complex "[0]reverse[r]" -map "[r]" -frames:v 1 docs/assets/shot-$$s.png; \
+	done
+
 golden-update: ## regenerate golden files deliberately (never touches test/fixtures)
 	@if [[ -x $(PYTHON) ]]; then \
 	  $(PYTHON) tools/golden.py --update; \

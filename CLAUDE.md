@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-**InZsh** ("in-zee-shell") — a calm, configurable zsh prompt theme built from the Joe Inz
+**InZsh** ("inz-ze-shell") — a calm, configurable zsh prompt theme built from the Joe Inz
 design system, with an optional locally-computed prayer-times segment. Pre-release; interfaces
 may change until 1.0. Read [CONVENTIONS.md](CONVENTIONS.md) before changing anything.
 

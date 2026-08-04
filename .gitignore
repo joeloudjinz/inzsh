@@ -33,3 +33,4 @@ vhs-*.mp4
 
 # Logs
 *.log
+demo-out/
