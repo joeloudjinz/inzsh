@@ -41,6 +41,9 @@ Read [CONVENTIONS.md](CONVENTIONS.md) before your first change. The rules that c
 most: internal symbols are prefixed `_inzsh_`, no hardcoded hex outside the token layer, no
 subprocesses on the render path, and commits are a single line with no body.
 
+Releases are automated from those commits — maintainers, see
+[docs/releasing.md](docs/releasing.md).
+
 ## Scope
 
 Some things are deliberately out of scope: other shells, cloud and language-version segments, and
