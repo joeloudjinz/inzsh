@@ -65,7 +65,7 @@ Enter
 Wait+Screen /curves of/
 Sleep 1.6s
 
-Type "INZSH_SURFACE_MODE=flat; echo 'flat and calm, like the Sahara 🏜️'"
+Type "INZSH_SURFACE_MODE=flat; echo 'flat and calm, like the Sahara 🏜'"
 Enter
 Wait+Screen /flat and calm/
 Sleep 1.6s
@@ -77,7 +77,7 @@ Type "INZSH_SALAH_LAT=$INZSH_SALAH_LAT INZSH_SALAH_LON=$INZSH_SALAH_LON INZSH_PR
 Enter
 Sleep 2.5s
 
-Type "INZSH_SEPARATOR_STYLE=round; echo 'the same curves, sunlit ☀️'"
+Type "INZSH_SEPARATOR_STYLE=round; echo 'the same curves, sunlit 🌞'"
 Enter
 Wait+Screen /sunlit/
 Sleep 1.6s
