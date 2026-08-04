@@ -907,6 +907,11 @@ _inzsh_render() {
   # happen is a draw for the width it is happening at.
   typeset -g _inzsh_render_cols=${COLUMNS:-0}
 
+  # The glyph table, re-resolved before anything reads it, so the `INZSH_GLYPH_*` overrides are
+  # whatever the user's shell says right now — the rule every knob in this tree follows, applied
+  # to the one table every mark is read from. Guarded: this file is independently sourceable.
+  (( ${+functions[_inzsh_glyphs_resolve]} )) && _inzsh_glyphs_resolve
+
   local segment builder
   for segment in ${(k)_inzsh_segment_defaults}; do
     builder=_inzsh_segment_${(L)segment}_build
