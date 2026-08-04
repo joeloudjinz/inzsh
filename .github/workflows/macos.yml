@@ -1,0 +1,23 @@
+name: macos
+
+# The macOS leg of the test matrix, run only when a person asks for it — the runners cost
+# ten times Linux's and the suite is platform-tame. Dispatch it from the Actions tab before
+# a release, or whenever a macOS-specific doubt exists.
+
+on:
+  workflow_dispatch:
+
+env:
+  LC_ALL: C.UTF-8
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install ShellSpec
+        run: |
+          git clone --depth 1 https://github.com/shellspec/shellspec.git "$HOME/.shellspec-src"
+          echo "$HOME/.shellspec-src" >> "$GITHUB_PATH"
+      - name: L1 unit + L2 render
+        run: shellspec test/unit test/render
