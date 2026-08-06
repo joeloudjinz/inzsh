@@ -130,6 +130,38 @@ _inzsh_install_omz_root() {
   return 1
 }
 
+# Does this line load oh-my-zsh? The one predicate for it, because two would drift: the same
+# answer decides whether the omz path applies at all and where the managed theme line goes.
+#
+# Commented lines are not a load — a `#source $ZSH/oh-my-zsh.sh` left by someone moving off the
+# framework is the exact case this is here to reject. The rest is deliberately loose about what
+# comes before the verb: `[[ -f $ZSH/oh-my-zsh.sh ]] && source $ZSH/oh-my-zsh.sh` is a guarded
+# load and still a load.
+_inzsh_install_is_omz_source() {
+  local line=${1##[[:space:]]#}
+  [[ $line == \#* ]] && return 1
+  [[ $line == *(source|.)[[:space:]]##*oh-my-zsh.sh* ]]
+}
+
+# Does the rc we are about to edit actually load oh-my-zsh?
+#
+# This — not a directory, not `$ZSH` — is what makes the omz path meaningful. `~/.oh-my-zsh`
+# survives an uninstall and an `export ZSH=` survives the line that used it, so either one on
+# its own says nothing about the shell the user is in. If the rc never sources `oh-my-zsh.sh`,
+# nothing will ever read `ZSH_THEME` or look in the custom themes directory, and an install
+# that writes both is inert.
+_inzsh_install_rc_loads_omz() {
+  local -a lines
+  local line
+  _inzsh_install_read; lines=("${(@)reply}")
+  for line in "${(@)lines}"; do
+    if _inzsh_install_is_omz_source "$line"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 # Lines with the omz edits undone, in `reply` — managed lines out, disabled lines restored.
 # Used by uninstall, and by install to compute its target from a clean base whatever state
 # the file is in now.
@@ -166,7 +198,7 @@ _inzsh_install_omz_apply() {
       fi
       continue
     fi
-    if (( ! placed )) && [[ ${line##[[:space:]]#} == source*oh-my-zsh.sh* ]]; then
+    if (( ! placed )) && _inzsh_install_is_omz_source "$line"; then
       out+=("$_inzsh_install_theme_line" "$line")
       placed=1
       continue
@@ -294,8 +326,12 @@ _inzsh_install_main() {
     return 1
   }
 
+  # Auto. The rc decides, and the directory only says where to write if it does: a framework
+  # that is installed but not loaded is a framework that reads nothing we could write for it.
+  # Both have to hold — an rc that loads oh-my-zsh from a directory that is gone is broken in a
+  # way the plain path happens to fix.
   if [[ $via == auto ]]; then
-    if _inzsh_install_omz_root >/dev/null; then
+    if _inzsh_install_omz_root >/dev/null && _inzsh_install_rc_loads_omz; then
       via=omz
     else
       via=plain

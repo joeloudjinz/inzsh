@@ -27,6 +27,21 @@ inzsh_spec_in_home() {
     # empty-but-set ZDOTDIR as a real directory and stops reading $HOME/.zshrc at all.
     export HOME=$home
     unset ZDOTDIR
+    # The oh-my-zsh fixture, in one place because every omz example needs it and because it is
+    # what makes the framework real rather than merely present: the directory AND a one-line
+    # stand-in for `oh-my-zsh.sh` doing the one thing the installer relies on — sourcing
+    # `$ZSH_CUSTOM/themes/$ZSH_THEME.zsh-theme`. The rc is left to the example.
+    inzsh_spec_omz_dir() {
+      mkdir -p $home/.oh-my-zsh/custom/themes
+      print -r -- "source \${ZSH_CUSTOM:-\$ZSH/custom}/themes/\$ZSH_THEME.zsh-theme" \
+        > $home/.oh-my-zsh/oh-my-zsh.sh
+    }
+    # The stock three-line omz rc, sourcing the stand-in above.
+    inzsh_spec_omz_rc() {
+      print -rl -- "export ZSH=\"\$HOME/.oh-my-zsh\"" \
+        "ZSH_THEME=\"robbyrussell\"" \
+        "source \$ZSH/oh-my-zsh.sh" > $home/.zshrc
+    }
     () { eval "$body" }
     local status_=$?
     rm -rf -- $home
@@ -296,6 +311,71 @@ Describe 'the installer'
       When call restores
       The output should eq 'restored'
       The stderr should eq ''
+    End
+  End
+
+  # Auto-detection. A framework directory is not a framework: `~/.oh-my-zsh` outlives an
+  # uninstall, and `$ZSH` outlives an export somebody forgot to delete. What decides is the rc
+  # under the installer's hands — if it never sources `oh-my-zsh.sh`, nothing will ever read a
+  # `ZSH_THEME` line or a custom-themes symlink, and the plain path is the only one that works.
+  Describe 'auto-detection'
+    It 'takes the plain path when the rc does not source oh-my-zsh'
+      leftover_dir() {
+        inzsh_spec_in_home '
+          mkdir -p $home/.oh-my-zsh/custom/themes
+          print -r -- "export EDITOR=vi" > $home/.zshrc
+          zsh -f $installer >/dev/null
+          [[ -L $home/.oh-my-zsh/custom/themes/inzsh.zsh-theme ]] && { print -r -- omz-chosen; return 1 }
+          grep -q ">>> inzsh >>>" $home/.zshrc && print -r -- plain-chosen || print -r -- neither
+        '
+      }
+      When call leftover_dir
+      The output should eq 'plain-chosen'
+    End
+
+    It 'takes the plain path when $ZSH points at a leftover directory'
+      leftover_export() {
+        inzsh_spec_in_home '
+          mkdir -p $home/.oh-my-zsh/custom/themes
+          print -r -- "export EDITOR=vi" > $home/.zshrc
+          ZSH=$home/.oh-my-zsh zsh -f $installer >/dev/null
+          [[ -L $home/.oh-my-zsh/custom/themes/inzsh.zsh-theme ]] && { print -r -- omz-chosen; return 1 }
+          grep -q ">>> inzsh >>>" $home/.zshrc && print -r -- plain-chosen || print -r -- neither
+        '
+      }
+      When call leftover_export
+      The output should eq 'plain-chosen'
+    End
+
+    It 'does not count a commented-out oh-my-zsh source line'
+      commented() {
+        inzsh_spec_in_home '
+          mkdir -p $home/.oh-my-zsh/custom/themes
+          print -rl -- "export ZSH=\"\$HOME/.oh-my-zsh\"" \
+            "# source \$ZSH/oh-my-zsh.sh" > $home/.zshrc
+          zsh -f $installer >/dev/null
+          [[ -L $home/.oh-my-zsh/custom/themes/inzsh.zsh-theme ]] && { print -r -- omz-chosen; return 1 }
+          grep -q ">>> inzsh >>>" $home/.zshrc && print -r -- plain-chosen || print -r -- neither
+        '
+      }
+      When call commented
+      The output should eq 'plain-chosen'
+    End
+
+    It 'still takes the oh-my-zsh path when the rc guards its source line'
+      guarded() {
+        inzsh_spec_in_home '
+          inzsh_spec_omz_dir
+          print -rl -- "export ZSH=\"\$HOME/.oh-my-zsh\"" \
+            "ZSH_THEME=\"robbyrussell\"" \
+            "[[ -f \$ZSH/oh-my-zsh.sh ]] && source \$ZSH/oh-my-zsh.sh" > $home/.zshrc
+          zsh -f $installer >/dev/null
+          [[ -L $home/.oh-my-zsh/custom/themes/inzsh.zsh-theme ]] && print -r -- omz-chosen || \
+            print -r -- plain-chosen
+        '
+      }
+      When call guarded
+      The output should eq 'omz-chosen'
     End
   End
 

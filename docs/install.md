@@ -28,8 +28,12 @@ will stay at.
 zsh install.zsh
 ```
 
-That is the whole install. With no flag the installer uses oh-my-zsh when it finds one
-(`$ZSH`, or `~/.oh-my-zsh`) and the plain path otherwise; a flag pins the choice:
+That is the whole install. With no flag the installer takes the oh-my-zsh path only when your
+`.zshrc` actually sources `oh-my-zsh.sh` — a commented-out source line does not count — and the
+plain path otherwise. A leftover `~/.oh-my-zsh` directory, or an `export ZSH=` left behind from
+a framework you have since removed, is not enough: nothing on such a machine would ever read a
+`ZSH_THEME` line, so writing one would leave you with an install that looks done and does
+nothing. A flag pins the choice:
 
 ```zsh
 zsh install.zsh --omz     # force the oh-my-zsh path
