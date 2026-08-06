@@ -77,6 +77,110 @@ _inzsh_install_strip() {
   typeset -ga reply=("${(@)out}")
 }
 
+# ── verification ────────────────────────────────────────────────────────────────────────────
+#
+# Writing the edit and the theme loading are two different facts. Everything above knows only
+# the first, and a user who runs an installer is asking about the second — so before the word
+# "installed" is printed, a shell is started against the rc that was just written and asked
+# whether the theme is there. That answer is the report.
+#
+# The check is a real interactive zsh — `-i` because the theme refuses to load in a shell that
+# draws no prompt — reading the same `$HOME`/`$ZDOTDIR` the installer wrote to. In the spec
+# suite that is a throwaway directory, so the check cannot reach a real one either.
+#
+# Three answers, not two. "Did not load" and "could not tell" are different things, and
+# collapsing them would put us back where we started: claiming a result we do not have.
+
+typeset -g _inzsh_install_verify_timeout=${_inzsh_install_verify_timeout:-20}
+typeset -g _inzsh_install_verify_marker='inzsh-verify-loaded'
+# The theme's own evidence, not ours: the render entry point exists AND our precmd is actually
+# registered. A file that was sourced but never installed its hooks fails this, which is the
+# point — sourcing is not loading.
+typeset -g _inzsh_install_verify_probe='
+  (( ${+functions[_inzsh_render]} )) && (( ${precmd_functions[(I)_inzsh_precmd]} )) &&
+    print -r -- '$_inzsh_install_verify_marker
+
+# 0 the theme loaded · 1 it did not · 2 the check could not finish
+#
+# The deadline is enforced by a watchdog rather than by polling: the wrapper waits on the exact
+# child and a second process kills it when time is up, so there is no race between "still
+# running" and "finished a moment ago", and a `.zshrc` that blocks forever costs us
+# `$_inzsh_install_verify_timeout` seconds and nothing else. Stdin comes from /dev/null so an
+# rc that reads never waits for a person who is not there, and the shell's own output is
+# discarded — a noisy rc is the user's business, not a verification result.
+_inzsh_install_verify() {
+  [[ $_inzsh_install_verify_timeout == <1-> ]] || _inzsh_install_verify_timeout=20
+
+  local out
+  out=$(mktemp "${TMPDIR:-/tmp}/inzsh-verify.XXXXXX") || return 2
+
+  local -i signalled=0
+  zsh -f -c '
+    local out=$1 timeout=$2 probe=$3 zdotdir=$4
+    [[ -n $zdotdir ]] && export ZDOTDIR=$zdotdir
+    zsh -o NO_GLOBAL_RCS -i -c $probe </dev/null >|$out 2>/dev/null &
+    local -i child=$!
+    # The deadline. `zselect` waits inside this shell rather than forking a `sleep`, so the
+    # kill below takes the whole watchdog with it and no stray process outlives the install.
+    #
+    # KILL rather than TERM, and not out of impatience: an INTERACTIVE zsh ignores SIGTERM, and
+    # the probe has to be interactive or the theme would decline to load in it. TERM here is a
+    # deadline that never fires.
+    {
+      if zmodload -i zsh/zselect 2>/dev/null; then
+        zselect -t $(( timeout * 100 )) || true
+      else
+        sleep $timeout
+      fi
+      kill -KILL $child 2>/dev/null
+    } &
+    local -i watchdog=$!
+    wait $child
+    local -i answer=$?
+    kill -TERM $watchdog 2>/dev/null
+    exit $answer
+  ' inzsh-install-verify \
+    "$out" "$_inzsh_install_verify_timeout" "$_inzsh_install_verify_probe" "${ZDOTDIR:-}" \
+    2>/dev/null || signalled=$?
+
+  local seen=''
+  [[ -s $out ]] && seen=$(<$out)
+  rm -f -- $out
+
+  [[ $seen == *$_inzsh_install_verify_marker* ]] && return 0
+  # Above 128 is a signal, and the only signal we send is the deadline.
+  (( signalled > 128 )) && return 2
+  return 1
+}
+
+# The one place an install is called done, and the only place that word is printed. `$1` is
+# what is now on disk, `$2` whether this run put it there.
+_inzsh_install_verdict() {
+  local state=$1 wrote=$2
+  local -i answer=0
+  _inzsh_install_verify || answer=$?
+
+  if (( answer == 0 )); then
+    if [[ $wrote == wrote ]]; then
+      print -r -- "installed: $state — verified in a test shell"
+      print -r -- "open a new shell to see the prompt"
+    else
+      print -r -- "already installed: $state — verified in a test shell"
+    fi
+    return 0
+  fi
+
+  if (( answer == 1 )); then
+    print -ru2 -- "install.zsh: $state, but a test shell did not load the theme"
+    print -ru2 -- "install.zsh: nothing is rolled back — see docs/install.md, or run --uninstall"
+    return 1
+  fi
+
+  print -ru2 -- "install.zsh: $state, but the check did not finish in ${_inzsh_install_verify_timeout}s"
+  print -ru2 -- "install.zsh: unverified — open a new shell to see whether the prompt is there"
+  return 2
+}
+
 _inzsh_install_plain() {
   local -a lines want block
   _inzsh_install_read; lines=("${(@)reply}")
@@ -89,15 +193,15 @@ _inzsh_install_plain() {
   fi
   want+=("${(@)block}")
 
+  local state="${_inzsh_install_zshrc/#$HOME/~} sources the theme"
   if [[ "${(pj:\n:)lines}" == "${(pj:\n:)want}" ]]; then
-    print -r -- "already installed — nothing to do"
-    return 0
+    _inzsh_install_verdict "$state" unchanged
+    return
   fi
 
   _inzsh_install_backup_once
   _inzsh_install_write "${(@)want}"
-  print -r -- "installed: ${_inzsh_install_zshrc/#$HOME/~} sources the theme"
-  print -r -- "open a new shell to see the prompt"
+  _inzsh_install_verdict "$state" wrote
 }
 
 # ── the oh-my-zsh path ──────────────────────────────────────────────────────────────────────
@@ -238,6 +342,18 @@ _inzsh_install_omz() {
     print -ru2 -- 'install.zsh: no oh-my-zsh found ($ZSH unset, no ~/.oh-my-zsh) — try --plain'
     return 1
   fi
+
+  # Before anything is written, and this is the whole point of writing nothing first: the omz
+  # path is two edits that only oh-my-zsh reads. An rc that never loads it would read neither,
+  # and an install nobody reads is not an install — so we refuse rather than produce one and
+  # call it done. `--omz` is deliberate, so this refuses a deliberate request; the alternative
+  # is named because it is the one that works here.
+  if ! _inzsh_install_rc_loads_omz; then
+    print -ru2 -- "install.zsh: ${_inzsh_install_zshrc/#$HOME/~} never sources oh-my-zsh.sh, so nothing would read ZSH_THEME"
+    print -ru2 -- 'install.zsh: refusing to write an install that cannot take effect — use --plain'
+    return 1
+  fi
+
   _inzsh_install_omz_link ${ZSH_CUSTOM:-$omz/custom}
 
   local -a lines want
@@ -246,15 +362,15 @@ _inzsh_install_omz() {
   _inzsh_install_omz_apply "${(@)reply}"
   want=("${(@)reply}")
 
+  local state="ZSH_THEME is \"inzsh\" in ${_inzsh_install_zshrc/#$HOME/~}"
   if [[ "${(pj:\n:)lines}" == "${(pj:\n:)want}" ]]; then
-    print -r -- "already installed — nothing to do"
-    return 0
+    _inzsh_install_verdict "$state" unchanged
+    return
   fi
 
   _inzsh_install_backup_once
   _inzsh_install_write "${(@)want}"
-  print -r -- "installed: ZSH_THEME is \"inzsh\" in ${_inzsh_install_zshrc/#$HOME/~}"
-  print -r -- "open a new shell to see the prompt"
+  _inzsh_install_verdict "$state" wrote
 }
 
 # Uninstall undoes BOTH paths, whichever was used — the managed block, the theme-line edits,

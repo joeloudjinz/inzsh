@@ -257,6 +257,22 @@ Describe 'the installer'
       The output should eq 'refused'
     End
 
+    It 'refuses --omz when the rc would never read the theme line'
+      inert() {
+        inzsh_spec_in_home '
+          inzsh_spec_omz_dir
+          print -r -- "export EDITOR=vi" > $home/.zshrc
+          zsh -f $installer --omz >/dev/null 2>$home/err && { print -r -- accepted; return 1 }
+          grep -q -- "--plain" $home/err || { print -r -- "no-alternative: $(<$home/err)"; return 1 }
+          [[ -L $home/.oh-my-zsh/custom/themes/inzsh.zsh-theme ]] && { print -r -- linked; return 1 }
+          [[ $(<$home/.zshrc) == "export EDITOR=vi" ]] || { print -r -- rc-edited; return 1 }
+          print -r -- refused
+        '
+      }
+      When call inert
+      The output should eq 'refused'
+    End
+
     It 'auto-detects oh-my-zsh when no path flag is given'
       auto() {
         inzsh_spec_in_home '
@@ -364,6 +380,69 @@ Describe 'the installer'
       }
       When call guarded
       The output should eq 'omz-chosen'
+    End
+  End
+
+  # Verification. Writing the edit and the theme loading are two different facts, and only the
+  # second one is what the user asked for — so the installer proves it in a shell of its own
+  # before it says the word. The examples here are the three answers that proof can give.
+  Describe 'verification'
+    It 'says it verified the plain install rather than merely writing one'
+      plain_verified() {
+        inzsh_spec_in_home '
+          zsh -f $installer --plain 2>$home/err | grep -c "verified"
+          if [[ -s $home/err ]]; then print -r -- "$(<$home/err)"; fi
+        ' 'export EDITOR=vi'
+      }
+      When call plain_verified
+      The output should eq 1
+    End
+
+    It 'says it verified the oh-my-zsh install too'
+      omz_verified() {
+        inzsh_spec_in_home '
+          inzsh_spec_omz_dir; inzsh_spec_omz_rc
+          zsh -f $installer --omz 2>$home/err | grep -c "verified"
+          if [[ -s $home/err ]]; then print -r -- "$(<$home/err)"; fi
+        '
+      }
+      When call omz_verified
+      The output should eq 1
+    End
+
+    It 'fails when the rc never reaches the block it just wrote'
+      unreachable() {
+        inzsh_spec_in_home '
+          zsh -f $installer --plain >/dev/null 2>$home/err && { print -r -- claimed-success; return 1 }
+          grep -q "did not load" $home/err && print -r -- reported || print -r -- "$(<$home/err)"
+        ' 'return 0'
+      }
+      When call unreachable
+      The output should eq 'reported'
+    End
+
+    It 'calls an unfinished check unverified, never installed'
+      slow_rc() {
+        inzsh_spec_in_home '
+          _inzsh_install_verify_timeout=1 zsh -f $installer --plain >$home/out 2>$home/err &&
+            { print -r -- claimed-success; return 1 }
+          grep -q "verified" $home/out && { print -r -- claimed-verified; return 1 }
+          grep -q "unverified" $home/err && print -r -- unverified || print -r -- "$(<$home/err)"
+        ' 'sleep 5'
+      }
+      When call slow_rc
+      The output should eq 'unverified'
+    End
+
+    It 'does not hang on an rc that reads from stdin'
+      reads_stdin() {
+        inzsh_spec_in_home '
+          _inzsh_install_verify_timeout=5 zsh -f $installer --plain >/dev/null 2>&1
+          grep -q ">>> inzsh >>>" $home/.zshrc && print -r -- returned || print -r -- lost
+        ' 'read -r answer'
+      }
+      When call reads_stdin
+      The output should eq 'returned'
     End
   End
 
