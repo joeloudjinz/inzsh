@@ -1,5 +1,6 @@
 Include lib/core/config.zsh
 Include lib/core/detect.zsh
+Include lib/core/tokens.zsh
 Include lib/salah/calc.zsh
 Include lib/salah/cache.zsh
 Include lib/salah/location.zsh
@@ -46,6 +47,7 @@ Describe 'the inzsh command'
     The stderr should include 'usage'
     The stderr should include 'doctor'
     The stderr should include 'locate'
+    The stderr should include 'preset'
   End
 
   It 'prints the same usage when called bare'
@@ -488,6 +490,221 @@ Describe 'inzsh locate'
     When call forced
     The status should be failure
     The stderr should include 'kept'
+  End
+End
+
+Describe 'inzsh preset'
+  # Issue #211. `INZSH_PRESET` is read when the theme loads — correctly, since `PS2`, `SPROMPT`
+  # and the title are built once from the register resolved then — so setting it at a prompt does
+  # nothing, and the only live switch was sourcing a preset file by its full path, which differs
+  # between an in-place install and a bundle.
+  #
+  # The register table in `lib/core/tokens.zsh` is what this reuses, so the command reads no file
+  # and works identically from a bundle with no `presets/` directory anywhere near it.
+  #
+  # Every example starts from the register it is NOT switching to, so each is a real switch
+  # rather than a command agreeing with where the shell already was.
+
+  Describe 'reporting'
+    It 'names the register in force and the ones there are'
+      report() {
+        _inzsh_register=dark
+        inzsh preset
+      }
+      When call report
+      The line 1 should eq 'preset: sharp'
+      The line 2 should eq 'available: sharp · warm'
+      The status should be success
+    End
+
+    # The REGISTER is the truth, not the knob: somebody who sourced `presets/inzsh-warm.zsh` by
+    # hand moved one and not the other, and the report has to describe the prompt being drawn.
+    It 'reads the name back from the register rather than from the knob'
+      sourced_by_hand() {
+        _inzsh_register=light
+        unset INZSH_PRESET
+        inzsh preset
+      }
+      When call sourced_by_hand
+      The line 1 should eq 'preset: warm'
+      The status should be success
+    End
+
+    # Empty is unset at every level of this theme, so an argument that expanded to nothing is a
+    # report rather than a refusal.
+    It 'reports when the argument expanded to nothing'
+      empty() {
+        _inzsh_register=dark
+        inzsh preset ''
+      }
+      When call empty
+      The line 1 should eq 'preset: sharp'
+      The status should be success
+    End
+  End
+
+  Describe 'switching'
+    # $1 what is typed, $2 the register before, $3 the register after, $4 the name reported.
+    Parameters
+      warm   dark  light warm
+      sharp  light dark  sharp
+      WARM   dark  light warm
+      ' Warm ' dark light warm
+    End
+
+    It "switches the register to $3 for '$1'"
+      switched() {
+        _inzsh_register=$2
+        _inzsh_tokens_resolve
+        inzsh preset "$1"
+        print -r -- "$_inzsh_register"
+      }
+      When call switched "$1" "$2"
+      The line 1 should eq "preset: $4"
+      The line 2 should eq "$3"
+      The status should be success
+    End
+  End
+
+  Describe 'what switching touches'
+    It 'rebuilds every role from the register it switched to'
+      roles() {
+        _inzsh_register=dark
+        _inzsh_tokens_resolve
+        inzsh preset warm >/dev/null
+        local named=_inzsh_roles_light
+        local -A table=("${(@Pkv)named}")
+        local role; local -a wrong=()
+        for role in ${(ko)table}; do
+          [[ ${_inzsh_role[$role]} == ${_inzsh_palette[${table[$role]}]} ]] || wrong+=$role
+        done
+        print -r -- "${#_inzsh_role} ${#wrong}"
+      }
+      When call roles
+      The output should eq '38 0'
+    End
+
+    # The knob is the applier's own input, and a shell whose knob disagreed with the register it
+    # is drawing would lie to everything that reads it back — the doctor, a re-source, the next
+    # report. Written as the canonical name, whatever spelling was typed.
+    It 'leaves the knob agreeing with the register'
+      knob() {
+        _inzsh_register=dark
+        inzsh preset ' WARM ' >/dev/null
+        print -r -- "${INZSH_PRESET}"
+      }
+      When call knob
+      The output should eq 'warm'
+    End
+
+    # The reason the knob is read at load time in the first place: the secondary prompts are
+    # built ONCE, from the roles resolved at install. A switch that moved the ribbon and left the
+    # continuation prompt in the old register would be the half-done knob the load-time rule
+    # exists to avoid. An interactive shell, because installing them is what it is about.
+    It 'rebuilds the secondary prompts it owns'
+      secondary() {
+        TERM=xterm-256color zsh -f -i -c '
+          source "$1/lib/core/config.zsh"
+          source "$1/lib/core/tokens.zsh"
+          source "$1/lib/core/prompts.zsh"
+          source "$1/lib/core/doctor.zsh"
+          _inzsh_register=dark
+          _inzsh_tokens_resolve
+          _inzsh_prompts_install
+          local before=$PS2 before_sprompt=$SPROMPT
+          inzsh preset warm >/dev/null
+          local -a wrong=()
+          [[ $PS2 != $before ]]                    || wrong+=ps2-kept-the-old-register
+          [[ $SPROMPT != $before_sprompt ]]        || wrong+=sprompt-kept-the-old-register
+          [[ $PS2 == *${_inzsh_role[accent]}* ]]   || wrong+=ps2-not-from-the-new-roles
+          print -r -- "${wrong[*]}"
+        ' inzsh-preset-secondary "$SHELLSPEC_PROJECT_ROOT"
+      }
+      When call secondary
+      The output should eq ''
+      The stderr should eq ''
+    End
+
+    # And the other side of owning them: a shell where the theme never installed the secondary
+    # prompts has somebody else's `PS2` in it, and that is none of our business.
+    It 'leaves a PS2 the theme never installed alone'
+      foreign() {
+        TERM=xterm-256color zsh -f -i -c '
+          source "$1/lib/core/config.zsh"
+          source "$1/lib/core/tokens.zsh"
+          source "$1/lib/core/prompts.zsh"
+          source "$1/lib/core/doctor.zsh"
+          _inzsh_register=dark
+          PS2="mine> "
+          inzsh preset warm >/dev/null
+          print -r -- "$PS2"
+        ' inzsh-preset-foreign "$SHELLSPEC_PROJECT_ROOT"
+      }
+      When call foreign
+      The output should eq 'mine> '
+      The stderr should eq ''
+    End
+  End
+
+  Describe 'a name it does not know'
+    # Every one of these is a plausible thing to type — a register's own name, a preset file's
+    # name, a typo — and every one leaves the register exactly as it was found. The refusal names
+    # what there is, because the whole point of the command is that the vocabulary is small and
+    # nobody should have to go and look it up.
+    Parameters
+      light
+      dark
+      inzsh-warm
+      chartreuse
+      0
+    End
+
+    It "refuses '$1' and leaves the register alone"
+      refused() {
+        _inzsh_register=dark
+        _inzsh_tokens_resolve
+        inzsh preset "$1"
+        local -i rc=$?
+        print -r -- "$_inzsh_register"
+        return $rc
+      }
+      When call refused "$1"
+      The status should be failure
+      The output should eq 'dark'
+      The stderr should include "$1"
+      The stderr should include 'sharp · warm'
+    End
+  End
+
+  It 'refuses more than one name at a time'
+    two() {
+      _inzsh_register=dark
+      inzsh preset warm sharp
+      local -i rc=$?
+      print -r -- "$_inzsh_register"
+      return $rc
+    }
+    When call two
+    The status should be failure
+    The output should eq 'dark'
+    The stderr should include 'sharp · warm'
+  End
+
+  # The command ships with the theme, so it has to be honest about a partial load. Without the
+  # token layer there is no register to switch and no table to read one from, and saying so is
+  # the whole of what it can do.
+  It 'says so when the token layer is not loaded'
+    standalone() {
+      zsh -f -c '
+        source "$1/lib/core/config.zsh"
+        source "$1/lib/core/doctor.zsh"
+        inzsh preset warm
+      ' inzsh-preset-standalone "$SHELLSPEC_PROJECT_ROOT"
+    }
+    When call standalone
+    The status should be failure
+    The stderr should include 'token layer'
+    The output should eq ''
   End
 End
 

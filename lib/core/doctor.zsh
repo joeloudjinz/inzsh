@@ -308,6 +308,83 @@ _inzsh_locate() {
   return 1
 }
 
+# `inzsh preset [name]` — the register, switched in the shell you are already typing in.
+#
+# The other half of `INZSH_PRESET` (issue #211). That knob is read at SOURCE time, and correctly
+# so: `PS2`, `SPROMPT` and the title are built once from the roles resolved then, so a register
+# applied later would move the ribbon and quietly leave those behind. Setting the knob at a
+# prompt therefore does nothing, and the only live switch was `source <install>/presets/
+# inzsh-warm.zsh` — a path nobody remembers, and one that does not exist in a bundle at all.
+#
+#   inzsh preset          the register in force, and the names there are
+#   inzsh preset warm     switch, now, for every prompt after this one
+#
+# It reads NO FILE. `_inzsh_preset_registers` in `lib/core/tokens.zsh` is the whole vocabulary —
+# a preset is a name for a register and nothing more — which is what makes this work identically
+# from a clone with a `presets/` directory and from the single-file bundle without one.
+#
+# What it covers, and it is deliberately the whole of what the load-time knob covers: the roles,
+# the knob itself, and the secondary prompts the theme owns. What it cannot do is reach a shell
+# that is not this one, or the prompt already on the screen — the next one is drawn from the new
+# roles. Outcomes go to stdout; refusals go to stderr with status 1.
+_inzsh_preset() {
+  emulate -L zsh
+
+  if (( ! ${+_inzsh_preset_registers} )); then
+    print -ru2 -- 'inzsh preset: the token layer is not loaded'
+    return 1
+  fi
+
+  local -a names=(${(ko)_inzsh_preset_registers})
+  local offer="${(j: · :)names}"
+
+  if (( $# > 1 )); then
+    print -ru2 -- "inzsh preset: one name at a time - $offer"
+    return 1
+  fi
+
+  # Nothing typed: what is in force and what else there is. The REGISTER is the truth rather than
+  # the knob — somebody who sourced a preset file by hand moved one and not the other — so the
+  # name is read back OUT of the table, and a register the table cannot name is printed as itself
+  # rather than guessed at. Empty is unset at every level of this theme, so an argument that
+  # expanded to nothing is this case too and not a refusal.
+  if [[ -z ${1-} ]]; then
+    local current=${(k)_inzsh_preset_registers[(r)${_inzsh_register-}]}
+    print -r -- "preset: ${current:-${_inzsh_register:-unknown}}"
+    print -r -- "available: $offer"
+    return 0
+  fi
+
+  _inzsh_preset_normalize "$1"
+  local name=$REPLY
+  if [[ -z ${_inzsh_preset_registers[$name]-} ]]; then
+    print -ru2 -- "inzsh preset: '$1' is not a preset - $offer"
+    return 1
+  fi
+
+  # The knob is set to the canonical name and the applier reads it, so this command and the
+  # entry point run the same code to reach the same register. Setting it is not bookkeeping: a
+  # shell whose knob disagreed with the register it is drawing would be lying to everything that
+  # reads it back — `inzsh doctor`, the report above, a plugin manager that re-sources the theme.
+  typeset -g INZSH_PRESET=$name
+  _inzsh_preset_apply
+
+  # And the part the load-time rule exists for. The secondary prompts are built once, at install,
+  # so a switch has to rebuild them or the continuation prompt stays in the register the shell
+  # started in. Only when the theme OWNS them: `_inzsh_prompts_saved` holds what install found,
+  # so its absence means somebody else's `PS2` is in force and it is none of our business.
+  if (( ${+_inzsh_prompts_saved} && ${+functions[_inzsh_prompts_ps2]} )); then
+    _inzsh_prompts_ps2
+    typeset -g PS2=$REPLY
+    _inzsh_prompts_sprompt
+    typeset -g SPROMPT=$REPLY
+  fi
+
+  print -r -- "preset: $name"
+
+  return 0
+}
+
 # The public command. One name in the user's namespace, subcommands under it, so what the theme
 # offers to be TYPED stays one word wide however many verbs it grows.
 inzsh() {
@@ -322,8 +399,12 @@ inzsh() {
       shift
       _inzsh_locate "$@"
       ;;
+    (preset)
+      shift
+      _inzsh_preset "$@"
+      ;;
     (*)
-      print -ru2 -- 'usage: inzsh doctor | inzsh locate [--force]'
+      print -ru2 -- 'usage: inzsh doctor | inzsh locate [--force] | inzsh preset [name]'
       return 1
       ;;
   esac

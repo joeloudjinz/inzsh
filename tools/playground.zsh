@@ -229,10 +229,10 @@ inzsh-at() {
 # `inzsh-register light|dark` — swap the palette register and redraw.
 #
 # NOT a knob, and deliberately named as a helper rather than dressed up as one: `_inzsh_register`
-# is internal and there is no `INZSH_REGISTER`. Configuration reaches the same choice by name —
-# `INZSH_PRESET=warm` — but that one is read when the theme is sourced, so it is not something
-# you can type at a prompt. This is what a running shell has instead, and reviewing both
-# registers is what the visual sign-off is for.
+# is internal and there is no `INZSH_REGISTER`. The shipped way to switch in a running shell is
+# `inzsh preset warm`, which takes a PRESET name and rebuilds the secondary prompts with the
+# roles; this takes a REGISTER name and rebuilds nothing else, which is the shorter path when
+# what you are doing is flipping between the two for a visual sign-off.
 inzsh-register() {
   emulate -L zsh
 
@@ -265,8 +265,9 @@ Type a setting, press return, and the next prompt uses it.
     INZSH_SURFACE_MODE=hue        block colours: alternate · ramp · flat · hue
     INZSH_SEPARATOR_STYLE=round   the shape between blocks: arrow · round · divider
     INZSH_PROMPT_LINES=1          type on the same line as the blocks, not below
-    inzsh-register light          the light palette instead of the dark one. In your own
-                                  .zshrc this is INZSH_PRESET=warm, read as the theme loads
+    inzsh preset warm             the light palette instead of the dark one — the same
+                                  command your own shell has. In .zshrc it is
+                                  INZSH_PRESET=warm, read as the theme loads
 
   WHAT IS SHOWN, AND WHERE
 
@@ -296,7 +297,8 @@ Type a setting, press return, and the next prompt uses it.
     inzsh-stub                    fill every block with sample text
     inzsh-stub off                put the real ones back
     inzsh-at 80 40 20             show those widths without resizing the window
-    inzsh-register light          the light palette — or 'dark'
+    inzsh preset warm             the light palette — or 'sharp' for the dark one
+    inzsh-register light          the register by its own name — or 'dark'
     inzsh-reset                   everything back to its default
 
   A GOOD FIRST LOOK
