@@ -48,6 +48,47 @@ _inzsh_doctor_overridden() {
   _inzsh_config_validate "$1" "$value"
 }
 
+# Every `INZSH_` variable that is SET to something the registry refuses, sorted, in `reply`.
+#
+# Issue #210. "Validate, then fall back" is the rule that stops a typo breaking the prompt: a
+# value that fails its validator is not an error, it is simply not used. The cost is that a NEAR
+# MISS is invisible — `INZSH_SEPARATOR_STYLE=rounded` does nothing at all, and the word is
+# `round`. The registry already holds every validator, so answering this is a read over what the
+# user has actually set rather than a second table.
+#
+# Three things are deliberately NOT listed:
+#
+#   an empty value      set-but-empty is UNSET at every level of this theme, so an
+#                       `INZSH_DIR_BG=` left in a zshrc is falling through by design.
+#   an unregistered name  there is no vocabulary to state, and nothing here can tell a
+#                       misspelled knob from a variable that was never ours.
+#   a valid value       the whole section is absent when everything is valid.
+#
+# `${parameters[(I)…]}` is the same listing `_inzsh_config_absorb_all` uses, so a knob added
+# tomorrow appears here without this file moving. Not on the render path — nothing calls it per
+# prompt — and no subprocesses all the same.
+_inzsh_doctor_ignored() {
+  emulate -L zsh
+
+  typeset -ga reply
+  reply=()
+
+  (( ${+functions[_inzsh_config_spec_of]} )) || return 0
+
+  local knob value spec
+  for knob in ${(ko)parameters[(I)INZSH_*]}; do
+    value=${(P)knob}
+    [[ -n $value ]] || continue
+    _inzsh_config_spec_of "$knob"
+    spec=$REPLY
+    [[ -n $spec ]] || continue
+    _inzsh_config_check "$spec" "$value" && continue
+    reply+=$knob
+  done
+
+  return 0
+}
+
 # `$1` seconds as a coarse age — minutes, then hours, then days. A bug reader needs "about a
 # day", never the arithmetic.
 _inzsh_doctor_age() {
@@ -149,6 +190,30 @@ _inzsh_doctor() {
     _inzsh_config_guard_names
     (( ${#reply} )) && _inzsh_doctor_row invariants "${(j:, :)reply}"
   fi
+
+  # What the user set and the theme is not using — one row per value, with the vocabulary it
+  # should have used, rendered from the registered spec by `_inzsh_config_accepts` so the words
+  # here and the words `inzsh-knobs` prints are the same words.
+  #
+  # NOTHING IS PRINTED WHEN EVERYTHING IS VALID. A clean shell does not grow a section telling it
+  # so; the rows exist to be noticed.
+  #
+  # The value is flattened and clipped before it is shown. This block is pasted into an issue, so
+  # a newline in a value would end the row early, a control character would move somebody's
+  # cursor, and a format string long enough to be a config file in its own right would push the
+  # block off the screen. Where it came from is the diagnostic; reading the whole value back is
+  # what the variable itself is for.
+  local knob
+  local -a ignored
+  _inzsh_doctor_ignored
+  ignored=("${reply[@]}")
+  for knob in $ignored; do
+    value=${${(P)knob}//[[:cntrl:]]/ }
+    (( ${#value} > 24 )) && value="${value[1,23]}…"
+    _inzsh_config_spec_of "$knob"
+    _inzsh_config_accepts "$REPLY"
+    _inzsh_doctor_row ignored "$knob=$value - accepts $REPLY"
+  done
 
   # Where the prayer segment's position came from — never where it is. Omitted entirely when
   # the salah library is not loaded: a partial load has nothing honest to say here.

@@ -182,6 +182,44 @@ _inzsh_config_check() {
   return 1
 }
 
+# The same grammar, in words: `_inzsh_config_accepts <spec>` → REPLY. `int:0:` and
+# `enum:arrow|round|divider` are a grammar for the code that enforces them, and reading one is not
+# the job of somebody deciding what to type — so the vocabulary is said out loud here, once, and
+# every listing that has to state it asks this rather than growing a second one. `inzsh doctor`
+# and the playground's `inzsh-knobs` are the two callers.
+#
+# It lives beside the grammar deliberately: a spec form added above with no phrase down here would
+# fall through to "any text" and quietly describe itself wrongly. Never called on the render path —
+# nothing draws a sentence — but it keeps the house rule anyway: parameter operations only.
+_inzsh_config_accepts() {
+  emulate -L zsh
+  setopt local_options extended_glob
+
+  typeset -g REPLY=
+  local spec=$1
+  case $spec in
+    (bool)        REPLY='1 or 0' ;;
+    (enum:*)      REPLY=${${spec#enum:}//\|/ · } ;;
+    (int)         REPLY='whole number' ;;
+    (int:0:)      REPLY='0 or more' ;;
+    (int:*:)      REPLY="${${spec#int:}%:} or more" ;;
+    (int::*)      REPLY="up to ${spec#int::}" ;;
+    (int:*:*)     REPLY="${${spec#int:}%%:*} to ${spec##*:}" ;;
+    (float)       REPLY='decimal number' ;;
+    (float:\>*:*)
+      REPLY="above ${${spec#float:\>}%%:*}"
+      [[ -n ${spec##*:} ]] && REPLY+=", up to ${spec##*:}"
+      ;;
+    (float:*:)    REPLY="${${spec#float:}%:} or more" ;;
+    (float::*)    REPLY="up to ${spec#float::}" ;;
+    (float:*:*)   REPLY="${${spec#float:}%%:*} to ${spec##*:}" ;;
+    (word:*)      REPLY=${${spec#word:}//\|/ · } ;;
+    (any|*)       REPLY='any text' ;;
+  esac
+
+  return 0
+}
+
 # --------------------------------------------------------------------------------------------
 # Resolving a name against the registry
 #

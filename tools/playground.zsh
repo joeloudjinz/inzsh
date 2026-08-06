@@ -21,35 +21,9 @@ source $_inzsh_play_root/inzsh.zsh-theme
 # Read out of the registry rather than restated here, so a knob added tomorrow appears without
 # this file moving — the same reason `docs/configuration.md` is gated by a test rather than by
 # somebody remembering.
-# A validator, in words. The registry's specs are a grammar for the code that enforces them —
-# `int:0:`, `enum:arrow|round|divider` — and reading one is not the job of somebody deciding what
-# to type. Same information, said out loud.
-_inzsh_play_accepts() {
-  emulate -L zsh
-  setopt extended_glob
-
-  local spec=$1
-  case $spec in
-    (bool)        REPLY='1 or 0' ;;
-    (enum:*)      REPLY=${${spec#enum:}//\|/ · } ;;
-    (int)         REPLY='whole number' ;;
-    (int:0:)      REPLY='0 or more' ;;
-    (int:*:)      REPLY="${${spec#int:}%:} or more" ;;
-    (int::*)      REPLY="up to ${spec#int::}" ;;
-    (int:*:*)     REPLY="${${spec#int:}%%:*} to ${spec##*:}" ;;
-    (float)       REPLY='decimal number' ;;
-    (float:\>*:*)
-      REPLY="above ${${spec#float:\>}%%:*}"
-      [[ -n ${spec##*:} ]] && REPLY+=", up to ${spec##*:}"
-      ;;
-    (float:*:)    REPLY="${${spec#float:}%:} or more" ;;
-    (float::*)    REPLY="up to ${spec#float::}" ;;
-    (float:*:*)   REPLY="${${spec#float:}%%:*} to ${spec##*:}" ;;
-    (word:*)      REPLY=${${spec#word:}//\|/ · } ;;
-    (any|*)       REPLY='any text' ;;
-  esac
-  return 0
-}
+# A validator, in words, comes from `_inzsh_config_accepts` in `lib/core/config.zsh` — the
+# listing below and `inzsh doctor` both state the same vocabulary, and two copies of it is one
+# copy too many. This file sources the theme at the top, so the helper is always here.
 
 # The groups, in the order they print. A pattern rather than a list, so a knob added tomorrow
 # lands somewhere sensible without this file moving; anything unmatched falls into the last one.
@@ -96,7 +70,7 @@ inzsh-knobs() {
     (( shown++ )) && print
     print -r -- "$title"
     for name in $rows; do
-      _inzsh_play_accepts "${_inzsh_config_validators[$name]}"
+      _inzsh_config_accepts "${_inzsh_config_validators[$name]}"
       spec=$REPLY
       # What the prompt is using: yours if you set one, otherwise the shipped default. Marked,
       # because "what did I change" is the question this listing is usually asked.
@@ -127,7 +101,7 @@ inzsh-knobs() {
     (( shown++ )) && print
     print -r -- "ONE PER SEGMENT — put a segment's name in the middle, e.g. INZSH_GIT_RANK"
     for spec in $fam; do
-      _inzsh_play_accepts "${_inzsh_config_family_validators[$spec]}"
+      _inzsh_config_accepts "${_inzsh_config_family_validators[$spec]}"
       printf '  %-31s   %-13s %s\n' $spec \
         "${_inzsh_config_family_defaults[$spec]:-(not set)}" "$REPLY"
     done

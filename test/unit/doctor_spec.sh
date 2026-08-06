@@ -120,6 +120,9 @@ Describe 'inzsh doctor'
     The output should include 'colour depth  8 (INZSH_COLOR_DEPTH)'
   End
 
+  # The row says what was DETECTED and credits the override only when one was obeyed. The
+  # unreadable value is not silently forgotten either — it is listed below as ignored, which is
+  # the other half of the same honesty and is what issue #210 added.
   It 'does not blame the override for a value detection produced'
     ignored() {
       inzsh_spec_doctor_env
@@ -128,7 +131,8 @@ Describe 'inzsh doctor'
     }
     When call ignored
     The output should include 'colour depth  truecolor'
-    The output should not include 'INZSH_COLOR_DEPTH'
+    The output should not include 'truecolor (INZSH_COLOR_DEPTH)'
+    The output should include 'ignored       INZSH_COLOR_DEPTH=chartreuse'
   End
 
   It 'reports the locale and whether multibyte glyphs are safe'
@@ -178,6 +182,143 @@ Describe 'inzsh doctor'
     The output should include 'exit-code-capture'
     The output should include 'render-budget'
     The output should include 'separator-visibility'
+  End
+
+  # Issue #210. A value that fails its validator is dropped and never reported — the rule that
+  # keeps a typo from stopping the prompt drawing — and the cost is that a near miss is
+  # indistinguishable from a knob that does nothing: `INZSH_SEPARATOR_STYLE=rounded` is silent,
+  # and the word is `round`. The registry holds every validator, so the block can answer it.
+  #
+  # Two properties, and the second is the one that keeps the section honest: what is listed is
+  # SET, INVALID and therefore ignored — and nothing is said at all when everything is valid. A
+  # clean shell does not grow a section telling it so.
+  Describe 'values that are set and ignored'
+    It 'names a near miss and the vocabulary it should have used'
+      near_miss() {
+        inzsh_spec_doctor_env
+        local INZSH_SEPARATOR_STYLE=rounded
+        inzsh doctor
+      }
+      When call near_miss
+      The output should include 'ignored'
+      The output should include 'INZSH_SEPARATOR_STYLE=rounded'
+      The output should include 'arrow · round · divider'
+    End
+
+    # The vocabulary is rendered from the registered spec rather than restated here, so every
+    # shape of validator has to come out as words. One example per shape that ships.
+    Describe 'the vocabulary'
+      Parameters
+        INZSH_PRESET        wark    'sharp · warm'
+        INZSH_SURFACE_MODE  chart   'alternate · ramp · flat · hue'
+        INZSH_DIR_RANK      leftish 'whole number'
+        INZSH_DIR_MINCOLS   -5      '0 or more'
+        INZSH_TITLE         maybe   '1 or 0'
+      End
+
+      It "says $1=$2 accepts $3"
+        accepts() {
+          inzsh_spec_doctor_env
+          typeset -g "$1"="$2"
+          inzsh doctor
+        }
+        When call accepts "$1" "$2"
+        The output should include "ignored"
+        The output should include "$1=$2"
+        The output should include "$3"
+      End
+    End
+
+    # The section exists for the near miss, so silence is as load-bearing as the listing. A
+    # `zsh -f` of its own, because the shell running the suite may carry knobs of its own.
+    It 'says nothing at all when every value that is set is valid'
+      clean() {
+        zsh -f -c '
+          TERM=xterm-256color COLORTERM=truecolor LC_ALL=en_US.UTF-8
+          source "$1/lib/core/config.zsh"
+          source "$1/lib/core/detect.zsh"
+          source "$1/lib/core/doctor.zsh"
+          INZSH_SEPARATOR_STYLE=round
+          INZSH_DIR_RANK=-3
+          inzsh doctor
+        ' inzsh-doctor-clean "$SHELLSPEC_PROJECT_ROOT"
+      }
+      When call clean
+      The output should not include 'ignored'
+      The stderr should eq ''
+    End
+
+    # Set-but-empty is UNSET at every level of this theme — an `INZSH_DIR_BG=` left in a zshrc
+    # falls through to the role rather than blanking the segment — so it is not an ignored value
+    # and must not be listed as one. A name the registry has never heard of is not listed either:
+    # there is no vocabulary to state, and no way to tell a typo from a variable that is not ours.
+    It 'lists neither an empty value nor a name the registry never heard of'
+      quiet() {
+        zsh -f -c '
+          TERM=xterm-256color COLORTERM=truecolor LC_ALL=en_US.UTF-8
+          source "$1/lib/core/config.zsh"
+          source "$1/lib/core/detect.zsh"
+          source "$1/lib/core/doctor.zsh"
+          INZSH_SEPARATOR_STYLE=
+          INZSH_DIR_BG=
+          INZSH_NOT_A_KNOB=banana
+          inzsh doctor
+        ' inzsh-doctor-quiet "$SHELLSPEC_PROJECT_ROOT"
+      }
+      When call quiet
+      The output should not include 'ignored'
+      The stderr should eq ''
+    End
+
+    It 'lists every ignored value, one row each, in a fixed order'
+      several() {
+        zsh -f -c '
+          TERM=xterm-256color COLORTERM=truecolor LC_ALL=en_US.UTF-8
+          source "$1/lib/core/config.zsh"
+          source "$1/lib/core/detect.zsh"
+          source "$1/lib/core/doctor.zsh"
+          INZSH_SURFACE_MODE=chartreuse
+          INZSH_PRESET=wark
+          INZSH_DIR_MINCOLS=-5
+          inzsh doctor | grep -c ignored
+          _inzsh_doctor_ignored
+          print -r -- "${reply[*]}"
+        ' inzsh-doctor-several "$SHELLSPEC_PROJECT_ROOT"
+      }
+      When call several
+      The line 1 should eq '3'
+      The line 2 should eq 'INZSH_DIR_MINCOLS INZSH_PRESET INZSH_SURFACE_MODE'
+    End
+
+    # The block is pasted into an issue, so one hostile value may not break its shape. A newline
+    # would end the row early, a control character would move the cursor, and a value long enough
+    # to be a config file in its own right would push the block off the screen.
+    It 'keeps one row per value whatever the value holds'
+      hostile() {
+        zsh -f -c '
+          TERM=xterm-256color COLORTERM=truecolor LC_ALL=en_US.UTF-8
+          source "$1/lib/core/config.zsh"
+          source "$1/lib/core/detect.zsh"
+          source "$1/lib/core/doctor.zsh"
+          INZSH_SURFACE_MODE=$'\''one\ntwo\tthree'\''
+          INZSH_PRESET=%F{red}aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          local -a rows=(${(f)"$(inzsh doctor)"})
+          local -a ignored=(${(M)rows:#*ignored*})
+          local -a wrong=()
+          (( ${#ignored} == 2 )) || wrong+=rows:${#ignored}
+          local row
+          for row in $ignored; do
+            [[ $row == *[[:cntrl:]]* ]] && wrong+=control
+            (( ${#row} > 100 )) && wrong+=long:${#row}
+          done
+          [[ ${ignored[2]} == *aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa* ]] && wrong+=unclipped
+          print -r -- "${wrong[*]}"
+        ' inzsh-doctor-hostile "$SHELLSPEC_PROJECT_ROOT"
+      }
+      When call hostile
+      The output should eq ''
+      The stderr should eq ''
+    End
   End
 
   It 'reports where the location came from when coordinates are configured'
