@@ -11,10 +11,11 @@
 #   anywhere and declared nowhere, so "declared once" is a gate rather than a habit.
 #
 #   Validate, then fall back.  A value that fails its validator is not an error and is never
-#   reported; it is simply not used. `INZSH_SURFACE_MODE=chartreuse` draws an `alternate`
-#   prompt, the same as a typo in a colour depth draws the detected one. This is the pattern
-#   `lib/core/detect.zsh` and `lib/core/render.zsh` already follow by hand; this file is that
-#   habit written down once so every later knob inherits it for free.
+#   reported AT THE PROMPT; it is simply not used. `INZSH_SURFACE_MODE=chartreuse` draws an
+#   `alternate` prompt, the same as a typo in a colour depth draws the detected one. This is the
+#   pattern `lib/core/detect.zsh` and `lib/core/render.zsh` already follow by hand; this file is
+#   that habit written down once so every later knob inherits it for free. Silent is not secret:
+#   `inzsh doctor` reads this registry back and lists every value that was set and dropped.
 #
 #   Read at render time.  Nothing here caches a user's value. `_inzsh_config_get` reads the
 #   live variable on every call, so `INZSH_SURFACE_MODE=flat` at a prompt takes effect at the

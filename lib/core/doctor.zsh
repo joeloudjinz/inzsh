@@ -58,11 +58,11 @@ _inzsh_doctor_overridden() {
 #
 # Three things are deliberately NOT listed:
 #
-#   an empty value      set-but-empty is UNSET at every level of this theme, so an
-#                       `INZSH_DIR_BG=` left in a zshrc is falling through by design.
+#   an empty value        set-but-empty is UNSET at every level of this theme, so an
+#                         `INZSH_DIR_BG=` left in a zshrc is falling through by design.
 #   an unregistered name  there is no vocabulary to state, and nothing here can tell a
-#                       misspelled knob from a variable that was never ours.
-#   a valid value       the whole section is absent when everything is valid.
+#                         misspelled knob from a variable that was never ours.
+#   a valid value         the whole section is absent when everything is valid.
 #
 # `${parameters[(I)…]}` is the same listing `_inzsh_config_absorb_all` uses, so a knob added
 # tomorrow appears here without this file moving. Not on the render path — nothing calls it per

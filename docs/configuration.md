@@ -18,10 +18,22 @@ through to the role rather than blanking the segment. There is no value that mea
 to switch a thing off, `unset` it or use the knob's own off value.
 
 **Validate, then fall back.** Every knob has a set of values it accepts. A value outside that
-set is not an error and is never reported: it is simply not used, and the default is drawn
-instead. `INZSH_SURFACE_MODE=chartreuse` gives an `alternate` prompt; a misspelled colour depth
-gives the detected one. Nothing you can type into a config file can stop the prompt from
-drawing.
+set is not an error and is never reported at the prompt: it is simply not used, and the default
+is drawn instead. `INZSH_SURFACE_MODE=chartreuse` gives an `alternate` prompt; a misspelled
+colour depth gives the detected one. Nothing you can type into a config file can stop the prompt
+from drawing.
+
+Silent is not secret. `inzsh doctor` lists every `INZSH_` value that is set, invalid and
+therefore ignored, with the vocabulary it should have used:
+
+```
+ignored       INZSH_SEPARATOR_STYLE=rounded - accepts arrow · round · divider
+```
+
+That section is absent when everything you have set is valid, so a clean shell says nothing.
+A misspelled variable *name* cannot be listed — there is no vocabulary to state, and nothing in
+a shell can tell a typo from a variable that was never ours — so `inzsh-knobs` in the
+[playground](../tools/playground.zsh) (`make play`) is where you check a name.
 
 **Read at render time.** Values are read fresh on every prompt, never cached at load. Change a
 variable at the command line and the next prompt reflects it — no re-source, no new shell. One
@@ -82,7 +94,7 @@ theme falls back to a safe value rather than drawing the broken result:
 
 | Variable | Values | Default | Effect |
 |---|---|---|---|
-| `INZSH_PRESET` | `sharp` · `warm`, matched with case, spacing and punctuation ignored | `sharp` | Which of the two shipped looks the theme draws: `sharp` is the dark register, `warm` the light one. Both are the same design system read in a different register, so nothing but colour changes. **This one is read when the theme is sourced, not at each prompt** — set it in `.zshrc` *above* the line that sources the theme. The reason is that `PS2`, `SPROMPT` and the title are built once, from the palette resolved at that moment, and a register applied later would move the prompt and quietly leave those behind. In a shell that is already running, `source <install>/presets/inzsh-warm.zsh` switches everything the next prompt draws. Values that are not preset names — the register names `light` and `dark` among them — leave the default in place. |
+| `INZSH_PRESET` | `sharp` · `warm`, matched with case, spacing and punctuation ignored | `sharp` | Which of the two shipped looks the theme draws: `sharp` is the dark register, `warm` the light one. Both are the same design system read in a different register, so nothing but colour changes. **This one is read when the theme is sourced, not at each prompt** — set it in `.zshrc` *above* the line that sources the theme. The reason is that `PS2`, `SPROMPT` and the title are built once, from the palette resolved at that moment, and a register applied later would move the prompt and quietly leave those behind. In a shell that is already running, `inzsh preset warm` is the switch — see below. Values that are not preset names — the register names `light` and `dark` among them — leave the default in place. |
 | `INZSH_SURFACE_MODE` | `alternate` · `ramp` · `flat` · `hue` | `alternate` | How segment backgrounds are assigned. The first three assign by **elevation** — how far a block sits from the base surface — and differ only in the rule that picks a level: `alternate` swings between the two ends of the surface ramp, so every powerline separator stays visible; `ramp` assigns by per-segment importance, bumping equal neighbours apart; `flat` uses one surface for everything (no filled-powerline look). `hue` changes the axis — see below. Invalid values fall back to `alternate`. |
 | `INZSH_SEPARATOR_STYLE` | `arrow` · `round` · `divider` | `arrow` | Which glyph draws the boundary between two segments. `arrow` is the filled powerline wedge, `round` the same ribbon with rounded caps, `divider` a thin rule with no filled boundary at all. `arrow` and `round` need a Nerd Font; `divider` needs only box drawing. Invalid values fall back to `arrow`. Setting `INZSH_NERD_FONT=0` resolves any style to `divider`, since the powerline glyphs cannot be drawn without the font. |
 | `INZSH_COLOR_DEPTH` | `truecolor` · `256` · `8` | detected | Overrides colour-depth detection for terminals that misreport. The palette degrades through hand-tuned fallback tables; invalid values are ignored and detection wins. |
@@ -95,6 +107,31 @@ theme falls back to a safe value rather than drawing the broken result:
 | `INZSH_TRANSIENT` | `1` · `0` · `true` · `false` · `yes` · `no` · `on` · `off`, in any case | `1` | Whether a prompt collapses to its minimal form once its command has been accepted, so scrollback reads as commands and output rather than two hundred repetitions of a seven-segment ribbon. Off keeps the full prompt in the transcript. |
 | `INZSH_TRANSIENT_FORMAT` | `marker` · `dir` | `marker` | What a collapsed prompt shows. `marker` is the marker alone; `dir` puts the directory, muted, in front of it — worth it if you move between trees mid-session and want scrollback to say where each command ran. Invalid values fall back to `marker`. |
 | `INZSH_RESIZE` | `1` · `0` · `true` · `false` · `yes` · `no` · `on` · `off`, in any case | `1` | Whether the prompt is rebuilt and redrawn when the terminal changes size. A prompt is measured once against the width it was drawn at, and in the two-row shape the right-hand side is padded onto the segment row with real spaces — so without this a narrowed window leaves a row that is too wide, wraps, and is redrawn as several rows of the same ribbon until you press Enter. The redraw keeps whatever you were part-way through typing. Off if you have your own `TRAPWINCH`, or would rather the prompt only changed when you asked it to. |
+
+### Switching preset in a running shell — `inzsh preset`
+
+`INZSH_PRESET` is read once, as the theme loads, so setting it at a prompt does nothing. The
+command is the other half of it:
+
+```zsh
+inzsh preset          # what is in force, and what else there is
+inzsh preset warm     # switch, from the next prompt on
+```
+
+Names are matched the way the knob matches them — case, spacing and punctuation ignored, so
+`Warm` and `warm` are one request — and anything that is not a preset name is refused out loud
+with the names that are. The register names `light` and `dark` are not preset names.
+
+**What it covers.** Every colour the prompt draws, the continuation and spell-correction prompts
+if the theme installed them, and `INZSH_PRESET` itself, which is left agreeing with the register
+now in force. It reads no file, so it behaves identically from a clone and from the single-file
+bundle, which has no `presets/` directory at all.
+
+**What it does not.** It does not reach any other shell, and it does not persist: a new terminal
+is back to whatever `.zshrc` says, which is where `INZSH_PRESET=warm` belongs if you want the
+choice to stick. The prompt already on the screen is not repainted — the next one is the first
+one drawn in the new register. A `PS2` you set yourself, or one the theme never installed, is
+left alone.
 
 ### One colour per segment — `INZSH_SURFACE_MODE=hue`
 
