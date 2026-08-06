@@ -48,6 +48,47 @@ _inzsh_doctor_overridden() {
   _inzsh_config_validate "$1" "$value"
 }
 
+# Every `INZSH_` variable that is SET to something the registry refuses, sorted, in `reply`.
+#
+# Issue #210. "Validate, then fall back" is the rule that stops a typo breaking the prompt: a
+# value that fails its validator is not an error, it is simply not used. The cost is that a NEAR
+# MISS is invisible — `INZSH_SEPARATOR_STYLE=rounded` does nothing at all, and the word is
+# `round`. The registry already holds every validator, so answering this is a read over what the
+# user has actually set rather than a second table.
+#
+# Three things are deliberately NOT listed:
+#
+#   an empty value        set-but-empty is UNSET at every level of this theme, so an
+#                         `INZSH_DIR_BG=` left in a zshrc is falling through by design.
+#   an unregistered name  there is no vocabulary to state, and nothing here can tell a
+#                         misspelled knob from a variable that was never ours.
+#   a valid value         the whole section is absent when everything is valid.
+#
+# `${parameters[(I)…]}` is the same listing `_inzsh_config_absorb_all` uses, so a knob added
+# tomorrow appears here without this file moving. Not on the render path — nothing calls it per
+# prompt — and no subprocesses all the same.
+_inzsh_doctor_ignored() {
+  emulate -L zsh
+
+  typeset -ga reply
+  reply=()
+
+  (( ${+functions[_inzsh_config_spec_of]} )) || return 0
+
+  local knob value spec
+  for knob in ${(ko)parameters[(I)INZSH_*]}; do
+    value=${(P)knob}
+    [[ -n $value ]] || continue
+    _inzsh_config_spec_of "$knob"
+    spec=$REPLY
+    [[ -n $spec ]] || continue
+    _inzsh_config_check "$spec" "$value" && continue
+    reply+=$knob
+  done
+
+  return 0
+}
+
 # `$1` seconds as a coarse age — minutes, then hours, then days. A bug reader needs "about a
 # day", never the arithmetic.
 _inzsh_doctor_age() {
@@ -150,6 +191,30 @@ _inzsh_doctor() {
     (( ${#reply} )) && _inzsh_doctor_row invariants "${(j:, :)reply}"
   fi
 
+  # What the user set and the theme is not using — one row per value, with the vocabulary it
+  # should have used, rendered from the registered spec by `_inzsh_config_accepts` so the words
+  # here and the words `inzsh-knobs` prints are the same words.
+  #
+  # NOTHING IS PRINTED WHEN EVERYTHING IS VALID. A clean shell does not grow a section telling it
+  # so; the rows exist to be noticed.
+  #
+  # The value is flattened and clipped before it is shown. This block is pasted into an issue, so
+  # a newline in a value would end the row early, a control character would move somebody's
+  # cursor, and a format string long enough to be a config file in its own right would push the
+  # block off the screen. Where it came from is the diagnostic; reading the whole value back is
+  # what the variable itself is for.
+  local knob
+  local -a ignored
+  _inzsh_doctor_ignored
+  ignored=("${reply[@]}")
+  for knob in $ignored; do
+    value=${${(P)knob}//[[:cntrl:]]/ }
+    (( ${#value} > 24 )) && value="${value[1,23]}…"
+    _inzsh_config_spec_of "$knob"
+    _inzsh_config_accepts "$REPLY"
+    _inzsh_doctor_row ignored "$knob=$value - accepts $REPLY"
+  done
+
   # Where the prayer segment's position came from — never where it is. Omitted entirely when
   # the salah library is not loaded: a partial load has nothing honest to say here.
   if (( ${+functions[_inzsh_salah_location]} )); then
@@ -243,6 +308,83 @@ _inzsh_locate() {
   return 1
 }
 
+# `inzsh preset [name]` — the register, switched in the shell you are already typing in.
+#
+# The other half of `INZSH_PRESET` (issue #211). That knob is read at SOURCE time, and correctly
+# so: `PS2`, `SPROMPT` and the title are built once from the roles resolved then, so a register
+# applied later would move the ribbon and quietly leave those behind. Setting the knob at a
+# prompt therefore does nothing, and the only live switch was `source <install>/presets/
+# inzsh-warm.zsh` — a path nobody remembers, and one that does not exist in a bundle at all.
+#
+#   inzsh preset          the register in force, and the names there are
+#   inzsh preset warm     switch, now, for every prompt after this one
+#
+# It reads NO FILE. `_inzsh_preset_registers` in `lib/core/tokens.zsh` is the whole vocabulary —
+# a preset is a name for a register and nothing more — which is what makes this work identically
+# from a clone with a `presets/` directory and from the single-file bundle without one.
+#
+# What it covers, and it is deliberately the whole of what the load-time knob covers: the roles,
+# the knob itself, and the secondary prompts the theme owns. What it cannot do is reach a shell
+# that is not this one, or the prompt already on the screen — the next one is drawn from the new
+# roles. Outcomes go to stdout; refusals go to stderr with status 1.
+_inzsh_preset() {
+  emulate -L zsh
+
+  if (( ! ${+_inzsh_preset_registers} )); then
+    print -ru2 -- 'inzsh preset: the token layer is not loaded'
+    return 1
+  fi
+
+  local -a names=(${(ko)_inzsh_preset_registers})
+  local offer="${(j: · :)names}"
+
+  if (( $# > 1 )); then
+    print -ru2 -- "inzsh preset: one name at a time - $offer"
+    return 1
+  fi
+
+  # Nothing typed: what is in force and what else there is. The REGISTER is the truth rather than
+  # the knob — somebody who sourced a preset file by hand moved one and not the other — so the
+  # name is read back OUT of the table, and a register the table cannot name is printed as itself
+  # rather than guessed at. Empty is unset at every level of this theme, so an argument that
+  # expanded to nothing is this case too and not a refusal.
+  if [[ -z ${1-} ]]; then
+    local current=${(k)_inzsh_preset_registers[(r)${_inzsh_register-}]}
+    print -r -- "preset: ${current:-${_inzsh_register:-unknown}}"
+    print -r -- "available: $offer"
+    return 0
+  fi
+
+  _inzsh_preset_normalize "$1"
+  local name=$REPLY
+  if [[ -z ${_inzsh_preset_registers[$name]-} ]]; then
+    print -ru2 -- "inzsh preset: '$1' is not a preset - $offer"
+    return 1
+  fi
+
+  # The knob is set to the canonical name and the applier reads it, so this command and the
+  # entry point run the same code to reach the same register. Setting it is not bookkeeping: a
+  # shell whose knob disagreed with the register it is drawing would be lying to everything that
+  # reads it back — `inzsh doctor`, the report above, a plugin manager that re-sources the theme.
+  typeset -g INZSH_PRESET=$name
+  _inzsh_preset_apply
+
+  # And the part the load-time rule exists for. The secondary prompts are built once, at install,
+  # so a switch has to rebuild them or the continuation prompt stays in the register the shell
+  # started in. Only when the theme OWNS them: `_inzsh_prompts_saved` holds what install found,
+  # so its absence means somebody else's `PS2` is in force and it is none of our business.
+  if (( ${+_inzsh_prompts_saved} && ${+functions[_inzsh_prompts_ps2]} )); then
+    _inzsh_prompts_ps2
+    typeset -g PS2=$REPLY
+    _inzsh_prompts_sprompt
+    typeset -g SPROMPT=$REPLY
+  fi
+
+  print -r -- "preset: $name"
+
+  return 0
+}
+
 # The public command. One name in the user's namespace, subcommands under it, so what the theme
 # offers to be TYPED stays one word wide however many verbs it grows.
 inzsh() {
@@ -257,8 +399,12 @@ inzsh() {
       shift
       _inzsh_locate "$@"
       ;;
+    (preset)
+      shift
+      _inzsh_preset "$@"
+      ;;
     (*)
-      print -ru2 -- 'usage: inzsh doctor | inzsh locate [--force]'
+      print -ru2 -- 'usage: inzsh doctor | inzsh locate [--force] | inzsh preset [name]'
       return 1
       ;;
   esac

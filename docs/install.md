@@ -28,8 +28,12 @@ will stay at.
 zsh install.zsh
 ```
 
-That is the whole install. With no flag the installer uses oh-my-zsh when it finds one
-(`$ZSH`, or `~/.oh-my-zsh`) and the plain path otherwise; a flag pins the choice:
+That is the whole install. With no flag the installer takes the oh-my-zsh path only when your
+`.zshrc` actually sources `oh-my-zsh.sh` — a commented-out source line does not count — and the
+plain path otherwise. A leftover `~/.oh-my-zsh` directory, or an `export ZSH=` left behind from
+a framework you have since removed, is not enough: nothing on such a machine would ever read a
+`ZSH_THEME` line, so writing one would leave you with an install that looks done and does
+nothing. A flag pins the choice:
 
 ```zsh
 zsh install.zsh --omz     # force the oh-my-zsh path
@@ -69,6 +73,24 @@ source '/path/to/your/clone/inzsh.zsh-theme'
   instance, it repairs the link or the path and touches nothing else.
 - **It only touches what it names.** The managed block, the tagged theme lines, the one
   symlink. Everything else in `.zshrc` is yours and stays yours.
+- **It checks before it says it worked.** After writing, the installer starts one throwaway
+  interactive shell against the `.zshrc` it just edited and asks whether the theme is actually
+  loaded there. "installed" is printed only when the answer is yes.
+
+### When it refuses, and when it cannot tell
+
+Two outcomes are not success, and the installer exits non-zero for both rather than rounding
+them up:
+
+- **`--omz` on a `.zshrc` that never sources `oh-my-zsh.sh`.** The oh-my-zsh path writes two
+  things only oh-my-zsh reads, so on such a machine both would sit there unread. Nothing is
+  written and the message points at `--plain`, which works.
+- **The check did not finish.** A `.zshrc` that takes a long time — or blocks — leaves the
+  installer without an answer inside its timeout, and it says *unverified* rather than
+  *installed*. Your `.zshrc` was still written: open a new shell and look.
+
+If the check runs and the theme is not there, the installer says so and leaves everything in
+place, so you can look at `.zshrc` yourself or run `--uninstall` and start again.
 
 ## Uninstall
 

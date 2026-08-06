@@ -27,6 +27,21 @@ inzsh_spec_in_home() {
     # empty-but-set ZDOTDIR as a real directory and stops reading $HOME/.zshrc at all.
     export HOME=$home
     unset ZDOTDIR
+    # The oh-my-zsh fixture, in one place because every omz example needs it and because it is
+    # what makes the framework real rather than merely present: the directory AND a one-line
+    # stand-in for `oh-my-zsh.sh` doing the one thing the installer relies on — sourcing
+    # `$ZSH_CUSTOM/themes/$ZSH_THEME.zsh-theme`. The rc is left to the example.
+    inzsh_spec_omz_dir() {
+      mkdir -p $home/.oh-my-zsh/custom/themes
+      print -r -- "source \${ZSH_CUSTOM:-\$ZSH/custom}/themes/\$ZSH_THEME.zsh-theme" \
+        > $home/.oh-my-zsh/oh-my-zsh.sh
+    }
+    # The stock three-line omz rc, sourcing the stand-in above.
+    inzsh_spec_omz_rc() {
+      print -rl -- "export ZSH=\"\$HOME/.oh-my-zsh\"" \
+        "ZSH_THEME=\"robbyrussell\"" \
+        "source \$ZSH/oh-my-zsh.sh" > $home/.zshrc
+    }
     () { eval "$body" }
     local status_=$?
     rm -rf -- $home
@@ -153,10 +168,7 @@ Describe 'the installer'
     It 'links the theme into custom/themes and takes over ZSH_THEME'
       omz() {
         inzsh_spec_in_home '
-          mkdir -p $home/.oh-my-zsh/custom/themes
-          print -rl -- "export ZSH=\"\$HOME/.oh-my-zsh\"" \
-            "ZSH_THEME=\"robbyrussell\"" \
-            "source \$ZSH/oh-my-zsh.sh" > $home/.zshrc
+          inzsh_spec_omz_dir; inzsh_spec_omz_rc
           zsh -f $installer --omz >/dev/null || { print -r -- install-failed; return 1 }
           [[ -L $home/.oh-my-zsh/custom/themes/inzsh.zsh-theme ]] || { print -r -- no-link; return 1 }
           grep -q "^ZSH_THEME=\"inzsh\" # inzsh:managed$" $home/.zshrc || { print -r -- not-managed; return 1 }
@@ -172,12 +184,7 @@ Describe 'the installer'
     It 'loads the theme through the omz theme machinery in a real shell'
       loads() {
         inzsh_spec_in_home '
-          mkdir -p $home/.oh-my-zsh/custom/themes
-          print -r -- "source \${ZSH_CUSTOM:-\$ZSH/custom}/themes/\$ZSH_THEME.zsh-theme" \
-            > $home/.oh-my-zsh/oh-my-zsh.sh
-          print -rl -- "export ZSH=\"\$HOME/.oh-my-zsh\"" \
-            "ZSH_THEME=\"robbyrussell\"" \
-            "source \$ZSH/oh-my-zsh.sh" > $home/.zshrc
+          inzsh_spec_omz_dir; inzsh_spec_omz_rc
           zsh -f $installer --omz >/dev/null
           HOME=$home zsh -o NO_GLOBAL_RCS -i -c \
             "(( \${+functions[_inzsh_render]} )) && (( \${+_inzsh_segment_defaults[DIR]} )) &&
@@ -192,8 +199,7 @@ Describe 'the installer'
     It 'is idempotent — a second run changes neither .zshrc nor the link'
       twice() {
         inzsh_spec_in_home '
-          mkdir -p $home/.oh-my-zsh/custom/themes
-          print -rl -- "ZSH_THEME=\"robbyrussell\"" "source \$ZSH/oh-my-zsh.sh" > $home/.zshrc
+          inzsh_spec_omz_dir; inzsh_spec_omz_rc
           zsh -f $installer --omz >/dev/null
           local before=$(<$home/.zshrc)
           zsh -f $installer --omz >/dev/null
@@ -209,7 +215,7 @@ Describe 'the installer'
     It 'inserts the managed theme line before oh-my-zsh.sh when none existed'
       no_theme_line() {
         inzsh_spec_in_home '
-          mkdir -p $home/.oh-my-zsh/custom/themes
+          inzsh_spec_omz_dir
           print -rl -- "export ZSH=\"\$HOME/.oh-my-zsh\"" "source \$ZSH/oh-my-zsh.sh" > $home/.zshrc
           zsh -f $installer --omz >/dev/null
           local -a lines=("${(@f)$(<$home/.zshrc)}")
@@ -229,8 +235,10 @@ Describe 'the installer'
     It 'honours ZSH_CUSTOM for the themes directory'
       custom() {
         inzsh_spec_in_home '
-          mkdir -p $home/.oh-my-zsh $home/my-custom
-          : > $home/.zshrc
+          inzsh_spec_omz_dir; mkdir -p $home/my-custom
+          print -rl -- "export ZSH=\"\$HOME/.oh-my-zsh\"" \
+            "export ZSH_CUSTOM=\"\$HOME/my-custom\"" \
+            "source \$ZSH/oh-my-zsh.sh" > $home/.zshrc
           ZSH_CUSTOM=$home/my-custom zsh -f $installer --omz >/dev/null
           [[ -L $home/my-custom/themes/inzsh.zsh-theme ]] && print -r -- linked || print -r -- not-linked
         '
@@ -249,11 +257,26 @@ Describe 'the installer'
       The output should eq 'refused'
     End
 
+    It 'refuses --omz when the rc would never read the theme line'
+      inert() {
+        inzsh_spec_in_home '
+          inzsh_spec_omz_dir
+          print -r -- "export EDITOR=vi" > $home/.zshrc
+          zsh -f $installer --omz >/dev/null 2>$home/err && { print -r -- accepted; return 1 }
+          grep -q -- "--plain" $home/err || { print -r -- "no-alternative: $(<$home/err)"; return 1 }
+          [[ -L $home/.oh-my-zsh/custom/themes/inzsh.zsh-theme ]] && { print -r -- linked; return 1 }
+          [[ $(<$home/.zshrc) == "export EDITOR=vi" ]] || { print -r -- rc-edited; return 1 }
+          print -r -- refused
+        '
+      }
+      When call inert
+      The output should eq 'refused'
+    End
+
     It 'auto-detects oh-my-zsh when no path flag is given'
       auto() {
         inzsh_spec_in_home '
-          mkdir -p $home/.oh-my-zsh/custom/themes
-          print -rl -- "ZSH_THEME=\"robbyrussell\"" "source \$ZSH/oh-my-zsh.sh" > $home/.zshrc
+          inzsh_spec_omz_dir; inzsh_spec_omz_rc
           zsh -f $installer >/dev/null
           [[ -L $home/.oh-my-zsh/custom/themes/inzsh.zsh-theme ]] && print -r -- omz-chosen || \
             print -r -- plain-chosen
@@ -266,8 +289,7 @@ Describe 'the installer'
     It 'still installs plain when --plain says so, oh-my-zsh or not'
       forced_plain() {
         inzsh_spec_in_home '
-          mkdir -p $home/.oh-my-zsh/custom/themes
-          print -rl -- "ZSH_THEME=\"robbyrussell\"" "source \$ZSH/oh-my-zsh.sh" > $home/.zshrc
+          inzsh_spec_omz_dir; inzsh_spec_omz_rc
           zsh -f $installer --plain >/dev/null
           [[ -L $home/.oh-my-zsh/custom/themes/inzsh.zsh-theme ]] && { print -r -- linked-anyway; return 1 }
           grep -q ">>> inzsh >>>" $home/.zshrc && print -r -- plain || print -r -- neither
@@ -280,10 +302,7 @@ Describe 'the installer'
     It 'uninstall restores .zshrc exactly and removes the link'
       restores() {
         inzsh_spec_in_home '
-          mkdir -p $home/.oh-my-zsh/custom/themes
-          print -rl -- "export ZSH=\"\$HOME/.oh-my-zsh\"" \
-            "ZSH_THEME=\"robbyrussell\"" \
-            "source \$ZSH/oh-my-zsh.sh" > $home/.zshrc
+          inzsh_spec_omz_dir; inzsh_spec_omz_rc
           local before=$(<$home/.zshrc)
           zsh -f $installer --omz >/dev/null
           zsh -f $installer --uninstall >/dev/null
@@ -296,6 +315,134 @@ Describe 'the installer'
       When call restores
       The output should eq 'restored'
       The stderr should eq ''
+    End
+  End
+
+  # Auto-detection. A framework directory is not a framework: `~/.oh-my-zsh` outlives an
+  # uninstall, and `$ZSH` outlives an export somebody forgot to delete. What decides is the rc
+  # under the installer's hands — if it never sources `oh-my-zsh.sh`, nothing will ever read a
+  # `ZSH_THEME` line or a custom-themes symlink, and the plain path is the only one that works.
+  Describe 'auto-detection'
+    It 'takes the plain path when the rc does not source oh-my-zsh'
+      leftover_dir() {
+        inzsh_spec_in_home '
+          mkdir -p $home/.oh-my-zsh/custom/themes
+          print -r -- "export EDITOR=vi" > $home/.zshrc
+          zsh -f $installer >/dev/null
+          [[ -L $home/.oh-my-zsh/custom/themes/inzsh.zsh-theme ]] && { print -r -- omz-chosen; return 1 }
+          grep -q ">>> inzsh >>>" $home/.zshrc && print -r -- plain-chosen || print -r -- neither
+        '
+      }
+      When call leftover_dir
+      The output should eq 'plain-chosen'
+    End
+
+    It 'takes the plain path when $ZSH points at a leftover directory'
+      leftover_export() {
+        inzsh_spec_in_home '
+          mkdir -p $home/.oh-my-zsh/custom/themes
+          print -r -- "export EDITOR=vi" > $home/.zshrc
+          ZSH=$home/.oh-my-zsh zsh -f $installer >/dev/null
+          [[ -L $home/.oh-my-zsh/custom/themes/inzsh.zsh-theme ]] && { print -r -- omz-chosen; return 1 }
+          grep -q ">>> inzsh >>>" $home/.zshrc && print -r -- plain-chosen || print -r -- neither
+        '
+      }
+      When call leftover_export
+      The output should eq 'plain-chosen'
+    End
+
+    It 'does not count a commented-out oh-my-zsh source line'
+      commented() {
+        inzsh_spec_in_home '
+          mkdir -p $home/.oh-my-zsh/custom/themes
+          print -rl -- "export ZSH=\"\$HOME/.oh-my-zsh\"" \
+            "# source \$ZSH/oh-my-zsh.sh" > $home/.zshrc
+          zsh -f $installer >/dev/null
+          [[ -L $home/.oh-my-zsh/custom/themes/inzsh.zsh-theme ]] && { print -r -- omz-chosen; return 1 }
+          grep -q ">>> inzsh >>>" $home/.zshrc && print -r -- plain-chosen || print -r -- neither
+        '
+      }
+      When call commented
+      The output should eq 'plain-chosen'
+    End
+
+    It 'still takes the oh-my-zsh path when the rc guards its source line'
+      guarded() {
+        inzsh_spec_in_home '
+          inzsh_spec_omz_dir
+          print -rl -- "export ZSH=\"\$HOME/.oh-my-zsh\"" \
+            "ZSH_THEME=\"robbyrussell\"" \
+            "[[ -f \$ZSH/oh-my-zsh.sh ]] && source \$ZSH/oh-my-zsh.sh" > $home/.zshrc
+          zsh -f $installer >/dev/null
+          [[ -L $home/.oh-my-zsh/custom/themes/inzsh.zsh-theme ]] && print -r -- omz-chosen || \
+            print -r -- plain-chosen
+        '
+      }
+      When call guarded
+      The output should eq 'omz-chosen'
+    End
+  End
+
+  # Verification. Writing the edit and the theme loading are two different facts, and only the
+  # second one is what the user asked for — so the installer proves it in a shell of its own
+  # before it says the word. The examples here are the three answers that proof can give.
+  Describe 'verification'
+    It 'says it verified the plain install rather than merely writing one'
+      plain_verified() {
+        inzsh_spec_in_home '
+          zsh -f $installer --plain 2>$home/err | grep -c "verified"
+          if [[ -s $home/err ]]; then print -r -- "$(<$home/err)"; fi
+        ' 'export EDITOR=vi'
+      }
+      When call plain_verified
+      The output should eq 1
+    End
+
+    It 'says it verified the oh-my-zsh install too'
+      omz_verified() {
+        inzsh_spec_in_home '
+          inzsh_spec_omz_dir; inzsh_spec_omz_rc
+          zsh -f $installer --omz 2>$home/err | grep -c "verified"
+          if [[ -s $home/err ]]; then print -r -- "$(<$home/err)"; fi
+        '
+      }
+      When call omz_verified
+      The output should eq 1
+    End
+
+    It 'fails when the rc never reaches the block it just wrote'
+      unreachable() {
+        inzsh_spec_in_home '
+          zsh -f $installer --plain >/dev/null 2>$home/err && { print -r -- claimed-success; return 1 }
+          grep -q "did not load" $home/err && print -r -- reported || print -r -- "$(<$home/err)"
+        ' 'return 0'
+      }
+      When call unreachable
+      The output should eq 'reported'
+    End
+
+    It 'calls an unfinished check unverified, never installed'
+      slow_rc() {
+        inzsh_spec_in_home '
+          _inzsh_install_verify_timeout=1 zsh -f $installer --plain >$home/out 2>$home/err &&
+            { print -r -- claimed-success; return 1 }
+          grep -q "verified" $home/out && { print -r -- claimed-verified; return 1 }
+          grep -q "unverified" $home/err && print -r -- unverified || print -r -- "$(<$home/err)"
+        ' 'sleep 5'
+      }
+      When call slow_rc
+      The output should eq 'unverified'
+    End
+
+    It 'does not hang on an rc that reads from stdin'
+      reads_stdin() {
+        inzsh_spec_in_home '
+          _inzsh_install_verify_timeout=5 zsh -f $installer --plain >/dev/null 2>&1
+          grep -q ">>> inzsh >>>" $home/.zshrc && print -r -- returned || print -r -- lost
+        ' 'read -r answer'
+      }
+      When call reads_stdin
+      The output should eq 'returned'
     End
   End
 

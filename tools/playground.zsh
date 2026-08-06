@@ -21,35 +21,9 @@ source $_inzsh_play_root/inzsh.zsh-theme
 # Read out of the registry rather than restated here, so a knob added tomorrow appears without
 # this file moving — the same reason `docs/configuration.md` is gated by a test rather than by
 # somebody remembering.
-# A validator, in words. The registry's specs are a grammar for the code that enforces them —
-# `int:0:`, `enum:arrow|round|divider` — and reading one is not the job of somebody deciding what
-# to type. Same information, said out loud.
-_inzsh_play_accepts() {
-  emulate -L zsh
-  setopt extended_glob
-
-  local spec=$1
-  case $spec in
-    (bool)        REPLY='1 or 0' ;;
-    (enum:*)      REPLY=${${spec#enum:}//\|/ · } ;;
-    (int)         REPLY='whole number' ;;
-    (int:0:)      REPLY='0 or more' ;;
-    (int:*:)      REPLY="${${spec#int:}%:} or more" ;;
-    (int::*)      REPLY="up to ${spec#int::}" ;;
-    (int:*:*)     REPLY="${${spec#int:}%%:*} to ${spec##*:}" ;;
-    (float)       REPLY='decimal number' ;;
-    (float:\>*:*)
-      REPLY="above ${${spec#float:\>}%%:*}"
-      [[ -n ${spec##*:} ]] && REPLY+=", up to ${spec##*:}"
-      ;;
-    (float:*:)    REPLY="${${spec#float:}%:} or more" ;;
-    (float::*)    REPLY="up to ${spec#float::}" ;;
-    (float:*:*)   REPLY="${${spec#float:}%%:*} to ${spec##*:}" ;;
-    (word:*)      REPLY=${${spec#word:}//\|/ · } ;;
-    (any|*)       REPLY='any text' ;;
-  esac
-  return 0
-}
+# A validator, in words, comes from `_inzsh_config_accepts` in `lib/core/config.zsh` — the
+# listing below and `inzsh doctor` both state the same vocabulary, and two copies of it is one
+# copy too many. This file sources the theme at the top, so the helper is always here.
 
 # The groups, in the order they print. A pattern rather than a list, so a knob added tomorrow
 # lands somewhere sensible without this file moving; anything unmatched falls into the last one.
@@ -96,7 +70,7 @@ inzsh-knobs() {
     (( shown++ )) && print
     print -r -- "$title"
     for name in $rows; do
-      _inzsh_play_accepts "${_inzsh_config_validators[$name]}"
+      _inzsh_config_accepts "${_inzsh_config_validators[$name]}"
       spec=$REPLY
       # What the prompt is using: yours if you set one, otherwise the shipped default. Marked,
       # because "what did I change" is the question this listing is usually asked.
@@ -127,7 +101,7 @@ inzsh-knobs() {
     (( shown++ )) && print
     print -r -- "ONE PER SEGMENT — put a segment's name in the middle, e.g. INZSH_GIT_RANK"
     for spec in $fam; do
-      _inzsh_play_accepts "${_inzsh_config_family_validators[$spec]}"
+      _inzsh_config_accepts "${_inzsh_config_family_validators[$spec]}"
       printf '  %-31s   %-13s %s\n' $spec \
         "${_inzsh_config_family_defaults[$spec]:-(not set)}" "$REPLY"
     done
@@ -255,10 +229,10 @@ inzsh-at() {
 # `inzsh-register light|dark` — swap the palette register and redraw.
 #
 # NOT a knob, and deliberately named as a helper rather than dressed up as one: `_inzsh_register`
-# is internal and there is no `INZSH_REGISTER`. Configuration reaches the same choice by name —
-# `INZSH_PRESET=warm` — but that one is read when the theme is sourced, so it is not something
-# you can type at a prompt. This is what a running shell has instead, and reviewing both
-# registers is what the visual sign-off is for.
+# is internal and there is no `INZSH_REGISTER`. The shipped way to switch in a running shell is
+# `inzsh preset warm`, which takes a PRESET name and rebuilds the secondary prompts with the
+# roles; this takes a REGISTER name and rebuilds nothing else, which is the shorter path when
+# what you are doing is flipping between the two for a visual sign-off.
 inzsh-register() {
   emulate -L zsh
 
@@ -291,8 +265,9 @@ Type a setting, press return, and the next prompt uses it.
     INZSH_SURFACE_MODE=hue        block colours: alternate · ramp · flat · hue
     INZSH_SEPARATOR_STYLE=round   the shape between blocks: arrow · round · divider
     INZSH_PROMPT_LINES=1          type on the same line as the blocks, not below
-    inzsh-register light          the light palette instead of the dark one. In your own
-                                  .zshrc this is INZSH_PRESET=warm, read as the theme loads
+    inzsh preset warm             the light palette instead of the dark one — the same
+                                  command your own shell has. In .zshrc it is
+                                  INZSH_PRESET=warm, read as the theme loads
 
   WHAT IS SHOWN, AND WHERE
 
@@ -322,7 +297,8 @@ Type a setting, press return, and the next prompt uses it.
     inzsh-stub                    fill every block with sample text
     inzsh-stub off                put the real ones back
     inzsh-at 80 40 20             show those widths without resizing the window
-    inzsh-register light          the light palette — or 'dark'
+    inzsh preset warm             the light palette — or 'sharp' for the dark one
+    inzsh-register light          the register by its own name — or 'dark'
     inzsh-reset                   everything back to its default
 
   A GOOD FIRST LOOK

@@ -284,6 +284,22 @@ _inzsh_preset_registers=(
   warm  light
 )
 
+# `$1` as the table above spells a name, in REPLY: lower case, letters and digits only. That is
+# the normalisation the registered `word:` spec matches with — case, spacing and punctuation
+# ignored — so a name the validator blessed is a name the table can find, and `Warm`, `warm` and
+# ` WARM ` are one request. A value that normalises to nothing was never a name.
+#
+# Written once here because two callers need it: the applier below, and `inzsh preset` in
+# `lib/core/doctor.zsh`, which has to know whether a typed word is a name BEFORE it applies it.
+_inzsh_preset_normalize() {
+  emulate -L zsh
+
+  typeset -g REPLY=${(L)1}
+  REPLY=${REPLY//[^a-z0-9]/}
+
+  return 0
+}
+
 # Apply `INZSH_PRESET`, if it names a preset. Called once, by the entry point, at source time —
 # the note there says why this is the one knob that is not read again at draw time.
 #
@@ -301,13 +317,9 @@ _inzsh_preset_apply() {
     name=$REPLY
   fi
 
-  # Normalised the way the registered `word:` spec matched it — case, spacing and punctuation
-  # ignored — so a name the validator blessed is a name this table can find. A value that
-  # normalises to nothing was never a name.
-  name=${(L)name}
-  name=${name//[^a-z0-9]/}
+  _inzsh_preset_normalize "$name"
 
-  local register=${_inzsh_preset_registers[$name]-}
+  local register=${_inzsh_preset_registers[$REPLY]-}
   [[ -n $register ]] || return 0
 
   typeset -g _inzsh_register=$register

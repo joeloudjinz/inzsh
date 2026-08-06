@@ -1,5 +1,6 @@
 Include lib/core/config.zsh
 Include lib/core/detect.zsh
+Include lib/core/tokens.zsh
 Include lib/salah/calc.zsh
 Include lib/salah/cache.zsh
 Include lib/salah/location.zsh
@@ -46,6 +47,7 @@ Describe 'the inzsh command'
     The stderr should include 'usage'
     The stderr should include 'doctor'
     The stderr should include 'locate'
+    The stderr should include 'preset'
   End
 
   It 'prints the same usage when called bare'
@@ -120,6 +122,9 @@ Describe 'inzsh doctor'
     The output should include 'colour depth  8 (INZSH_COLOR_DEPTH)'
   End
 
+  # The row says what was DETECTED and credits the override only when one was obeyed. The
+  # unreadable value is not silently forgotten either — it is listed below as ignored, which is
+  # the other half of the same honesty and is what issue #210 added.
   It 'does not blame the override for a value detection produced'
     ignored() {
       inzsh_spec_doctor_env
@@ -128,7 +133,8 @@ Describe 'inzsh doctor'
     }
     When call ignored
     The output should include 'colour depth  truecolor'
-    The output should not include 'INZSH_COLOR_DEPTH'
+    The output should not include 'truecolor (INZSH_COLOR_DEPTH)'
+    The output should include 'ignored       INZSH_COLOR_DEPTH=chartreuse'
   End
 
   It 'reports the locale and whether multibyte glyphs are safe'
@@ -178,6 +184,143 @@ Describe 'inzsh doctor'
     The output should include 'exit-code-capture'
     The output should include 'render-budget'
     The output should include 'separator-visibility'
+  End
+
+  # Issue #210. A value that fails its validator is dropped and never reported — the rule that
+  # keeps a typo from stopping the prompt drawing — and the cost is that a near miss is
+  # indistinguishable from a knob that does nothing: `INZSH_SEPARATOR_STYLE=rounded` is silent,
+  # and the word is `round`. The registry holds every validator, so the block can answer it.
+  #
+  # Two properties, and the second is the one that keeps the section honest: what is listed is
+  # SET, INVALID and therefore ignored — and nothing is said at all when everything is valid. A
+  # clean shell does not grow a section telling it so.
+  Describe 'values that are set and ignored'
+    It 'names a near miss and the vocabulary it should have used'
+      near_miss() {
+        inzsh_spec_doctor_env
+        local INZSH_SEPARATOR_STYLE=rounded
+        inzsh doctor
+      }
+      When call near_miss
+      The output should include 'ignored'
+      The output should include 'INZSH_SEPARATOR_STYLE=rounded'
+      The output should include 'arrow · round · divider'
+    End
+
+    # The vocabulary is rendered from the registered spec rather than restated here, so every
+    # shape of validator has to come out as words. One example per shape that ships.
+    Describe 'the vocabulary'
+      Parameters
+        INZSH_PRESET        wark    'sharp · warm'
+        INZSH_SURFACE_MODE  chart   'alternate · ramp · flat · hue'
+        INZSH_DIR_RANK      leftish 'whole number'
+        INZSH_DIR_MINCOLS   -5      '0 or more'
+        INZSH_TITLE         maybe   '1 or 0'
+      End
+
+      It "says $1=$2 accepts $3"
+        accepts() {
+          inzsh_spec_doctor_env
+          typeset -g "$1"="$2"
+          inzsh doctor
+        }
+        When call accepts "$1" "$2"
+        The output should include "ignored"
+        The output should include "$1=$2"
+        The output should include "$3"
+      End
+    End
+
+    # The section exists for the near miss, so silence is as load-bearing as the listing. A
+    # `zsh -f` of its own, because the shell running the suite may carry knobs of its own.
+    It 'says nothing at all when every value that is set is valid'
+      clean() {
+        zsh -f -c '
+          TERM=xterm-256color COLORTERM=truecolor LC_ALL=en_US.UTF-8
+          source "$1/lib/core/config.zsh"
+          source "$1/lib/core/detect.zsh"
+          source "$1/lib/core/doctor.zsh"
+          INZSH_SEPARATOR_STYLE=round
+          INZSH_DIR_RANK=-3
+          inzsh doctor
+        ' inzsh-doctor-clean "$SHELLSPEC_PROJECT_ROOT"
+      }
+      When call clean
+      The output should not include 'ignored'
+      The stderr should eq ''
+    End
+
+    # Set-but-empty is UNSET at every level of this theme — an `INZSH_DIR_BG=` left in a zshrc
+    # falls through to the role rather than blanking the segment — so it is not an ignored value
+    # and must not be listed as one. A name the registry has never heard of is not listed either:
+    # there is no vocabulary to state, and no way to tell a typo from a variable that is not ours.
+    It 'lists neither an empty value nor a name the registry never heard of'
+      quiet() {
+        zsh -f -c '
+          TERM=xterm-256color COLORTERM=truecolor LC_ALL=en_US.UTF-8
+          source "$1/lib/core/config.zsh"
+          source "$1/lib/core/detect.zsh"
+          source "$1/lib/core/doctor.zsh"
+          INZSH_SEPARATOR_STYLE=
+          INZSH_DIR_BG=
+          INZSH_NOT_A_KNOB=banana
+          inzsh doctor
+        ' inzsh-doctor-quiet "$SHELLSPEC_PROJECT_ROOT"
+      }
+      When call quiet
+      The output should not include 'ignored'
+      The stderr should eq ''
+    End
+
+    It 'lists every ignored value, one row each, in a fixed order'
+      several() {
+        zsh -f -c '
+          TERM=xterm-256color COLORTERM=truecolor LC_ALL=en_US.UTF-8
+          source "$1/lib/core/config.zsh"
+          source "$1/lib/core/detect.zsh"
+          source "$1/lib/core/doctor.zsh"
+          INZSH_SURFACE_MODE=chartreuse
+          INZSH_PRESET=wark
+          INZSH_DIR_MINCOLS=-5
+          inzsh doctor | grep -c ignored
+          _inzsh_doctor_ignored
+          print -r -- "${reply[*]}"
+        ' inzsh-doctor-several "$SHELLSPEC_PROJECT_ROOT"
+      }
+      When call several
+      The line 1 should eq '3'
+      The line 2 should eq 'INZSH_DIR_MINCOLS INZSH_PRESET INZSH_SURFACE_MODE'
+    End
+
+    # The block is pasted into an issue, so one hostile value may not break its shape. A newline
+    # would end the row early, a control character would move the cursor, and a value long enough
+    # to be a config file in its own right would push the block off the screen.
+    It 'keeps one row per value whatever the value holds'
+      hostile() {
+        zsh -f -c '
+          TERM=xterm-256color COLORTERM=truecolor LC_ALL=en_US.UTF-8
+          source "$1/lib/core/config.zsh"
+          source "$1/lib/core/detect.zsh"
+          source "$1/lib/core/doctor.zsh"
+          INZSH_SURFACE_MODE=$'\''one\ntwo\tthree'\''
+          INZSH_PRESET=%F{red}aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          local -a rows=(${(f)"$(inzsh doctor)"})
+          local -a ignored=(${(M)rows:#*ignored*})
+          local -a wrong=()
+          (( ${#ignored} == 2 )) || wrong+=rows:${#ignored}
+          local row
+          for row in $ignored; do
+            [[ $row == *[[:cntrl:]]* ]] && wrong+=control
+            (( ${#row} > 100 )) && wrong+=long:${#row}
+          done
+          [[ ${ignored[2]} == *aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa* ]] && wrong+=unclipped
+          print -r -- "${wrong[*]}"
+        ' inzsh-doctor-hostile "$SHELLSPEC_PROJECT_ROOT"
+      }
+      When call hostile
+      The output should eq ''
+      The stderr should eq ''
+    End
   End
 
   It 'reports where the location came from when coordinates are configured'
@@ -347,6 +490,221 @@ Describe 'inzsh locate'
     When call forced
     The status should be failure
     The stderr should include 'kept'
+  End
+End
+
+Describe 'inzsh preset'
+  # Issue #211. `INZSH_PRESET` is read when the theme loads — correctly, since `PS2`, `SPROMPT`
+  # and the title are built once from the register resolved then — so setting it at a prompt does
+  # nothing, and the only live switch was sourcing a preset file by its full path, which differs
+  # between an in-place install and a bundle.
+  #
+  # The register table in `lib/core/tokens.zsh` is what this reuses, so the command reads no file
+  # and works identically from a bundle with no `presets/` directory anywhere near it.
+  #
+  # Every example starts from the register it is NOT switching to, so each is a real switch
+  # rather than a command agreeing with where the shell already was.
+
+  Describe 'reporting'
+    It 'names the register in force and the ones there are'
+      report() {
+        _inzsh_register=dark
+        inzsh preset
+      }
+      When call report
+      The line 1 should eq 'preset: sharp'
+      The line 2 should eq 'available: sharp · warm'
+      The status should be success
+    End
+
+    # The REGISTER is the truth, not the knob: somebody who sourced `presets/inzsh-warm.zsh` by
+    # hand moved one and not the other, and the report has to describe the prompt being drawn.
+    It 'reads the name back from the register rather than from the knob'
+      sourced_by_hand() {
+        _inzsh_register=light
+        unset INZSH_PRESET
+        inzsh preset
+      }
+      When call sourced_by_hand
+      The line 1 should eq 'preset: warm'
+      The status should be success
+    End
+
+    # Empty is unset at every level of this theme, so an argument that expanded to nothing is a
+    # report rather than a refusal.
+    It 'reports when the argument expanded to nothing'
+      empty() {
+        _inzsh_register=dark
+        inzsh preset ''
+      }
+      When call empty
+      The line 1 should eq 'preset: sharp'
+      The status should be success
+    End
+  End
+
+  Describe 'switching'
+    # $1 what is typed, $2 the register before, $3 the register after, $4 the name reported.
+    Parameters
+      warm   dark  light warm
+      sharp  light dark  sharp
+      WARM   dark  light warm
+      ' Warm ' dark light warm
+    End
+
+    It "switches the register to $3 for '$1'"
+      switched() {
+        _inzsh_register=$2
+        _inzsh_tokens_resolve
+        inzsh preset "$1"
+        print -r -- "$_inzsh_register"
+      }
+      When call switched "$1" "$2"
+      The line 1 should eq "preset: $4"
+      The line 2 should eq "$3"
+      The status should be success
+    End
+  End
+
+  Describe 'what switching touches'
+    It 'rebuilds every role from the register it switched to'
+      roles() {
+        _inzsh_register=dark
+        _inzsh_tokens_resolve
+        inzsh preset warm >/dev/null
+        local named=_inzsh_roles_light
+        local -A table=("${(@Pkv)named}")
+        local role; local -a wrong=()
+        for role in ${(ko)table}; do
+          [[ ${_inzsh_role[$role]} == ${_inzsh_palette[${table[$role]}]} ]] || wrong+=$role
+        done
+        print -r -- "${#_inzsh_role} ${#wrong}"
+      }
+      When call roles
+      The output should eq '38 0'
+    End
+
+    # The knob is the applier's own input, and a shell whose knob disagreed with the register it
+    # is drawing would lie to everything that reads it back — the doctor, a re-source, the next
+    # report. Written as the canonical name, whatever spelling was typed.
+    It 'leaves the knob agreeing with the register'
+      knob() {
+        _inzsh_register=dark
+        inzsh preset ' WARM ' >/dev/null
+        print -r -- "${INZSH_PRESET}"
+      }
+      When call knob
+      The output should eq 'warm'
+    End
+
+    # The reason the knob is read at load time in the first place: the secondary prompts are
+    # built ONCE, from the roles resolved at install. A switch that moved the ribbon and left the
+    # continuation prompt in the old register would be the half-done knob the load-time rule
+    # exists to avoid. An interactive shell, because installing them is what it is about.
+    It 'rebuilds the secondary prompts it owns'
+      secondary() {
+        TERM=xterm-256color zsh -f -i -c '
+          source "$1/lib/core/config.zsh"
+          source "$1/lib/core/tokens.zsh"
+          source "$1/lib/core/prompts.zsh"
+          source "$1/lib/core/doctor.zsh"
+          _inzsh_register=dark
+          _inzsh_tokens_resolve
+          _inzsh_prompts_install
+          local before=$PS2 before_sprompt=$SPROMPT
+          inzsh preset warm >/dev/null
+          local -a wrong=()
+          [[ $PS2 != $before ]]                    || wrong+=ps2-kept-the-old-register
+          [[ $SPROMPT != $before_sprompt ]]        || wrong+=sprompt-kept-the-old-register
+          [[ $PS2 == *${_inzsh_role[accent]}* ]]   || wrong+=ps2-not-from-the-new-roles
+          print -r -- "${wrong[*]}"
+        ' inzsh-preset-secondary "$SHELLSPEC_PROJECT_ROOT"
+      }
+      When call secondary
+      The output should eq ''
+      The stderr should eq ''
+    End
+
+    # And the other side of owning them: a shell where the theme never installed the secondary
+    # prompts has somebody else's `PS2` in it, and that is none of our business.
+    It 'leaves a PS2 the theme never installed alone'
+      foreign() {
+        TERM=xterm-256color zsh -f -i -c '
+          source "$1/lib/core/config.zsh"
+          source "$1/lib/core/tokens.zsh"
+          source "$1/lib/core/prompts.zsh"
+          source "$1/lib/core/doctor.zsh"
+          _inzsh_register=dark
+          PS2="mine> "
+          inzsh preset warm >/dev/null
+          print -r -- "$PS2"
+        ' inzsh-preset-foreign "$SHELLSPEC_PROJECT_ROOT"
+      }
+      When call foreign
+      The output should eq 'mine> '
+      The stderr should eq ''
+    End
+  End
+
+  Describe 'a name it does not know'
+    # Every one of these is a plausible thing to type — a register's own name, a preset file's
+    # name, a typo — and every one leaves the register exactly as it was found. The refusal names
+    # what there is, because the whole point of the command is that the vocabulary is small and
+    # nobody should have to go and look it up.
+    Parameters
+      light
+      dark
+      inzsh-warm
+      chartreuse
+      0
+    End
+
+    It "refuses '$1' and leaves the register alone"
+      refused() {
+        _inzsh_register=dark
+        _inzsh_tokens_resolve
+        inzsh preset "$1"
+        local -i rc=$?
+        print -r -- "$_inzsh_register"
+        return $rc
+      }
+      When call refused "$1"
+      The status should be failure
+      The output should eq 'dark'
+      The stderr should include "$1"
+      The stderr should include 'sharp · warm'
+    End
+  End
+
+  It 'refuses more than one name at a time'
+    two() {
+      _inzsh_register=dark
+      inzsh preset warm sharp
+      local -i rc=$?
+      print -r -- "$_inzsh_register"
+      return $rc
+    }
+    When call two
+    The status should be failure
+    The output should eq 'dark'
+    The stderr should include 'sharp · warm'
+  End
+
+  # The command ships with the theme, so it has to be honest about a partial load. Without the
+  # token layer there is no register to switch and no table to read one from, and saying so is
+  # the whole of what it can do.
+  It 'says so when the token layer is not loaded'
+    standalone() {
+      zsh -f -c '
+        source "$1/lib/core/config.zsh"
+        source "$1/lib/core/doctor.zsh"
+        inzsh preset warm
+      ' inzsh-preset-standalone "$SHELLSPEC_PROJECT_ROOT"
+    }
+    When call standalone
+    The status should be failure
+    The stderr should include 'token layer'
+    The output should eq ''
   End
 End
 
