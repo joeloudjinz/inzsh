@@ -49,7 +49,8 @@ _inzsh_tape_keep=(\${INZSH_PRESET:+INZSH_PRESET=\$INZSH_PRESET}
                   \${INZSH_GIT_ASYNC:+INZSH_GIT_ASYNC=\$INZSH_GIT_ASYNC}
                   \${INZSH_COLOR_DEPTH:+INZSH_COLOR_DEPTH=\$INZSH_COLOR_DEPTH}
                   \${INZSH_SALAH_LAT:+INZSH_SALAH_LAT=\$INZSH_SALAH_LAT}
-                  \${INZSH_SALAH_LON:+INZSH_SALAH_LON=\$INZSH_SALAH_LON})
+                  \${INZSH_SALAH_LON:+INZSH_SALAH_LON=\$INZSH_SALAH_LON}
+                  \${INZSH_PROMPT_LINES:+INZSH_PROMPT_LINES=\$INZSH_PROMPT_LINES})
 unset -m 'INZSH_*' 2>/dev/null
 for _inzsh_tape_kv in \$_inzsh_tape_keep; do export \$_inzsh_tape_kv; done
 unset _inzsh_tape_keep _inzsh_tape_kv
