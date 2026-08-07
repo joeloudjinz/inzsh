@@ -25,7 +25,7 @@ Set TypingSpeed 130ms
 # Enter the pinned environment: the stage tools/tape-run.zsh builds at a fixed path.
 # Hidden — the recording opens on the theme's prompt, not on the machine's own shell.
 Hide
-Type "s=${TMPDIR:-/tmp}; s=${s%/}/inzsh-tape; HOME=$s ZDOTDIR=$s HOST=spec-host TZ=UTC INZSH_PRESET= exec zsh -d -i"
+Type "s=${TMPDIR:-/tmp}; s=${s%/}/inzsh-tape; HOME=$s ZDOTDIR=$s HOST=joeinz-pc TAPE_USER=joeinz TZ=UTC INZSH_PRESET= exec zsh -d -i"
 Enter
 Wait+Screen /12:34/
 Show

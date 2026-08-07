@@ -4,6 +4,7 @@ SHELL := /bin/zsh
 SHELLSPEC ?= shellspec
 PYTHON ?= ./.venv/bin/python
 COLS ?= 80
+SCALE ?= 1
 
 .PHONY: help setup test test-ui test-install spec-guard perf grid demo watch
 .PHONY: golden-update golden-check bundle doctor shots
@@ -57,8 +58,23 @@ play: ## a live prompt in a throwaway shell — every knob takes effect as you t
 
 # Local generation only, by design: no CI job renders these. Each tape runs inside the
 # pinned fixture environment (tools/tape-env.zsh); output lands in demo-out/, gitignored.
-demo: ## render every VHS tape in test/tapes to demo-out/
-	@for tape in test/tapes/*.tape; do zsh tools/tape-run.zsh $$tape; done
+demo: ## render the VHS tapes to demo-out/ and publish the showcase (SCALE=2 for high-DPI)
+	@for tape in test/tapes/*.tape; do \
+	  [[ $${tape:t} == shot-* ]] && continue; \
+	  SCALE=$(SCALE) zsh tools/tape-run.zsh $$tape; \
+	done
+	@cp demo-out/gifs/showcase.gif docs/assets/showcase.gif
+	@print -- "demo: published docs/assets/showcase.gif"
+
+# The stills the readme shows, and the one command that rebuilds them. `shots` writes into
+# docs/assets directly — what is committed is what the tape drew.
+shots: ## regenerate the README screenshots from fixtures into docs/assets (SCALE=2 for high-DPI)
+	@for s in sharp warm 256 salah; do \
+	  SCALE=$(SCALE) zsh tools/tape-run.zsh test/tapes/shot-$$s.tape; \
+	  ffmpeg -y -loglevel error -i demo-out/shot-$$s.gif -filter_complex "[0]reverse[r]" \
+	    -map "[r]" -frames:v 1 docs/assets/shot-$$s.png; \
+	done
+	@print -- "shots: docs/assets/shot-{sharp,warm,256,salah}.png"
 
 watch: ## re-render on save
 	@echo "make watch: nothing to watch yet — the token layer lands at M1"
@@ -73,12 +89,6 @@ watch: ## re-render on save
 # gate that silently skipped would gate nothing.
 # The README's three stills — sharp, warm, and the honest 256-colour case — are the final
 # frames of three one-prompt tapes, extracted with the same ffmpeg VHS already requires.
-shots: ## regenerate the README screenshots from fixtures into docs/assets
-	@for s in sharp warm 256; do \
-	  zsh tools/tape-run.zsh test/tapes/shot-$$s.tape; \
-	  ffmpeg -y -loglevel error -i demo-out/shot-$$s.gif -filter_complex "[0]reverse[r]" -map "[r]" -frames:v 1 docs/assets/shot-$$s.png; \
-	done
-
 golden-update: ## regenerate golden files deliberately (never touches test/fixtures)
 	@if [[ -x $(PYTHON) ]]; then \
 	  $(PYTHON) tools/golden.py --update; \

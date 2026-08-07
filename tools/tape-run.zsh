@@ -28,4 +28,18 @@ trap 'rm -rf -- "$_inzsh_tape_stage"' EXIT INT TERM
 
 mkdir -p $_inzsh_tape_root/demo-out/gifs
 
+# SCALE renders the same tape larger for a high-DPI screen: every pinned dimension is
+# multiplied, so the recording is the SAME recording — same rows, same columns, same waits —
+# photographed at more pixels. A web page wanting a 2x asset therefore gets one from the tape
+# it already trusts, rather than from an upscale of the 1x render.
+if [[ ${SCALE:-1} != 1 ]]; then
+  [[ ${SCALE-} == <2-4> ]] || { print -ru2 -- 'tape-run: SCALE takes 2, 3 or 4'; exit 1 }
+  _inzsh_tape_scaled=$_inzsh_tape_root/demo-out/scaled-${_inzsh_tape:t}
+  awk -v s="$SCALE" '
+    /^Set (Width|Height|FontSize|Padding) / { printf "%s %s %d\n", $1, $2, $3 * s; next }
+    { print }
+  ' $_inzsh_tape > $_inzsh_tape_scaled
+  _inzsh_tape=$_inzsh_tape_scaled
+fi
+
 vhs $_inzsh_tape < /dev/null
