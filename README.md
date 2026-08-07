@@ -80,8 +80,14 @@ hand-tuned for this case and holds the theme's shape, but it is close rather tha
 
 <img src="docs/assets/shot-256.png" alt="The 256-colour fallback" width="800">
 
-Every still and recording here is generated from fixtures — `make shots` and `make demo`
-rebuild them; nothing is hand-edited.
+**Prayer times** — the segment as the subject, in the one-line shape.
+
+<img src="docs/assets/shot-salah.png" alt="The prayer-times segment in a one-line prompt" width="800">
+
+Every still and recording here is generated from fixtures and written straight into
+`docs/assets` — `make shots` rebuilds the four stills, `make demo` rebuilds the recordings and
+publishes the showcase. Nothing is hand-edited or hand-copied. `SCALE=2` on either renders the
+same tapes at twice the size for a high-DPI screen.
 
 ## Supported terminals
 
