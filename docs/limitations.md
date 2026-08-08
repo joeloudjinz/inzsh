@@ -38,7 +38,7 @@ counts. It does not count changed files, and it never runs git on the prompt's c
 status arrives from a background worker, so a just-changed repository can show its previous
 state for one paint.
 
-**Prayer times.** Times are computed astronomically from your coordinates with published
+**Prayer times.** ([How they are calculated](prayer-times.md), with sources.) Times are computed astronomically from your coordinates with published
 method parameters; they are calculations, not announcements from your masjid. The offset
 knobs exist precisely to calibrate the display against a local timetable. At extreme
 latitudes, where fajr or isha may not astronomically exist, the configured high-latitude

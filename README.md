@@ -116,7 +116,8 @@ Linux TTY and other bare consoles are not supported yet.
 
 The segment is optional and off unless configured. Times are computed on your machine using
 standard astronomical methods — several calculation conventions and both Asr schools are
-supported.
+supported. [How the prayer times are calculated](docs/prayer-times.md) explains the arithmetic
+in plain terms and links the published source for every part of it.
 
 ```zsh
 INZSH_SALAH_LAT=21.4225      # your latitude
