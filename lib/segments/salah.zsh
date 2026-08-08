@@ -110,7 +110,7 @@ _inzsh_segment_priority[SALAH]=90
 # right is worse than one that says the module decides. The vocabulary is in
 # `docs/configuration.md`, and the fallback below is what an unrecognised word gets.
 if (( ${+functions[_inzsh_config_register]} )); then
-  _inzsh_config_register INZSH_SALAH_FORMAT any clock
+  _inzsh_config_register INZSH_SALAH_FORMAT 'word:clock|countdown|window|full' clock
 fi
 
 # The registered default, restated here so the segment still draws sensibly when
