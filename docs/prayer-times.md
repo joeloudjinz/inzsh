@@ -104,8 +104,9 @@ Two things, beyond reading the code.
 **It is checked against someone else's answers.** The test suite pins our output against real
 responses from the public [Aladhan API](https://api.aladhan.com/v1/timings) — a separate
 implementation by different people — across a matrix of places, dates and methods — Mecca, Cairo, Karachi,
-Algiers, New York across a daylight-saving change, Sydney, Buenos Aires, Reykjavík under all
-three high-latitude conventions, and Svalbard in both midnight sun and polar night. Those expected values were fetched by hand and committed; no test
+Algiers, New York across a daylight-saving change, Sydney, Cape Town, Buenos Aires, Ushuaia,
+Reykjavík under all three high-latitude conventions, and Svalbard in both midnight sun and
+polar night. Those expected values were fetched by hand and committed; no test
 run regenerates them, so the suite cannot quietly agree with itself.
 
 **The clock is injectable.** The calculation takes the instant as an argument and never reads
