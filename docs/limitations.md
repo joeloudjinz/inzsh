@@ -16,6 +16,15 @@ Linux TTY and other bare consoles are not supported.
 Without one the theme falls back to an ASCII register — bars instead of wedges, letters
 instead of marks. Readable, but the two sides of the prompt lose their mirrored shapes.
 
+**Resizing in a terminal that reflows.** Dragging a window narrower rebuilds the prompt and
+erases the old one first. In a terminal that RE-WRAPS the rows already on screen — xterm.js,
+which is VS Code's and Hyper's — the old row becomes several, the erase reaches only the last
+of them, and each drag leaves stale ribbons behind. `INZSH_RESIZE_REFLOW=1` switches on
+arithmetic that should handle it and is unverified; `INZSH_RESIZE=0` turns the redraw off
+altogether and leaves a stale prompt until the next Enter, which is untidy in one place rather
+than many. Native terminals — Ghostty, Terminal.app, kitty, iTerm2, Alacritty, WezTerm — are
+unaffected.
+
 **tmux.** Full colour requires RGB passthrough (`set -sa terminal-features ',*:RGB'`).
 Without it colours are downgraded to what tmux forwards.
 
