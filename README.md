@@ -58,6 +58,13 @@ Pick one in `.zshrc`, above the line that sources the theme:
 INZSH_PRESET=warm
 ```
 
+**Match the preset to your terminal's background** — `sharp` on a dark one, `warm` on a light
+one. A light register on a black background reads as washed-out blocks floating in the dark,
+which is the single most common reason the theme looks wrong. Two neighbours matter nearly as
+much: a pure-black background leaves the dark register's surfaces little room to separate, and
+the Nerd Font variant decides whether the ribbon looks solid — the small-line-gap variants
+(`MesloLGS`, not `MesloLGL`) stack without seams.
+
 Read when the theme loads rather than at each prompt — the [configuration
 reference](docs/configuration.md) says why. In a shell that is already running:
 

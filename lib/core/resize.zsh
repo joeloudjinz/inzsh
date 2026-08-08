@@ -85,6 +85,9 @@
 # handling, or who would rather the prompt only ever change when they ask it to.
 if (( ${+functions[_inzsh_config_register]} )); then
   _inzsh_config_register INZSH_RESIZE bool 1
+  # Empty rather than 0: nothing set means "decide from the terminal", the same shape the
+  # detection overrides in `lib/core/detect.zsh` use.
+  _inzsh_config_register INZSH_RESIZE_REFLOW bool ''
 fi
 
 # What the previous `TRAPWINCH` was — its BODY, exactly as `$functions` spelled it — and whether
@@ -115,6 +118,41 @@ _inzsh_resize_enabled() {
   esac
 
   return 0
+}
+
+# --------------------------------------------------------------------------------------------
+# Does this terminal RE-WRAP the rows already on screen when the window changes?
+#
+# It cannot be asked. There is no capability string for reflow, and the only honest probe —
+# querying the cursor position and comparing — would read from stdin inside a trap while the
+# line editor is live, which is a race with the user's own keystrokes. So it is declared:
+# `INZSH_RESIZE_REFLOW` when a user knows their terminal, and otherwise the two families that
+# announce themselves. `TERM_PROGRAM` is set by the terminal, not by us, and xterm.js is what
+# VS Code and Hyper both embed.
+#
+# Wrong in the safe direction by default: a terminal that reflows and is not listed keeps the
+# stale head of one row, which is untidy. Guessing the other way would erase a line of output
+# the user wrote, which is damage.
+_inzsh_resize_reflows() {
+  emulate -L zsh
+
+  local want=${INZSH_RESIZE_REFLOW-}
+  if (( ${+functions[_inzsh_config_get]} )); then
+    _inzsh_config_get INZSH_RESIZE_REFLOW
+    want=$REPLY
+  fi
+
+  case ${(L)want} in
+    (1|true|yes|on)  return 0 ;;
+    (0|false|no|off) return 1 ;;
+  esac
+
+  # NOTHING IS DETECTED YET, DELIBERATELY. VS Code and Hyper announce themselves through
+  # `TERM_PROGRAM` and are the reflowing terminals we know of, so listing them here is the
+  # obvious next line — and it is not written, because the taller climb has never been run
+  # against a reflowing terminal. A default nobody has watched is not a default. The knob
+  # above is the way in until #215 measures it; `docs/limitations.md` says so plainly.
+  return 1
 }
 
 # --------------------------------------------------------------------------------------------
@@ -169,11 +207,53 @@ _inzsh_resize_winch() {
   # redraw would be a screen write for no information.
   [[ ${COLUMNS:-0} == ${_inzsh_render_cols-0} ]] && return 0
 
+  # The width of the row ALREADY ON SCREEN, read before the rebuild overwrites it. This is
+  # the only number that says how much room the stale prompt takes at the new width.
+  local -i was=${_inzsh_render_width:-0}
+
   (( ${+functions[_inzsh_render]} )) || return 0
   _inzsh_render
 
   (( ${+builtins[zle]} )) || return 0
   zle || return 0
+
+  # ERASE WHAT IS THERE BEFORE DRAWING WHAT SHOULD BE, and do not ask zle where the prompt
+  # starts. `zle .reset-prompt` on its own repaints from an origin zle computed before the
+  # window moved, so it lands below the prompt already on screen and leaves it there — one
+  # stale copy per signal, which a drag turns into a staircase. Measured in Terminal.app,
+  # Ghostty and VS Code; the terminals differ only in how many signals a drag emits.
+  #
+  # The cursor sits on the LAST row of the prompt, so climbing `lines - 1` reaches the first
+  # one — 1 in the two-line shape, 0 in the one-line shape, where `\r` alone is the start.
+  # `\e[J` then erases from there to the end of the screen: everything the old prompt owns
+  # and nothing above it, which is why the climb is counted rather than guessed.
+  #
+  # The escapes go out raw rather than through a widget: this runs in a trap, and the two
+  # sequences move the cursor and clear — they draw nothing zle has to account for.
+  # HOW FAR UP DEPENDS ON WHETHER THE TERMINAL RE-WRAPPED WHAT IS ALREADY THERE, and the two
+  # answers are one row apart in the common case:
+  #
+  #   it does not reflow   the old row is still the one physical row it was drawn as, however
+  #                        much narrower the window now is. Ghostty, Terminal.app. Climbing
+  #                        past it would erase a line of the user's own output.
+  #   it reflows           the old row — padded to nearly the full width, which is what keeps
+  #                        the clock beside the segments — has re-wrapped into
+  #                        ceil(width / columns) rows. VS Code and the rest of xterm.js.
+  #                        Climbing one row lands inside it and leaves its head on screen.
+  #
+  # So the climb is `rows above the cursor within the prompt`: the segment row's height, plus
+  # the marker row when there is one, less the row the cursor is on.
+  local -i lines=${_inzsh_prompt_lines_resolved:-2}
+  local -i rows=1
+  if (( was > 0 && ${COLUMNS:-0} > 0 )) && _inzsh_resize_reflows; then
+    (( rows = (was + COLUMNS - 1) / COLUMNS ))
+    (( rows > 0 )) || rows=1
+  fi
+
+  local -i above=$(( rows + lines - 2 ))
+  (( above > 0 )) && print -n -- $'\e['"$above"'A'
+  print -n -- $'\r\e[J'
+
   zle .reset-prompt
 
   return 0
