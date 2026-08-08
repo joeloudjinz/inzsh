@@ -7,11 +7,14 @@ Precedence, everywhere: per-segment override → semantic role → default.
 
 ## How a value is read
 
-**Three levels.** A per-segment override — `INZSH_<SEGMENT>_<KNOB>` — beats the semantic role
-the theme picked for that segment, which beats the knob's default. Setting the plain
-`INZSH_<KNOB>` moves the default for every segment at once; a role or an override still
-specialises it. The rule is the same for colour, for surfaces and for everything added later,
-so learning it once is enough.
+**Two levels, per segment.** A per-segment override — `INZSH_<SEGMENT>_<KNOB>`, such as
+`INZSH_DIR_BG` or `INZSH_GIT_RANK` — beats whatever the theme picked for that segment: the
+semantic role for a colour, the registered default for everything else. That is the whole rule
+for the families below, and it is the same rule for colour, rank, priority and width.
+
+There is no bare `INZSH_BG` or `INZSH_RANK` that moves every segment at once. Each family is
+addressed one segment at a time, by name; the theme's own defaults are the global layer, and
+they are changed by overriding the segments you care about.
 
 **Empty means unset, at every level.** An `INZSH_DIR_BG=` left behind in a `.zshrc` falls
 through to the role rather than blanking the segment. There is no value that means "nothing" —
@@ -107,7 +110,7 @@ theme falls back to a safe value rather than drawing the broken result:
 | `INZSH_TRANSIENT` | `1` · `0` · `true` · `false` · `yes` · `no` · `on` · `off`, in any case | `1` | Whether a prompt collapses to its minimal form once its command has been accepted, so scrollback reads as commands and output rather than two hundred repetitions of a seven-segment ribbon. Off keeps the full prompt in the transcript. |
 | `INZSH_TRANSIENT_FORMAT` | `marker` · `dir` | `marker` | What a collapsed prompt shows. `marker` is the marker alone; `dir` puts the directory, muted, in front of it — worth it if you move between trees mid-session and want scrollback to say where each command ran. Invalid values fall back to `marker`. |
 | `INZSH_RESIZE` | `1` · `0` · `true` · `false` · `yes` · `no` · `on` · `off`, in any case | `1` | Whether the prompt is rebuilt and redrawn when the terminal changes size. A prompt is measured once against the width it was drawn at, and in the two-row shape the right-hand side is padded onto the segment row with real spaces — so without this a narrowed window leaves a row that is too wide, wraps, and is redrawn as several rows of the same ribbon until you press Enter. The redraw keeps whatever you were part-way through typing. Off if you have your own `TRAPWINCH`, or would rather the prompt only changed when you asked it to. |
-| `INZSH_RESIZE_REFLOW` | `1` · `0` · `true` · `false` · `yes` · `no` · `on` · `off`, in any case | detected | Whether this terminal RE-WRAPS the rows already on screen when the window changes size. It decides how far the resize redraw climbs before it erases: a terminal that reflows has turned the old segment row into several, and one that does not still has it as one. There is no capability string to ask, and the honest probe — reading the cursor position — would race the keys you are typing, so it is declared instead: VS Code and Hyper announce themselves through `TERM_PROGRAM` and are treated as reflowing; everything else is not. Set `1` if your terminal reflows and the prompt leaves a stale row behind when you drag; set `0` if it does not and a drag eats a line of output above the prompt. |
+| `INZSH_RESIZE_REFLOW` | `1` · `0` · `true` · `false` · `yes` · `no` · `on` · `off`, in any case | unset — the shorter climb | Whether this terminal RE-WRAPS the rows already on screen when the window changes size. It decides how far the resize redraw climbs before it erases: a terminal that reflows has turned the old segment row into several, and one that does not still has it as one. There is no capability string to ask, and the honest probe — reading the cursor position — would race the keys you are typing, so it is declared rather than detected: **nothing is assumed, and nothing set means the shorter climb**, which is what every terminal measured so far wants. Set `1` if your terminal re-wraps its rows and a drag leaves stale prompts behind — VS Code and Hyper do, and the taller climb is unverified there, which is why it is opt-in. See [known limitations](limitations.md). |
 
 ### Switching preset in a running shell — `inzsh preset`
 
@@ -359,7 +362,7 @@ show each other half an entry, and a truncated or edited entry is a miss, which 
 
 | Variable | Values | Default | Effect |
 |---|---|---|---|
-| `INZSH_SALAH_METHOD` | `MWL` · `ISNA` · `UmmAlQura` · `Egyptian` · `Karachi` · `Algeria`, plus the aliases `Makkah`, `Mecca`, `Egypt`, `MuslimWorldLeague` | `MWL` | The calculation authority. Matched with case, spacing and punctuation ignored, so `Umm al-Qura`, `umm_al_qura` and `ummalqura` are one request. Each entry is a fajr angle plus either an isha angle or a fixed interval after maghrib; both forms are first-class. |
+| `INZSH_SALAH_METHOD` | `MWL` · `ISNA` · `UmmAlQura` · `Egyptian` · `Karachi` · `Algeria`, plus the aliases `Makkah`, `Mecca`, `Egypt`, `MuslimWorldLeague`, `UmmAlQuraUniversity` | `MWL` | The calculation authority. Matched with case, spacing and punctuation ignored, so `Umm al-Qura`, `umm_al_qura` and `ummalqura` are one request. Each entry is a fajr angle plus either an isha angle or a fixed interval after maghrib; both forms are first-class. |
 | `INZSH_SALAH_ASR` | `standard` · `shafi` · `hanafi`, in any case | `standard` | Which shadow length starts asr. `hanafi` is twice the object's length plus its noon shadow; the other two are once. |
 | `INZSH_SALAH_HIGHLAT` | `angle` · `seventh` · `middle` · `none`, in any case | `angle` | What to do at a latitude where the sun never reaches the depression angle and fajr or isha would otherwise not exist. `none` leaves the prayer absent rather than inventing one. |
 | `INZSH_SALAH_FAJR_ANGLE` | a number above `0` and no higher than `30` | the method's | The sun's depression below the horizon at fajr, in degrees. Overrides whatever the named method said. |

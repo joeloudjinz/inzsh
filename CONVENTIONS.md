@@ -8,11 +8,12 @@ Rules for working in this repo. Short by design.
 inzsh.zsh-theme       entry point
 install.zsh           idempotent installer / uninstaller
 docs/                 configuration.md — the config reference — plus assets/
-lib/core/             tokens, detect, config, engine, layout, render, hooks
+lib/core/             tokens, detect, config, engine, layout, render, prompts,
+                      transient, resize, hooks, doctor
 lib/segments/         one file per segment; git-async.zsh is the only async in the repo
 lib/salah/            calc, methods, cache, location
 presets/              inzsh-sharp.zsh, inzsh-warm.zsh — token overlays only
-test/                 unit, render, ui, tapes, golden, fixtures
+test/                 unit, render, ui, install, perf, tapes, golden, fixtures
 tools/                dev harness, bundle, colour audit
 ```
 
@@ -53,6 +54,8 @@ Match the layer to the concern:
 | Prompt string — order, colours, glyphs | render |
 | What the terminal actually shows, responsive behaviour | ui |
 | Whole-prompt appearance | golden files + tapes |
+| Installing and uninstalling, against a throwaway HOME | install |
+| The render budget | perf |
 
 Golden files are committed. Update them with `make golden-update`, never by hand.
 

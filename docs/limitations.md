@@ -12,9 +12,18 @@ deliberately. On an 8-colour terminal the theme stays legible but pays stated co
 nearby tones share one of the eight slots, and the light register's cream ramp flattens.
 Linux TTY and other bare consoles are not supported.
 
-**Fonts.** The powerline separators and state marks want a [Nerd Font](https://nerdfonts.com).
-Without one the theme falls back to an ASCII register — bars instead of wedges, letters
-instead of marks. Readable, but the two sides of the prompt lose their mirrored shapes.
+**Fonts.** The separators are private-use glyphs and want a [Nerd Font](https://nerdfonts.com).
+Nothing inside a shell can prove a font is installed, so the theme does not guess: without one,
+and unless you say so, it keeps drawing them — and they arrive as empty boxes. Telling it
+(`INZSH_NERD_FONT=0`) resolves any separator style to the thin `divider` rule, which needs no
+special font. The ASCII register — `v x i !` instead of `✓ ✕ i !` — is a separate axis
+altogether, chosen by your LOCALE rather than by your font: it appears outside a UTF-8 locale,
+or when you set `INZSH_MULTIBYTE=0`.
+
+The line-gap variant matters too. Meslo ships in three (`MesloLGS`, `LGM`, `LGL`); the
+small-gap one stacks filled blocks without seams, and the large-gap one leaves the ribbon
+looking broken. Terminals that draw powerline glyphs themselves — Ghostty, kitty, WezTerm —
+sidestep the whole question.
 
 **Resizing in a terminal that reflows.** Dragging a window narrower rebuilds the prompt and
 erases the old one first. In a terminal that RE-WRAPS the rows already on screen — xterm.js,
@@ -28,10 +37,13 @@ unaffected.
 **tmux.** Full colour requires RGB passthrough (`set -sa terminal-features ',*:RGB'`).
 Without it colours are downgraded to what tmux forwards.
 
-**Configuration.** Every knob takes effect at the next prompt, with one exception:
-`INZSH_PRESET` is read when the theme loads, so changing it in a running shell does nothing
-until the theme is sourced again — the configuration reference explains why and shows the
-switch for a live shell.
+**Configuration.** Every knob takes effect at the next prompt, with four exceptions.
+`INZSH_PRESET` and the three detection overrides — `INZSH_COLOR_DEPTH`, `INZSH_MULTIBYTE`,
+`INZSH_NERD_FONT` — are read when the theme LOADS, because detection runs once and the palette
+is resolved from its answer. Setting any of them at a prompt does nothing. Put them in
+`.zshrc` above the line that sources the theme, or try one with
+`INZSH_COLOR_DEPTH=8 exec zsh`; for the preset there is also `inzsh preset warm`, which
+switches a running shell.
 
 **Git.** The segment reports a state glyph, the branch (or detached commit), and ahead/behind
 counts. It does not count changed files, and it never runs git on the prompt's critical path —
@@ -64,15 +76,26 @@ issue.
 
 ## Colour accessibility
 
-The claim is scoped to colour, and within that scope it is checked, not hoped:
+The claim is scoped to colour, and it is worth being exact about which parts of it a machine
+checks and which parts a person did:
 
-- Every foreground/background pairing the theme can draw is verified against **WCAG AA**
-  contrast, in both presets, at full colour and at 256 colours.
-- The palette is reviewed under **protanopia, deuteranopia and tritanopia** simulation.
-- **Colour is never the only signal.** Every state carries a glyph — `✓ i ✕ ! · —` — so a
-  state readable in full colour is the same state readable in monochrome.
+- **Colour is never the only signal** — and this one is enforced. Every state carries a glyph
+  — `✓ i ✕ ! · —` — so a state readable in full colour is the same state readable in
+  monochrome. The glyph table and the segments that draw from it are covered by the suite,
+  which fails if a state loses its mark.
+- **Contrast was designed to WCAG AA**, pair by pair, when the palette was built. The ratios
+  are written down beside the colours in `lib/core/tokens.zsh` and `tokens-256.zsh` — including
+  the ones that decided a token, such as the info ink landing at 3.97:1 on a surface that was
+  dropped for it. This was done by hand and is recorded, not recomputed: **no test measures
+  contrast**, so treat it as a documented design intent rather than a gate.
+- **Colour-vision deficiency was considered** in the same way — the notes name protan and
+  deutan separation where it drove a choice — but there is no simulation step in the repo, by
+  hand or otherwise, and no claim here that the palette has been systematically tested under
+  protanopia, deuteranopia or tritanopia.
 
 What this is not: a general accessibility statement. Nothing here speaks to screen readers,
 motion sensitivity, or cognitive load — a prompt lives inside a terminal, and most of that
-surface belongs to the terminal emulator. Within what a theme controls — colour and glyphs —
-the guarantees above hold, and the test suite enforces them.
+surface belongs to the terminal emulator. And of what is above, one line is a guarantee the
+suite keeps — a state never loses its glyph — while the contrast and colour-vision notes are
+design work recorded in the source. An automated contrast check is the obvious next step and
+is not written yet.

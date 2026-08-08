@@ -139,10 +139,11 @@ avoids all of this entirely. The precise statement of what leaves the machine is
 
 ## Colour accessibility
 
-Every foreground/background pairing is verified against WCAG AA, in both presets and at both
-colour depths. The palette is checked under protanopia, deuteranopia and tritanopia simulation,
-and no state is signalled by colour alone — each carries a glyph. The scope of that claim —
-and what it deliberately does not cover — is stated in
+**No state is signalled by colour alone** — each carries a glyph, so the prompt reads the same
+in monochrome. That one is enforced by the test suite. Contrast was designed to WCAG AA pair by
+pair when the palette was built, with the ratios written down beside the colours in the token
+layer; that part is recorded design work rather than an automated check. What is and is not
+verified is stated exactly in
 [known limitations, privacy and colour accessibility](docs/limitations.md).
 
 ## Something looks wrong?

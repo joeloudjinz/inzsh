@@ -6,7 +6,7 @@ PYTHON ?= ./.venv/bin/python
 COLS ?= 80
 SCALE ?= 1
 
-.PHONY: help setup test test-ui test-install spec-guard perf grid demo watch
+.PHONY: help setup test test-ui test-install spec-guard perf grid play demo watch
 .PHONY: golden-update golden-check bundle doctor shots
 
 help: ## list targets
@@ -20,8 +20,8 @@ test: ## everything runnable locally
 	@$(SHELLSPEC) test/unit test/render
 	@$(MAKE) --no-print-directory test-ui
 
-# Skips rather than fails when the venv is absent — CI doesn't build one yet, and
-# wiring L3 into CI happens with the M1 gate.
+# Skips rather than fails when the venv is absent, so `make test` still runs without it.
+# CI builds the venv and runs this layer as its own `ui` job.
 spec-guard: ## refuse a spec file that defines no examples
 	@zsh tools/spec-guard.zsh
 
@@ -32,9 +32,9 @@ test-ui: ## L3 terminal-grid tests (pty + pyte); needs the python venv
 	  print -- "make test-ui: no python venv — run 'make setup' first (skipped)"; \
 	fi
 
-# Deliberately not part of `make test` either: CLAUDE.md calls the installer suite CI-only,
-# and CI is where it is authoritative. Runnable locally because every example builds its own
-# HOME with `mktemp -d` — the real one is never read, written or backed up.
+# Deliberately not part of `make test`: it is its own CI job, and CI is where it is
+# authoritative. Runnable locally because every example builds its own HOME with `mktemp -d`
+# — the real one is never read, written or backed up.
 test-install: ## installer suite against a throwaway HOME (never yours)
 	@zsh tools/spec-guard.zsh test/install
 	@$(SHELLSPEC) test/install
@@ -77,7 +77,7 @@ shots: ## regenerate the README screenshots from fixtures into docs/assets (SCAL
 	@print -- "shots: docs/assets/shot-{sharp,warm,256,salah}.png"
 
 watch: ## re-render on save
-	@echo "make watch: nothing to watch yet — the token layer lands at M1"
+	@echo "make watch: not implemented — use 'make shots' or 'make demo' to rebuild captures"
 
 # The golden pipeline. Both targets render the real theme against fixtures — a temp git
 # repository, a pinned clock, pinned identity — through tools/golden.py and the L3 harness.
@@ -87,8 +87,6 @@ watch: ## re-render on save
 # and a gate that failed inside `make test` would bury its diff in the suite's noise.
 # A missing venv FAILS rather than skips — both targets are deliberate invocations, and a
 # gate that silently skipped would gate nothing.
-# The README's three stills — sharp, warm, and the honest 256-colour case — are the final
-# frames of three one-prompt tapes, extracted with the same ffmpeg VHS already requires.
 golden-update: ## regenerate golden files deliberately (never touches test/fixtures)
 	@if [[ -x $(PYTHON) ]]; then \
 	  $(PYTHON) tools/golden.py --update; \

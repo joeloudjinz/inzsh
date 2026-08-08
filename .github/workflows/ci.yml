@@ -133,7 +133,8 @@ jobs:
 
   # The render budget. CLAUDE.md calls it CI-enforced, and this is the enforcement.
   #
-  # There is no renderer yet — segments land at M3 — so the suite benchmarks the machinery a
+  # The suite benchmarks the whole warm prompt — every segment builds, the width filter runs,
+  # both sides assemble — as well as the machinery a
   # warm render runs through (token resolution, the rank sort, surfaces, layout arithmetic,
   # config) rather than the prompt. Today's numbers are a FLOOR on the render cost, not the
   # render cost, and the job is honest about that in its own output. It is gated regardless:

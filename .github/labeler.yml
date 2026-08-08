@@ -40,7 +40,7 @@ area/install:
   - changed-files:
       - any-glob-to-any-file:
           - 'install.zsh'
-          - 'lib/doctor.zsh'
+          - 'lib/core/doctor.zsh'
 
 type/test:
   - changed-files:
