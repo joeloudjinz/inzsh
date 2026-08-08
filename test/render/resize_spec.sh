@@ -216,10 +216,33 @@ Describe 'the resize redraw'
           typeset -g COLUMNS=40
           _inzsh_resize_winch WINCH
           print -r -- "$trace"
-        '
+        ' | tr -d '\033\r' | sed 's/\[[0-9]*[AJ]//g'
       }
       When call order
       The output should eq 'alien zle: zle:.reset-prompt'
+      The stderr should eq ''
+    End
+
+    # THE ERASE, which is the fix for the staircase. `zle .reset-prompt` alone repaints from an
+    # origin computed before the window moved, so it lands below the prompt already on screen
+    # and leaves it there — one stale copy per signal. The handler therefore climbs to the
+    # first row of the prompt and erases to the end of the screen before repainting.
+    #
+    # Asserted as the BYTES that go to the terminal, because that is what a terminal obeys:
+    # `\e[<n>A` to climb when there is a row above, `\r` to the start, `\e[J` to erase.
+    It 'erases the prompt on screen before it repaints'
+      erases() {
+        inzsh_spec_resize '
+          _inzsh_resize_install
+          zle() { return 0 }
+          typeset -g COLUMNS=80
+          _inzsh_render
+          typeset -g COLUMNS=40
+          _inzsh_resize_winch WINCH
+        ' | cat -v
+      }
+      When call erases
+      The output should eq '^[[1A^M^[[J'
       The stderr should eq ''
     End
 
@@ -238,7 +261,7 @@ Describe 'the resize redraw'
           _inzsh_resize_winch WINCH
           local narrow=${(%%)PROMPT}
           print -r -- "cols=$_inzsh_render_cols shrank=$(( ${#narrow} < ${#wide} ))"
-        '
+        ' | tr -d '\033\r' | sed 's/\[[0-9]*[AJ]//g'
       }
       When call rebuilds
       The output should eq 'cols=40 shrank=1'
@@ -322,7 +345,7 @@ Describe 'the resize redraw'
           typeset -g COLUMNS=40
           _inzsh_resize_winch WINCH
           print -r -- "status=$? cols=$_inzsh_render_cols"
-        '
+        ' | tr -d '\033\r' | sed 's/\[[0-9]*[AJ]//g'
       }
       When call vanished
       The output should eq 'status=0 cols=40'
