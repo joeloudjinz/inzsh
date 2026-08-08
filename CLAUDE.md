@@ -15,7 +15,7 @@ manifest; keep the layout flat enough that this stays trivial.
 
 **Safety — this theme draws the prompt you're typing into:**
 - Never source work-in-progress into the running shell. Development happens in `zsh -f`
-  subshells driven by the harness (`make render`, `make test`).
+  subshells driven by the harness (`make play`, `make test`).
 - Installer code never touches the real `$HOME`. Locally it runs against a temp `$HOME` or not
   at all; CI covers the rest.
 
@@ -57,6 +57,8 @@ Match the layer to the concern:
 | Prompt string — order, colours, glyphs | render (`${(%%)PROMPT}`) | `test/render/` |
 | What the terminal shows, responsive behaviour | ui (pty + pyte grid) | `test/ui/` |
 | Whole-prompt appearance | golden `.txt` + VHS tapes | `test/golden/`, `test/tapes/` |
+| Installing and uninstalling | installer suite (throwaway HOME) | `test/install/` |
+| The render budget | benchmark | `test/perf/` |
 
 - Golden files are committed; update them only via `make golden-update`, never by hand.
 - `test/fixtures/` holds *inputs* (oracle data, expected tables); `test/golden/` holds *output
@@ -68,15 +70,24 @@ Match the layer to the concern:
 
 ```zsh
 make setup          # install the native toolchain
-make test           # everything runnable locally
+make test           # unit, render and terminal-grid suites
 make play           # a live prompt in a throwaway shell
 make grid COLS=60   # the theme as a terminal grid, per-cell colours
-make demo           # VHS visual render
-make watch          # re-render on save
+make golden-check   # the committed renders — the visual gate
+make golden-update  # the only sanctioned way to change test/golden
+make perf           # the render budget
+make test-install   # the installer, against a throwaway HOME
+make bundle         # the single-file build
+make shots          # the README stills      (SCALE=2 for high-DPI)
+make demo           # the recordings         (SCALE=2 for high-DPI)
+make doctor         # the diagnostic
 ```
 
-zsh 5.8 matrix, installer tests and full CI parity are CI-only — red CI is the feedback loop
-for those, so keep pushes small.
+The golden gate, the perf benchmark and the installer suite are deliberately outside
+`make test` — each has its own CI job so its output is its own.
+
+The zsh 5.8 matrix and full CI parity are CI-only — red CI is the feedback loop for those,
+so keep pushes small. macOS runs only when dispatched by hand (`.github/workflows/macos.yml`).
 
 ## Commits, branches, PRs
 
