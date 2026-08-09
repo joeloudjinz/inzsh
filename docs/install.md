@@ -1,0 +1,129 @@
+# Install guide
+
+Two supported paths — as an [oh-my-zsh](https://ohmyz.sh) custom theme, or a plain `source`
+from `.zshrc` — plus a manual route for anyone who prefers to wire things themselves. One
+installer covers the first two, and one command takes any of it back out.
+
+## Requirements
+
+- **zsh 5.8 or newer** — `zsh --version` tells you.
+- A **[Nerd Font](https://nerdfonts.com)** — the prompt uses powerline separators.
+- A supported terminal — see the [README](../README.md#supported-terminals).
+
+Nothing else. The theme is pure zsh: no plugins, no network, no dependencies.
+
+## Get the code
+
+```zsh
+git clone https://github.com/joeloudjinz/inzsh.git ~/.inzsh
+cd ~/.inzsh
+```
+
+Any location works — the installer records the path it was run from, so pick one the clone
+will stay at.
+
+## Install
+
+```zsh
+zsh install.zsh
+```
+
+That is the whole install. With no flag the installer takes the oh-my-zsh path only when your
+`.zshrc` actually sources `oh-my-zsh.sh` — a commented-out source line does not count — and the
+plain path otherwise. A leftover `~/.oh-my-zsh` directory, or an `export ZSH=` left behind from
+a framework you have since removed, is not enough: nothing on such a machine would ever read a
+`ZSH_THEME` line, so writing one would leave you with an install that looks done and does
+nothing. A flag pins the choice:
+
+```zsh
+zsh install.zsh --omz     # force the oh-my-zsh path
+zsh install.zsh --plain   # force the plain path, oh-my-zsh or not
+```
+
+Open a new shell and the prompt is there.
+
+### What the oh-my-zsh path does
+
+- Symlinks the theme into your custom themes directory —
+  `${ZSH_CUSTOM:-$ZSH/custom}/themes/inzsh.zsh-theme` — pointing back at the clone.
+- Sets `ZSH_THEME="inzsh"` in `.zshrc`. Your previous theme line is not deleted: it is
+  commented out and tagged, so uninstall can put back exactly what was there.
+
+```zsh
+#ZSH_THEME="robbyrussell" # inzsh:disabled
+ZSH_THEME="inzsh" # inzsh:managed
+```
+
+### What the plain path does
+
+Appends one managed block to `${ZDOTDIR:-$HOME}/.zshrc` (creating the file if you have none):
+
+```zsh
+# >>> inzsh >>>
+source '/path/to/your/clone/inzsh.zsh-theme'
+# <<< inzsh <<<
+```
+
+### What the installer promises
+
+- **Your `.zshrc` is backed up before the first edit** — to `.zshrc.inzsh.bak`, next to the
+  original. That backup is your pre-inzsh state: later runs never overwrite it.
+- **Running it again changes nothing.** Install over an install and every file, and the
+  backup, is byte-for-byte what it was. Re-run it freely — after moving the clone, for
+  instance, it repairs the link or the path and touches nothing else.
+- **It only touches what it names.** The managed block, the tagged theme lines, the one
+  symlink. Everything else in `.zshrc` is yours and stays yours.
+- **It checks before it says it worked.** After writing, the installer starts one throwaway
+  interactive shell against the `.zshrc` it just edited and asks whether the theme is actually
+  loaded there. "installed" is printed only when the answer is yes.
+
+### When it refuses, and when it cannot tell
+
+Two outcomes are not success, and the installer exits non-zero for both rather than rounding
+them up:
+
+- **`--omz` on a `.zshrc` that never sources `oh-my-zsh.sh`.** The oh-my-zsh path writes two
+  things only oh-my-zsh reads, so on such a machine both would sit there unread. Nothing is
+  written and the message points at `--plain`, which works.
+- **The check did not finish.** A `.zshrc` that takes a long time — or blocks — leaves the
+  installer without an answer inside its timeout, and it says *unverified* rather than
+  *installed*. Your `.zshrc` was still written: open a new shell and look.
+
+If the check runs and the theme is not there, the installer says so and leaves everything in
+place, so you can look at `.zshrc` yourself or run `--uninstall` and start again.
+
+## Uninstall
+
+```zsh
+zsh install.zsh --uninstall
+```
+
+Undoes both paths, whichever was used: the managed block comes out, the tagged theme lines go
+back to what they were, the symlink is removed. `.zshrc` returns to its pre-install content.
+The backup is deliberately left in place — delete `.zshrc.inzsh.bak` yourself once you are
+sure, and delete the clone if you are done with it.
+
+Uninstalling twice is uninstalling once; with nothing installed it says so and exits cleanly.
+
+## Manual install
+
+Prefer not to run an installer? Both paths are two lines by hand:
+
+```zsh
+# plain: source the entry point from .zshrc
+source ~/.inzsh/inzsh.zsh-theme
+
+# oh-my-zsh: link it as a custom theme, then set ZSH_THEME="inzsh"
+ln -s ~/.inzsh/inzsh.zsh-theme "${ZSH_CUSTOM:-$ZSH/custom}/themes/inzsh.zsh-theme"
+```
+
+There is also a single-file build — the whole library concatenated in dependency order —
+for installs where a clone is unwanted:
+
+```zsh
+make bundle    # writes dist/inzsh.zsh-theme; copy it anywhere and source it
+```
+
+## After installing
+
+Every knob the theme reads is in the [configuration reference](configuration.md).

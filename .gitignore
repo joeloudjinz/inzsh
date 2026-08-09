@@ -15,6 +15,7 @@ local.zsh
 .inzshrc
 
 # Test & build artifacts
+render-out/
 test/**/*.actual
 test/**/*.tmp
 .render-check.json
@@ -32,3 +33,4 @@ vhs-*.mp4
 
 # Logs
 *.log
+demo-out/

@@ -1,0 +1,197 @@
+name: ci
+
+# WHY `main` ONLY ON PUSH. Every change reaches `dev` through a pull request, and the pull
+# request has already run this workflow against the same tree — so a second run on the merge
+# commit buys a re-test and costs a full matrix. `main` keeps its push trigger because that
+# push is the release: `release.yml` fires beside it, and the tag it cuts should not be the
+# first thing to find out the suite is red.
+#
+# The pair also duplicated: a pull request whose HEAD is `dev` — which every release PR is —
+# matched both triggers and ran every job twice on one commit.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# One run per ref. Pushing twice to a branch cancels the superseded run instead of paying for
+# a result nobody will read; `dev` and `main` are keyed by ref, a pull request by its head.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+# Fail fast, cheapest first — CI is the only feedback loop for jobs that
+# can't run natively on the dev machine (zsh 5.8, installer tests, full parity).
+
+# ${(m)#…} width accounting counts bytes, not cells, outside a UTF-8 locale —
+# pin one so every job measures the same thing (the 5.8 container defaults to C).
+env:
+  LC_ALL: C.UTF-8
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install zsh
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+      - name: zsh -n over all zsh sources
+        run: |
+          set -e
+          found=0
+          while IFS= read -r f; do
+            found=1
+            zsh -n "$f" || exit 1
+            echo "ok: $f"
+          done < <(find . -path ./.git -prune -o \( -name '*.zsh' -o -name '*.zsh-theme' \) -print)
+          [ "$found" = 1 ] || echo "no zsh sources yet"
+
+  # macOS is covered by `.github/workflows/macos.yml`, dispatched by hand — the runner
+  # minutes cost ten times Linux's, and the macOS leg has only ever caught one flake.
+  test:
+    needs: syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install zsh
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+      - name: Install ShellSpec
+        run: |
+          git clone --depth 1 https://github.com/shellspec/shellspec.git "$HOME/.shellspec-src"
+          echo "$HOME/.shellspec-src" >> "$GITHUB_PATH"
+      - name: L1 unit + L2 render
+        run: shellspec test/unit test/render
+
+  # The installer suite — install, reinstall and uninstall, each against a HOME the spec
+  # builds with `mktemp -d` and removes afterwards. The runner's own HOME is never touched,
+  # which is the same property that makes the suite safe to run locally; CI is still where
+  # it is authoritative. The spec-guard step is the same defence the other suites get from
+  # `make test`: a spec file that silently defines no examples is a failure, not a pass.
+  install:
+    needs: syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install zsh
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+      - name: Install ShellSpec
+        run: |
+          git clone --depth 1 https://github.com/shellspec/shellspec.git "$HOME/.shellspec-src"
+          echo "$HOME/.shellspec-src" >> "$GITHUB_PATH"
+      - name: Guard against a silent skip
+        run: zsh tools/spec-guard.zsh test/install
+      - name: Installer suite against a throwaway HOME
+        run: shellspec test/install
+
+  # L3 terminal grid — pty + pyte. `make test-ui` skips itself when the venv is
+  # absent, so this job builds one and then *proves* the suite ran: a green job
+  # that silently tested nothing is worse than no job at all.
+  ui:
+    needs: syntax
+    runs-on: ubuntu-latest
+    # pty renders can wedge; fail fast rather than burn the default 360 minutes.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install zsh
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install pinned L3 deps into .venv
+        # .venv is exactly where the Makefile's default PYTHON ?= ./.venv/bin/python looks
+        run: |
+          python3 -m venv .venv
+          ./.venv/bin/pip install --quiet --requirement test/ui/requirements.txt
+      - name: L3 terminal grid
+        run: |
+          set -o pipefail
+          make test-ui 2>&1 | tee ui.log
+      - name: Guard against a silent skip
+        run: |
+          grep -Eq '^Ran [1-9][0-9]* tests?' ui.log || {
+            echo "::error::make test-ui reported no tests — the L3 suite skipped instead of running"
+            exit 1
+          }
+
+  # Whole-prompt appearance — the golden text files in test/golden. The gate: the prompt
+  # is re-rendered from fixtures (temp git repository, pinned clock and identity) and
+  # diffed against the committed goldens, so a visual change blocks the merge until the
+  # goldens are regenerated with `make golden-update` and committed in the same PR.
+  golden:
+    needs: syntax
+    runs-on: ubuntu-latest
+    # pty renders can wedge; fail fast rather than burn the default 360 minutes.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install zsh
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install pinned L3 deps into .venv
+        # .venv is exactly where the Makefile's default PYTHON ?= ./.venv/bin/python looks
+        run: |
+          python3 -m venv .venv
+          ./.venv/bin/pip install --quiet --requirement test/ui/requirements.txt
+      - name: Golden render gate
+        run: |
+          set -o pipefail
+          make golden-check 2>&1 | tee golden.log
+      - name: Guard against a silent skip
+        run: |
+          grep -Eq '^golden: [1-9][0-9]* case' golden.log || {
+            echo "::error::make golden-check reported no cases — the gate skipped instead of running"
+            exit 1
+          }
+
+  # The render budget. CLAUDE.md calls it CI-enforced, and this is the enforcement.
+  #
+  # The suite benchmarks the whole warm prompt — every segment builds, the width filter runs,
+  # both sides assemble — as well as the machinery a
+  # warm render runs through (token resolution, the rank sort, surfaces, layout arithmetic,
+  # config) rather than the prompt. Today's numbers are a FLOOR on the render cost, not the
+  # render cost, and the job is honest about that in its own output. It is gated regardless:
+  # the budgets are real measurements with a stated multiplier, and a regression in this layer
+  # is a regression in the render whether or not the render exists yet.
+  perf:
+    needs: syntax
+    runs-on: ubuntu-latest
+    # The suite itself takes about two seconds; this is a wedge guard, not a budget.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install zsh
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+      - name: Render budget benchmarks
+        # Non-zero exit on a breach is the gate. `tee` keeps the numbers in the log even when
+        # the step fails, because the interesting part of a failed budget is by how much.
+        run: |
+          set -o pipefail
+          make perf 2>&1 | tee perf.log
+      - name: Guard against a silent skip
+        # Same reasoning as the ui job: a green job that measured nothing is worse than no job.
+        run: |
+          grep -Eq '^perf: [1-9][0-9]* cases ran' perf.log || {
+            echo "::error::make perf reported no cases — the suite skipped instead of running"
+            exit 1
+          }
+
+  # zsh floor — 5.8 isn't available natively on the dev machine, so this job
+  # is the only feedback loop for it. Matrix widens as the suite grows (M2+).
+  zsh-floor:
+    needs: syntax
+    runs-on: ubuntu-latest
+    container: zshusers/zsh:5.8
+    steps:
+      - name: Install job deps
+        # the 5.8 image is debian buster (EOL) — its repos live on archive.debian.org now
+        run: |
+          printf 'deb http://archive.debian.org/debian buster main\ndeb http://archive.debian.org/debian-security buster/updates main\n' > /etc/apt/sources.list
+          apt-get -o Acquire::Check-Valid-Until=false update -qq
+          apt-get install -y -qq git ncurses-term
+      - uses: actions/checkout@v7
+      - name: Install ShellSpec
+        run: git clone --depth 1 https://github.com/shellspec/shellspec.git /opt/shellspec
+      - name: L1 unit + L2 render + installer under zsh 5.8
+        run: /opt/shellspec/shellspec test/unit test/render test/install

@@ -1,0 +1,54 @@
+# Path -> label map for actions/labeler (pr.yml).
+# area/* mirrors the code layout; type/test and type/docs are path-derivable,
+# type/feat vs type/fix is not — set those by hand.
+
+area/tokens:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'lib/core/tokens*.zsh'
+          - 'presets/**'
+
+area/engine:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'lib/core/config.zsh'
+          - 'lib/core/detect.zsh'
+          - 'lib/core/engine.zsh'
+          - 'lib/core/layout.zsh'
+          - 'lib/core/render.zsh'
+          - 'lib/core/hooks.zsh'
+          - 'lib/core/transient.zsh'
+          - 'lib/core/prompts.zsh'
+          - 'lib/core/cache.zsh'
+          - 'lib/segments/**'
+          - 'inzsh.zsh-theme'
+
+area/salah:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'lib/salah/**'
+          - 'lib/segments/salah.zsh'
+
+area/ui:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'test/ui/**'
+          - 'test/tapes/**'
+          - 'test/golden/**'
+
+area/install:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'install.zsh'
+          - 'lib/core/doctor.zsh'
+
+type/test:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'test/**'
+
+type/docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'docs/**'
+          - '*.md'

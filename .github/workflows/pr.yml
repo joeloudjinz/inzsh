@@ -1,0 +1,42 @@
+name: pr
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, milestoned, demilestoned]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/labeler@v7
+        with:
+          sync-labels: false
+
+  hygiene:
+    # bot PRs (dependabot) carry no milestone or issue — exempt
+    if: ${{ !endsWith(github.actor, '[bot]') }}
+    runs-on: ubuntu-latest
+    steps:
+      # Query the live PR rather than the event payload — gh pr create applies the
+      # milestone after creation, so the opened snapshot can carry milestone: null.
+      - name: Require a milestone and linked issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUM: ${{ github.event.pull_request.number }}
+        run: |
+          pr=$(gh api "repos/$REPO/pulls/$NUM")
+          milestone=$(echo "$pr" | jq -r '.milestone.title // ""')
+          if [ -z "$milestone" ]; then
+            echo "::error::Set a milestone on this PR (M1–M9)."
+            exit 1
+          fi
+          text=$(echo "$pr" | jq -r '(.title // "") + " " + (.body // "")')
+          echo "$text" | grep -qiE '(clos(e|es|ed)|fix(es|ed)?|resolv(e|es|ed)) #[0-9]+' || {
+            echo "::error::Link the issue with 'Closes #N' in the PR body."
+            exit 1
+          }

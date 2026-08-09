@@ -1,0 +1,61 @@
+name: Bug report
+description: Something renders wrong, breaks, or misbehaves
+labels: ["type/fix"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected, and what you saw instead. A screenshot helps for anything visual.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`inzsh doctor` output"
+      description: Run `inzsh doctor` and paste the output — it covers most of the fields below.
+      render: text
+    validations:
+      required: false
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal
+      placeholder: e.g. Ghostty 1.0, iTerm2 3.5, macOS Terminal.app
+    validations:
+      required: true
+  - type: input
+    id: term
+    attributes:
+      label: "`$TERM`"
+      placeholder: e.g. xterm-256color
+    validations:
+      required: true
+  - type: input
+    id: zsh-version
+    attributes:
+      label: zsh version
+      description: "`zsh --version`"
+      placeholder: e.g. 5.9
+    validations:
+      required: true
+  - type: dropdown
+    id: tmux
+    attributes:
+      label: Inside tmux?
+      options:
+        - "no"
+        - "yes — with RGB passthrough configured"
+        - "yes — default config"
+    validations:
+      required: true
+  - type: dropdown
+    id: nerd-font
+    attributes:
+      label: Nerd Font installed?
+      options:
+        - "yes"
+        - "no"
+        - "not sure"
+    validations:
+      required: true
