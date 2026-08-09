@@ -1,9 +1,23 @@
 name: ci
 
+# WHY `main` ONLY ON PUSH. Every change reaches `dev` through a pull request, and the pull
+# request has already run this workflow against the same tree — so a second run on the merge
+# commit buys a re-test and costs a full matrix. `main` keeps its push trigger because that
+# push is the release: `release.yml` fires beside it, and the tag it cuts should not be the
+# first thing to find out the suite is red.
+#
+# The pair also duplicated: a pull request whose HEAD is `dev` — which every release PR is —
+# matched both triggers and ran every job twice on one commit.
 on:
   push:
-    branches: [dev, main]
+    branches: [main]
   pull_request:
+
+# One run per ref. Pushing twice to a branch cancels the superseded run instead of paying for
+# a result nobody will read; `dev` and `main` are keyed by ref, a pull request by its head.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
 
 # Fail fast, cheapest first — CI is the only feedback loop for jobs that
 # can't run natively on the dev machine (zsh 5.8, installer tests, full parity).
