@@ -974,6 +974,8 @@ _inzsh_render() {
   local -a candidates visible hidden_now
   local -A ranks
   local -i rank
+  visible=()
+  hidden_now=()
 
   candidates=(${(ok)_inzsh_segment_defaults})
   for segment in "${candidates[@]}"; do
@@ -993,6 +995,7 @@ _inzsh_render() {
 
   local -a survivors pairs
   survivors=("${reply[@]}")
+  pairs=()
   for segment in "${survivors[@]}"; do
     pairs+=("${ranks[$segment]}" "$segment")
   done
@@ -1001,9 +1004,9 @@ _inzsh_render() {
 
   # `_inzsh_rank_split_pairs` resets `_inzsh_hidden` to what IT found among `pairs` — always
   # empty, since every pair already cleared the rank-0 check above, but asked for rather than
-  # assumed, so a future change to that guarantee drops a segment loudly here instead of
-  # silently losing it from the list. The segments step 1 already filed as hidden are merged in
-  # after, since they were never in `pairs` to be rediscovered.
+  # assumed, so a segment the pairs pass files as hidden is kept rather than overwritten. The
+  # segments step 1 already filed as hidden are merged in after, since they were never in
+  # `pairs` to be rediscovered.
   _inzsh_hidden+=("${hidden_now[@]}")
 
   # What the terminal has room for. The filter above answered the user's explicit MINCOLS; this
