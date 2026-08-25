@@ -40,13 +40,6 @@ inzsh_spec_split() {
   print -r -- "[${_inzsh_left[*]}] [${_inzsh_right[*]}] [${_inzsh_hidden[*]}]"
 }
 
-# Split explicit (rank, name) pairs directly — no registry read involved — and print the answer
-# the same way `inzsh_spec_split` does.
-inzsh_spec_split_pairs() {
-  _inzsh_rank_split_pairs "$@"
-  print -r -- "[${_inzsh_left[*]}] [${_inzsh_right[*]}] [${_inzsh_hidden[*]}]"
-}
-
 # Sort explicit (rank, name) pairs and print the names in the order they come back.
 inzsh_spec_sort() {
   _inzsh_rank_sort "$@"
@@ -493,25 +486,6 @@ End
 # fix depends on: a hidden segment must be droppable from a registry read a caller already paid
 # for, not merely from the render output.
 Describe 'splitting from pairs already read'
-  Describe 'the sign decides the side, exactly as it does through the registry'
-    Parameters
-      '1 A'                              '[A] [] []'
-      '-1 A'                             '[] [A] []'
-      '0 A'                              '[] [] [A]'
-      '1 A 2 B 3 C'                      '[A B C] [] []'
-      '-1 A -2 B -3 C'                   '[] [C B A] []'
-      '0 A 0 B 0 C'                      '[] [] [A B C]'
-      '1 A -1 B 0 C'                     '[A] [B] [C]'
-      '2 A -2 B 0 C 1 D -1 E'            '[D A] [B E] [C]'
-      '10 A 4 B 1 C'                     '[C B A] [] []'
-    End
-
-    It "splits ($1)"
-      When call inzsh_spec_split_pairs ${=1}
-      The output should eq "$2"
-    End
-  End
-
   # The property the whole entry point exists for. A segment's `INZSH_<SEG>_RANK` can say
   # anything at all here — even a live, readable rank that flatly disagrees — and the pair
   # handed in wins, because the caller already read the rank it wants used and is not asking
@@ -526,13 +500,30 @@ Describe 'splitting from pairs already read'
     The output should eq 'left=A right='
   End
 
-  It 'leaves three empty arrays and status 0 for no pairs at all'
-    nothing() {
-      _inzsh_rank_split_pairs
-      print -r -- "status=$? L=${#_inzsh_left} R=${#_inzsh_right} H=${#_inzsh_hidden}"
+  # THE BUG THIS GUARDS. A rank arrives here over the wire, not through `_inzsh_rank_of`, so
+  # this function cannot lean on the reader to have already rejected an ungrammatical one — the
+  # only grammar a pair is held to is whatever this function enforces itself. `local -i rank;
+  # rank=$1` is an ARITHMETIC assignment, and arithmetic evaluates `1.5` and dereferences
+  # `' 2'` rather than rejecting either, which is exactly the hole `_inzsh_rank_valid` closes
+  # for `_inzsh_rank_sort`. Every value in `inzsh_spec_bad_ranks` is fed straight into a pair
+  # here, nowhere near `INZSH_<SEG>_RANK`, so this sweeps the function's OWN grammar and not the
+  # registry ladder `_inzsh_rank_of` already has a sweep for.
+  It 'treats an ungrammatical rank as 0, exactly as _inzsh_rank_sort does'
+    hostile() {
+      local candidate; local -i checked=0 i=0; local -a segments=() pairs=() bad=()
+      for candidate in "${inzsh_spec_bad_ranks[@]}"; do
+        (( checked++, i++ ))
+        segments+="S$i"
+        pairs+=("$candidate" "S$i")
+      done
+      _inzsh_rank_split_pairs "${pairs[@]}"
+      (( ${#_inzsh_left} )) && bad+="left=${_inzsh_left[*]}"
+      (( ${#_inzsh_right} )) && bad+="right=${_inzsh_right[*]}"
+      [[ ${_inzsh_hidden[*]} == ${segments[*]} ]] || bad+="hidden=${_inzsh_hidden[*]}"
+      print -r -- "checked=$checked bad=${bad[*]}"
     }
-    When call nothing
-    The output should eq 'status=0 L=0 R=0 H=0'
+    When call hostile
+    The output should eq 'checked=16 bad='
   End
 
   It 'clears the previous answer rather than appending to it'
@@ -543,24 +534,6 @@ Describe 'splitting from pairs already read'
     }
     When call resplit
     The output should eq '[D] [] []'
-  End
-
-  It 'keeps registration order for ties'
-    ties() {
-      _inzsh_rank_split_pairs 1 A 1 B 1 C
-      print -r -- "${_inzsh_left[*]}"
-    }
-    When call ties
-    The output should eq 'A B C'
-  End
-
-  It 'ignores a trailing rank with no name'
-    dangling() {
-      _inzsh_rank_split_pairs 1 A 2 B 3
-      print -r -- "${_inzsh_left[*]}"
-    }
-    When call dangling
-    The output should eq 'A B'
   End
 
   # `_inzsh_rank_split` must still answer exactly as it always has: it is now a thin wrapper

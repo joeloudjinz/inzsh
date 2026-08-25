@@ -163,22 +163,33 @@ _inzsh_rank_sort() {
   return 0
 }
 
-# `_inzsh_rank_split_pairs <rank> <name> [<rank> <name> …]` — the split-and-sort half of
-# `_inzsh_rank_split`, for a caller that has ALREADY read every rank and does not want one read
-# again. `_inzsh_render` is that caller: it reads a segment's rank once, to decide whether the
-# segment is even worth building and width-filtering, and re-reading it here — through
-# `_inzsh_rank_of`, which is a config registry lookup — would be a second read of a value that
-# cannot have changed since the first one, paid again on every segment that survived to this
-# point. `_inzsh_rank_split` is now a thin wrapper over this: it reads the ranks and delegates,
-# so the split-and-sort itself is written in exactly one place.
+# `_inzsh_rank_split_pairs <rank> <name> [<rank> <name> …]` — split rank/name pairs into
+# `_inzsh_left`, `_inzsh_right` and `_inzsh_hidden`, each already in render order. Positive
+# ranks land in `_inzsh_left`, negative in `_inzsh_right`, ascending on both sides — see
+# `_inzsh_rank_sort` for what "ascending" means on the right, where it reads as counting inward
+# from the edge — and 0 lands in `_inzsh_hidden`. Names come back exactly as they were passed:
+# this function does no lookup of its own and no uppercasing, only the sort.
 #
-# Otherwise identical to `_inzsh_rank_split` — same three arrays, same render order, same
-# ascending sort on both sides, same stability on ties, same "nothing to draw is not an error"
-# for an empty call. See it for the shape of the answer; this differs only in where the ranks
-# come from.
+# THE GRAMMAR IS ENFORCED HERE TOO, not merely inherited from a caller. A rank arrives over the
+# wire rather than through `_inzsh_rank_of`, so this function cannot lean on a caller to have
+# already rejected an ungrammatical one — `local -i rank; rank=$1` is an ARITHMETIC assignment,
+# and arithmetic evaluates `1.5` and dereferences `' 2'` instead of rejecting either the way the
+# grammar does. A rank that is not `_inzsh_rank_valid` sorts as 0, the same rule
+# `_inzsh_rank_sort` already applies to what it is handed, and for the same reason: a caller
+# that passed a rank through unvalidated must not quietly reopen the hole `_inzsh_rank_valid`
+# exists to close.
+#
+# `_inzsh_render` is the reason this exists apart from `_inzsh_rank_split`: it reads a
+# segment's rank once, to decide whether the segment is even worth building and
+# width-filtering, and re-reading it here — through `_inzsh_rank_of`, a config registry lookup
+# — would be a second read of a value that cannot have changed since the first one, paid again
+# on every segment that survived to this point. `_inzsh_rank_split` is a thin wrapper over
+# this: it reads the ranks and delegates, so the split-and-sort itself is written in exactly
+# one place.
 #
 # `reply` is clobbered — the sorter answers there — so a caller reads it before calling this,
-# not after.
+# not after. Called with no pairs, this leaves three empty arrays and status 0: nothing to draw
+# is not an error.
 _inzsh_rank_split_pairs() {
   emulate -L zsh
 
@@ -195,7 +206,11 @@ _inzsh_rank_split_pairs() {
   local name
 
   while (( $# >= 2 )); do
-    rank=$1
+    if _inzsh_rank_valid "$1"; then
+      rank=$1
+    else
+      rank=0
+    fi
     name=$2
     if (( rank > 0 )); then
       left_pairs+=("$rank" "$name")
@@ -216,18 +231,17 @@ _inzsh_rank_split_pairs() {
   return 0
 }
 
-# Split segments $@ into `_inzsh_left`, `_inzsh_right` and `_inzsh_hidden`, each already in
-# render order. Segment names come back exactly as they were passed; only the variable lookup
-# uppercases.
+# `_inzsh_rank_split <segment>…` — the same split as `_inzsh_rank_split_pairs`, for a caller
+# that has not read any ranks yet. See it for the shape of the answer and the grammar both are
+# held to; this wrapper only adds the READ. Segment names come back exactly as they were
+# passed — only the variable lookup uppercases, through `_inzsh_rank_of`, so
+# `_inzsh_rank_split dir` and `_inzsh_rank_split DIR` read the same `INZSH_DIR_RANK` and both
+# hand `_inzsh_rank_split_pairs` the name spelled the way it arrived.
 #
-# Reads every segment's rank through `_inzsh_rank_of` and hands the (rank, name) pairs to
-# `_inzsh_rank_split_pairs`, which does the actual splitting and sorting. A caller that has
-# already read the ranks — `_inzsh_render` — calls `_inzsh_rank_split_pairs` directly instead
-# and skips this file's second read of the registry.
+# A caller that has already read the ranks — `_inzsh_render` — calls `_inzsh_rank_split_pairs`
+# directly instead and skips this file's second read of the registry.
 #
 # `reply` is clobbered — the sorter answers there — so read it before splitting, not after.
-# Called with no segments, this leaves three empty arrays and status 0: nothing to draw is not
-# an error.
 _inzsh_rank_split() {
   emulate -L zsh
 
