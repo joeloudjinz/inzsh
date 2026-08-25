@@ -173,11 +173,11 @@ _inzsh_rank_sort() {
 # THE GRAMMAR IS ENFORCED HERE TOO, not merely inherited from a caller. A rank arrives over the
 # wire rather than through `_inzsh_rank_of`, so this function cannot lean on a caller to have
 # already rejected an ungrammatical one — `local -i rank; rank=$1` is an ARITHMETIC assignment,
-# and arithmetic evaluates `1.5` and dereferences `' 2'` instead of rejecting either the way the
-# grammar does. A rank that is not `_inzsh_rank_valid` sorts as 0, the same rule
-# `_inzsh_rank_sort` already applies to what it is handed, and for the same reason: a caller
-# that passed a rank through unvalidated must not quietly reopen the hole `_inzsh_rank_valid`
-# exists to close.
+# and arithmetic truncates `1.5` to 1, reads straight through the leading space in `' 2'`, and
+# DEREFERENCES a bare `abc` as a parameter name — rejecting none of them the way the grammar
+# does. A rank that is not `_inzsh_rank_valid` sorts as 0, the same rule `_inzsh_rank_sort`
+# already applies to what it is handed, and for the same reason: a caller that passed a rank
+# through unvalidated must not quietly reopen the hole `_inzsh_rank_valid` exists to close.
 #
 # `_inzsh_render` is the reason this exists apart from `_inzsh_rank_split`: it reads a
 # segment's rank once, to decide whether the segment is even worth building and

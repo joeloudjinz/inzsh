@@ -500,14 +500,11 @@ Describe 'splitting from pairs already read'
     The output should eq 'left=A right='
   End
 
-  # THE BUG THIS GUARDS. A rank arrives here over the wire, not through `_inzsh_rank_of`, so
-  # this function cannot lean on the reader to have already rejected an ungrammatical one — the
-  # only grammar a pair is held to is whatever this function enforces itself. `local -i rank;
-  # rank=$1` is an ARITHMETIC assignment, and arithmetic evaluates `1.5` and dereferences
-  # `' 2'` rather than rejecting either, which is exactly the hole `_inzsh_rank_valid` closes
-  # for `_inzsh_rank_sort`. Every value in `inzsh_spec_bad_ranks` is fed straight into a pair
-  # here, nowhere near `INZSH_<SEG>_RANK`, so this sweeps the function's OWN grammar and not the
-  # registry ladder `_inzsh_rank_of` already has a sweep for.
+  # THE BUG THIS GUARDS — see `_inzsh_rank_split_pairs` in `lib/core/engine.zsh` for what
+  # arithmetic assignment actually does to an ungrammatical rank. Every value in
+  # `inzsh_spec_bad_ranks` is fed straight into a pair here, nowhere near `INZSH_<SEG>_RANK`, so
+  # this sweeps the function's OWN grammar and not the registry ladder `_inzsh_rank_of` already
+  # has a sweep for.
   It 'treats an ungrammatical rank as 0, exactly as _inzsh_rank_sort does'
     hostile() {
       local candidate; local -i checked=0 i=0; local -a segments=() pairs=() bad=()
