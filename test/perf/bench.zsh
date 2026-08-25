@@ -72,6 +72,16 @@ for _inzsh_bench_segment in root user host dir venv retval time; do
 done
 unset _inzsh_bench_segment
 
+# The roster's baseline, captured once, right here, before anything else has a chance to touch
+# it. `render-prompt-hidden` below registers a dozen more segments into `_inzsh_segment_defaults`
+# and its two neighbour maps, PERMANENTLY, for the rest of the process — `_inzsh_bench_prep_
+# render_prompt` restores this snapshot before every run of its own case, so `render-prompt`
+# reads its seven segments back whichever case ran before it.
+typeset -gA _inzsh_bench_roster_defaults _inzsh_bench_roster_fg_role _inzsh_bench_roster_importance
+_inzsh_bench_roster_defaults=("${(@kv)_inzsh_segment_defaults}")
+_inzsh_bench_roster_fg_role=("${(@kv)_inzsh_segment_fg_role}")
+_inzsh_bench_roster_importance=("${(@kv)_inzsh_segment_importance}")
+
 # ------------------------------------------------------------------------------------------
 # The fixture
 #
@@ -289,14 +299,28 @@ _inzsh_bench_row() {
   return 0
 }
 
-# The real prompt. Every step `_inzsh_render` takes, in its order — each segment builds its own
-# text, the width filter drops whoever does not fit, ranks decide side and order, both sides
-# assemble, and the result is expanded the way a precmd expands it. The one thing left out is
-# the interactive guard, which returns early in a script and would measure nothing.
+# The real prompt. Every step `_inzsh_render` takes, in its order — rank is read once per
+# registered segment and a rank of 0 is filed straight into hidden, without a build call and
+# without ever reaching the width filter; only the survivors build their own text; the width
+# filter drops whoever does not fit; the rank sort decides side and order over what is left,
+# from the ranks already in hand; both sides assemble, and the result is expanded the way a
+# precmd expands it. The one thing left out is the interactive guard, which returns early in a
+# script and would measure nothing. See `_inzsh_render` in `lib/core/render.zsh` for the same
+# steps with the WHY beside each one — issue #185 is the reason this shape exists at all, and
+# `render-prompt-hidden` below is the case that measures the reason.
 #
 # `$COLUMNS` is pinned rather than inherited: a benchmark whose answer depends on the width of
 # the window it happened to run in is not a benchmark.
+#
+# The roster is restored from `_inzsh_bench_roster_defaults` and its two neighbours FIRST,
+# before anything else in this prep runs, so this case always measures the seven segments it
+# has always measured — whichever case in the table ran immediately before it.
 _inzsh_bench_prep_render_prompt() {
+  typeset -gA _inzsh_segment_defaults _inzsh_segment_fg_role _inzsh_segment_importance
+  _inzsh_segment_defaults=("${(@kv)_inzsh_bench_roster_defaults}")
+  _inzsh_segment_fg_role=("${(@kv)_inzsh_bench_roster_fg_role}")
+  _inzsh_segment_importance=("${(@kv)_inzsh_bench_roster_importance}")
+
   typeset -g INZSH_SURFACE_MODE=alternate
   typeset -g COLUMNS=80
   typeset -g INZSH_DEFAULT_USER=
@@ -304,18 +328,29 @@ _inzsh_bench_prep_render_prompt() {
 }
 _inzsh_bench_case_render_prompt() {
   local segment builder
-  for segment in ${(k)_inzsh_segment_defaults}; do
+  local -a candidates visible
+  local -A ranks
+  local -i rank
+
+  candidates=(${(ok)_inzsh_segment_defaults})
+  for segment in "${candidates[@]}"; do
+    _inzsh_rank_of "$segment"
+    rank=$REPLY
+    (( rank == 0 )) && continue
+    ranks[$segment]=$rank
+    visible+=("$segment")
     builder=_inzsh_segment_${(L)segment}_build
     (( ${+functions[$builder]} )) && $builder
   done
 
-  local -a candidates
-  candidates=(${(ok)_inzsh_segment_defaults})
-  _inzsh_layout_filter 80 "${candidates[@]}"
+  _inzsh_layout_filter 80 "${visible[@]}"
 
-  local -a survivors
+  local -a survivors pairs
   survivors=("${reply[@]}")
-  _inzsh_rank_split "${survivors[@]}"
+  for segment in "${survivors[@]}"; do
+    pairs+=("${ranks[$segment]}" "$segment")
+  done
+  _inzsh_rank_split_pairs "${pairs[@]}"
 
   _inzsh_render_build left
   local left=${(%%)REPLY}
@@ -341,6 +376,81 @@ _inzsh_bench_case_render_floor() {
 
   _inzsh_bench_row $cols "${left[@]}"
   _inzsh_bench_row $cols "${right[@]}"
+}
+
+# --- the hidden-segment budget --------------------------------------------------------------
+# Issue #185: a segment at rank 0 is drawn nowhere, and that has to mean it costs nothing — not
+# a build call, not a width-filter registry read for its MINCOLS. `render-prompt` above is the
+# seven-segment prompt this suite has always measured; this case is the exact same shape over
+# the exact same fixture, with a DOZEN more segments registered on top of it — `lib/segments/
+# date.zsh`, `duration.zsh`, `jobs.zsh` and `ssh.zsh`, the four real segments that ship off by
+# default today, plus eight synthetic ones standing in for the rest of "a dozen of them off by
+# default", which is the issue's own phrase for where this is headed. None is ranked by
+# `_inzsh_bench_fixture`, so all twelve stay hidden throughout.
+#
+# TWELVE RATHER THAN FOUR, on purpose. Four hidden segments — the real count today — move
+# `render-prompt`'s own number by less than this table's headroom can resolve from CI noise.
+# Twelve is still a realistic count — the issue names it as the shape the optional set is
+# growing into — and widens the gap enough to show up plainly without a tighter multiplier this
+# file would then owe an explanation for. The synthetic eight carry a real builder —
+# `_inzsh_bench_hidden_build` below — rather than a no-op, because a benchmark of a function
+# that does nothing proves nothing about a function that is supposed to be skipped.
+#
+# Sourced and registered in THIS case's prep and nowhere else. `_inzsh_segment_defaults` is a
+# global the calls below extend PERMANENTLY, for the rest of the process — so `render-prompt`
+# restores it from `_inzsh_bench_roster_defaults` at the top of its own prep, and keeps
+# measuring the seven segments it has always measured whichever case ran immediately before it.
+#
+# Budgeted the same way as every other row — best-of-5 × 6, the header's own rule — rather than
+# `render-prompt`'s tighter exception: that exception exists because `render-prompt` IS the row
+# the house budget is measured against, and this row is not. What this row is FOR is visibility
+# — a number a reader compares against `render-prompt`'s directly, the same way `render-floor`
+# is read against `render-prompt` and not gated to a fraction of it — and the structural
+# guarantee, that a hidden segment's build function is never called at all, is proven exactly
+# and without noise by `test/render/prompt_shape_spec.sh`, not by a millisecond figure. Before
+# this issue's fix, twelve hidden segments measured ~5.1 ms/it here; after it, ~4.1 ms/it — both
+# numbers are the commit's own before/after, not asserted by this gate, because a ~25% difference
+# is exactly the honest-extra-work class the table's own header says 6x will not catch, and this
+# row does not pretend otherwise.
+#
+# WHAT THIS ROW DOES NOT WATCH, PRECISELY: `_inzsh_bench_case_render_prompt` below TRANSCRIBES
+# `_inzsh_render`'s steps rather than calling it, the same way `render-prompt` above always has,
+# because `_inzsh_render` returns early in the non-interactive shell this suite runs under. So
+# this row is blind to a regression in `_inzsh_render` ITSELF — but not to the rest of
+# `lib/core/render.zsh`: `_inzsh_render_build` and `_inzsh_render_hues` are called directly and
+# timed like any other case here. Keeping the transcribed steps in step with `_inzsh_render`'s
+# own is this file's job, not the harness's.
+_inzsh_bench_hidden_build() {
+  emulate -L zsh
+
+  local name=$1
+  local text="${name} ${_inzsh_bench_path}"
+  _inzsh_segment_text[$name]=${text//'%'/'%%'}
+
+  return 0
+}
+
+_inzsh_bench_prep_render_prompt_hidden() {
+  _inzsh_bench_prep_render_prompt
+
+  local _inzsh_bench_hidden_seg
+  for _inzsh_bench_hidden_seg in date duration jobs ssh; do
+    source $_inzsh_bench_root/lib/segments/$_inzsh_bench_hidden_seg.zsh
+  done
+
+  typeset -gA _inzsh_segment_defaults _inzsh_segment_fg_role _inzsh_segment_importance
+  local -i i
+  local name
+  for (( i = 1; i <= 8; i++ )); do
+    name=HIDDEN$i
+    _inzsh_segment_defaults[$name]=0
+    _inzsh_segment_fg_role[$name]=text-muted
+    _inzsh_segment_importance[$name]=3
+    functions[_inzsh_segment_${(L)name}_build]="_inzsh_bench_hidden_build $name"
+  done
+}
+_inzsh_bench_case_render_prompt_hidden() {
+  _inzsh_bench_case_render_prompt
 }
 
 # ------------------------------------------------------------------------------------------
@@ -385,6 +495,7 @@ typeset -ga _inzsh_bench_table=(
   config-resolve      150   1.450
   render-floor         40  12.000
   render-prompt        40  12.000
+  render-prompt-hidden 40  24.500
 )
 
 # `surface-hue` first shipped at 0.500, which was about twice its measured cost rather than

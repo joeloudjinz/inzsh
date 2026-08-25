@@ -480,6 +480,79 @@ Describe 'splitting left from right'
 End
 
 # ------------------------------------------------------------------------------------------
+# `_inzsh_rank_split_pairs` — the split-and-sort half of `_inzsh_rank_split`, for a caller that
+# hands in ranks it already read rather than segment names to look ranks up for. `_inzsh_render`
+# is that caller, and the property under test in the last example below is the one its perf
+# fix depends on: a hidden segment must be droppable from a registry read a caller already paid
+# for, not merely from the render output.
+Describe 'splitting from pairs already read'
+  # The property the whole entry point exists for. A segment's `INZSH_<SEG>_RANK` can say
+  # anything at all here — even a live, readable rank that flatly disagrees — and the pair
+  # handed in wins, because the caller already read the rank it wants used and is not asking
+  # this function to read it again.
+  It 'never reads INZSH_<SEG>_RANK — the pair given in is the rank used'
+    ignores_registry() {
+      typeset -g INZSH_A_RANK=-5
+      _inzsh_rank_split_pairs 3 A
+      print -r -- "left=${_inzsh_left[*]} right=${_inzsh_right[*]}"
+    }
+    When call ignores_registry
+    The output should eq 'left=A right='
+  End
+
+  # THE BUG THIS GUARDS — see `_inzsh_rank_split_pairs` in `lib/core/engine.zsh` for what
+  # arithmetic assignment actually does to an ungrammatical rank. Every value in
+  # `inzsh_spec_bad_ranks` is fed straight into a pair here, nowhere near `INZSH_<SEG>_RANK`, so
+  # this sweeps the function's OWN grammar and not the registry ladder `_inzsh_rank_of` already
+  # has a sweep for.
+  It 'treats an ungrammatical rank as 0, exactly as _inzsh_rank_sort does'
+    hostile() {
+      local candidate; local -i checked=0 i=0; local -a segments=() pairs=() bad=()
+      for candidate in "${inzsh_spec_bad_ranks[@]}"; do
+        (( checked++, i++ ))
+        segments+="S$i"
+        pairs+=("$candidate" "S$i")
+      done
+      _inzsh_rank_split_pairs "${pairs[@]}"
+      (( ${#_inzsh_left} )) && bad+="left=${_inzsh_left[*]}"
+      (( ${#_inzsh_right} )) && bad+="right=${_inzsh_right[*]}"
+      [[ ${_inzsh_hidden[*]} == ${segments[*]} ]] || bad+="hidden=${_inzsh_hidden[*]}"
+      print -r -- "checked=$checked bad=${bad[*]}"
+    }
+    When call hostile
+    The output should eq 'checked=16 bad='
+  End
+
+  It 'clears the previous answer rather than appending to it'
+    resplit() {
+      _inzsh_rank_split_pairs 1 A -1 B 0 C
+      _inzsh_rank_split_pairs 2 D
+      print -r -- "[${_inzsh_left[*]}] [${_inzsh_right[*]}] [${_inzsh_hidden[*]}]"
+    }
+    When call resplit
+    The output should eq '[D] [] []'
+  End
+
+  # `_inzsh_rank_split` must still answer exactly as it always has: it is now a thin wrapper
+  # that reads the ranks and delegates here. Every example above this line already pins the
+  # observable contract of a split; this one is not a parallel copy of that sweep, it is the
+  # proof that the two entry points agree on the same input.
+  It 'agrees with _inzsh_rank_split, which now delegates to it'
+    agree() {
+      typeset -g INZSH_A_RANK=2 INZSH_B_RANK=-2 INZSH_C_RANK=0
+      _inzsh_rank_split A B C
+      local via_registry="${_inzsh_left[*]}|${_inzsh_right[*]}|${_inzsh_hidden[*]}"
+      _inzsh_rank_split_pairs 2 A -2 B 0 C
+      local via_pairs="${_inzsh_left[*]}|${_inzsh_right[*]}|${_inzsh_hidden[*]}"
+      [[ $via_registry == "$via_pairs" ]] && print -r -- same ||
+        print -r -- "$via_registry != $via_pairs"
+    }
+    When call agree
+    The output should eq 'same'
+  End
+End
+
+# ------------------------------------------------------------------------------------------
 # The sorter on its own, driven by explicit (rank, name) pairs rather than through the config.
 # Both prompts share one ascending sort; the right prompt reads that ascending order as
 # "counting inward from the right edge", so -1 lands rightmost.
@@ -610,6 +683,6 @@ Describe 'the render path'
       print -r -- "functions=$functions emulates=$emulates"
     }
     When call emulated
-    The output should eq 'functions=4 emulates=4'
+    The output should eq 'functions=5 emulates=5'
   End
 End

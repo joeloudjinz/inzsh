@@ -925,14 +925,35 @@ fi
 # is the contract, and until this file defined one the dispatch was a deliberate no-op.
 #
 # Order matters and is not arbitrary:
-#   1. every registered segment builds its own text, from state injected by its caller;
-#   2. the width filter drops whoever does not fit THIS terminal, before ranks are read, so a
-#      hidden segment never reaches the sorter and never spends a surface;
-#   3. the rank sort decides side and order over exactly the survivors;
-#   4. each side is assembled, and only then is a prompt parameter assigned.
+#   1. rank is read FIRST, once per registered segment, before anything else runs for it. A
+#      rank of 0 is switched off, and a dozen segments ship that way — see
+#      `lib/segments/date.zsh`, `duration.zsh`, `jobs.zsh` and `ssh.zsh` — on the promise that
+#      off costs nothing. A segment that comes back 0 is filed into `_inzsh_hidden` right here
+#      and touched by nothing below: not built, not asked its `INZSH_<SEG>_MINCOLS`, not read a
+#      second time by the sort. Issue #185 is exactly this: the old order ran the build loop and
+#      the width filter over every registered segment BEFORE any rank was read, so a hidden one
+#      paid for both anyway and was only discovered free of charge once it reached the sort.
+#   2. only the segments that survive step 1 build their own text, from state injected by their
+#      caller;
+#   3. the width filter drops whoever does not fit THIS terminal, over exactly those survivors;
+#   4. the rank sort decides side and order over what is left, from the ranks step 1 already
+#      read — `_inzsh_rank_split_pairs` in `lib/core/engine.zsh` takes them straight rather than
+#      asking the registry again for a segment that has already proven it is worth asking;
+#   5. each side is assembled, and only then is a prompt parameter assigned.
 #
-# `_inzsh_rank_split` answers in `reply`, which `_inzsh_layout_filter` also uses, so the
-# survivors are copied out before the split runs. Getting that wrong loses the filter's answer.
+# `_inzsh_hidden`'s MEMBERSHIP is observably different from before, for a segment with both a
+# rank of 0 and an `INZSH_<SEG>_MINCOLS` wider than the terminal. Previously the width filter
+# ran first and could swallow such a segment before the split ever saw it, so a narrow enough
+# terminal could leave it out of `_inzsh_hidden` entirely; now rank is read before width is
+# considered, so it always lands in `_inzsh_hidden`, at every width. Nothing in this tree reads
+# `_inzsh_hidden` outside a caller that wants to know which segments are switched off, and
+# "switched off" is a property of the rank alone — this reading is the more defensible one, and
+# `test/render/prompt_shape_spec.sh` pins exactly this combination, a rank of 0 together with a
+# MINCOLS the fixture's terminal cannot meet. It is still a change worth naming for whoever next
+# reasons about what that array means.
+#
+# `_inzsh_layout_filter` answers in `reply`, so the survivors are copied out before anything
+# else claims it. Getting that wrong loses the filter's answer.
 _inzsh_render() {
   emulate -L zsh
   setopt extended_glob
@@ -950,19 +971,43 @@ _inzsh_render() {
   (( ${+functions[_inzsh_glyphs_resolve]} )) && _inzsh_glyphs_resolve
 
   local segment builder
-  for segment in ${(k)_inzsh_segment_defaults}; do
+  local -a candidates visible hidden_now
+  local -A ranks
+  local -i rank
+  visible=()
+  hidden_now=()
+
+  candidates=(${(ok)_inzsh_segment_defaults})
+  for segment in "${candidates[@]}"; do
+    _inzsh_rank_of "$segment"
+    rank=$REPLY
+    if (( rank == 0 )); then
+      hidden_now+=("$segment")
+      continue
+    fi
+    ranks[$segment]=$rank
+    visible+=("$segment")
     builder=_inzsh_segment_${(L)segment}_build
     (( ${+functions[$builder]} )) && $builder
   done
 
-  local -a candidates
-  candidates=(${(ok)_inzsh_segment_defaults})
-  _inzsh_layout_filter "${COLUMNS:-0}" "${candidates[@]}"
+  _inzsh_layout_filter "${COLUMNS:-0}" "${visible[@]}"
 
-  local -a survivors
+  local -a survivors pairs
   survivors=("${reply[@]}")
+  pairs=()
+  for segment in "${survivors[@]}"; do
+    pairs+=("${ranks[$segment]}" "$segment")
+  done
 
-  _inzsh_rank_split "${survivors[@]}"
+  _inzsh_rank_split_pairs "${pairs[@]}"
+
+  # `_inzsh_rank_split_pairs` resets `_inzsh_hidden` to what IT found among `pairs` — always
+  # empty, since every pair already cleared the rank-0 check above, but asked for rather than
+  # assumed, so a segment the pairs pass files as hidden is kept rather than overwritten. The
+  # segments step 1 already filed as hidden are merged in after, since they were never in
+  # `pairs` to be rediscovered.
+  _inzsh_hidden+=("${hidden_now[@]}")
 
   # What the terminal has room for. The filter above answered the user's explicit MINCOLS; this
   # answers the window. Blocks are measured as they will be DRAWN — the text plus the column of
