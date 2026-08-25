@@ -40,6 +40,13 @@ inzsh_spec_split() {
   print -r -- "[${_inzsh_left[*]}] [${_inzsh_right[*]}] [${_inzsh_hidden[*]}]"
 }
 
+# Split explicit (rank, name) pairs directly — no registry read involved — and print the answer
+# the same way `inzsh_spec_split` does.
+inzsh_spec_split_pairs() {
+  _inzsh_rank_split_pairs "$@"
+  print -r -- "[${_inzsh_left[*]}] [${_inzsh_right[*]}] [${_inzsh_hidden[*]}]"
+}
+
 # Sort explicit (rank, name) pairs and print the names in the order they come back.
 inzsh_spec_sort() {
   _inzsh_rank_sort "$@"
@@ -480,6 +487,102 @@ Describe 'splitting left from right'
 End
 
 # ------------------------------------------------------------------------------------------
+# `_inzsh_rank_split_pairs` — the split-and-sort half of `_inzsh_rank_split`, for a caller that
+# hands in ranks it already read rather than segment names to look ranks up for. `_inzsh_render`
+# is that caller, and the property under test in the last example below is the one its perf
+# fix depends on: a hidden segment must be droppable from a registry read a caller already paid
+# for, not merely from the render output.
+Describe 'splitting from pairs already read'
+  Describe 'the sign decides the side, exactly as it does through the registry'
+    Parameters
+      '1 A'                              '[A] [] []'
+      '-1 A'                             '[] [A] []'
+      '0 A'                              '[] [] [A]'
+      '1 A 2 B 3 C'                      '[A B C] [] []'
+      '-1 A -2 B -3 C'                   '[] [C B A] []'
+      '0 A 0 B 0 C'                      '[] [] [A B C]'
+      '1 A -1 B 0 C'                     '[A] [B] [C]'
+      '2 A -2 B 0 C 1 D -1 E'            '[D A] [B E] [C]'
+      '10 A 4 B 1 C'                     '[C B A] [] []'
+    End
+
+    It "splits ($1)"
+      When call inzsh_spec_split_pairs ${=1}
+      The output should eq "$2"
+    End
+  End
+
+  # The property the whole entry point exists for. A segment's `INZSH_<SEG>_RANK` can say
+  # anything at all here — even a live, readable rank that flatly disagrees — and the pair
+  # handed in wins, because the caller already read the rank it wants used and is not asking
+  # this function to read it again.
+  It 'never reads INZSH_<SEG>_RANK — the pair given in is the rank used'
+    ignores_registry() {
+      typeset -g INZSH_A_RANK=-5
+      _inzsh_rank_split_pairs 3 A
+      print -r -- "left=${_inzsh_left[*]} right=${_inzsh_right[*]}"
+    }
+    When call ignores_registry
+    The output should eq 'left=A right='
+  End
+
+  It 'leaves three empty arrays and status 0 for no pairs at all'
+    nothing() {
+      _inzsh_rank_split_pairs
+      print -r -- "status=$? L=${#_inzsh_left} R=${#_inzsh_right} H=${#_inzsh_hidden}"
+    }
+    When call nothing
+    The output should eq 'status=0 L=0 R=0 H=0'
+  End
+
+  It 'clears the previous answer rather than appending to it'
+    resplit() {
+      _inzsh_rank_split_pairs 1 A -1 B 0 C
+      _inzsh_rank_split_pairs 2 D
+      print -r -- "[${_inzsh_left[*]}] [${_inzsh_right[*]}] [${_inzsh_hidden[*]}]"
+    }
+    When call resplit
+    The output should eq '[D] [] []'
+  End
+
+  It 'keeps registration order for ties'
+    ties() {
+      _inzsh_rank_split_pairs 1 A 1 B 1 C
+      print -r -- "${_inzsh_left[*]}"
+    }
+    When call ties
+    The output should eq 'A B C'
+  End
+
+  It 'ignores a trailing rank with no name'
+    dangling() {
+      _inzsh_rank_split_pairs 1 A 2 B 3
+      print -r -- "${_inzsh_left[*]}"
+    }
+    When call dangling
+    The output should eq 'A B'
+  End
+
+  # `_inzsh_rank_split` must still answer exactly as it always has: it is now a thin wrapper
+  # that reads the ranks and delegates here. Every example above this line already pins the
+  # observable contract of a split; this one is not a parallel copy of that sweep, it is the
+  # proof that the two entry points agree on the same input.
+  It 'agrees with _inzsh_rank_split, which now delegates to it'
+    agree() {
+      typeset -g INZSH_A_RANK=2 INZSH_B_RANK=-2 INZSH_C_RANK=0
+      _inzsh_rank_split A B C
+      local via_registry="${_inzsh_left[*]}|${_inzsh_right[*]}|${_inzsh_hidden[*]}"
+      _inzsh_rank_split_pairs 2 A -2 B 0 C
+      local via_pairs="${_inzsh_left[*]}|${_inzsh_right[*]}|${_inzsh_hidden[*]}"
+      [[ $via_registry == "$via_pairs" ]] && print -r -- same ||
+        print -r -- "$via_registry != $via_pairs"
+    }
+    When call agree
+    The output should eq 'same'
+  End
+End
+
+# ------------------------------------------------------------------------------------------
 # The sorter on its own, driven by explicit (rank, name) pairs rather than through the config.
 # Both prompts share one ascending sort; the right prompt reads that ascending order as
 # "counting inward from the right edge", so -1 lands rightmost.
@@ -610,6 +713,6 @@ Describe 'the render path'
       print -r -- "functions=$functions emulates=$emulates"
     }
     When call emulated
-    The output should eq 'functions=4 emulates=4'
+    The output should eq 'functions=5 emulates=5'
   End
 End

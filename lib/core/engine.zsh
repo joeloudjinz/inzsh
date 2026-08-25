@@ -163,17 +163,23 @@ _inzsh_rank_sort() {
   return 0
 }
 
-# Split segments $@ into `_inzsh_left`, `_inzsh_right` and `_inzsh_hidden`, each already in
-# render order. Segment names come back exactly as they were passed; only the variable lookup
-# uppercases.
+# `_inzsh_rank_split_pairs <rank> <name> [<rank> <name> …]` — the split-and-sort half of
+# `_inzsh_rank_split`, for a caller that has ALREADY read every rank and does not want one read
+# again. `_inzsh_render` is that caller: it reads a segment's rank once, to decide whether the
+# segment is even worth building and width-filtering, and re-reading it here — through
+# `_inzsh_rank_of`, which is a config registry lookup — would be a second read of a value that
+# cannot have changed since the first one, paid again on every segment that survived to this
+# point. `_inzsh_rank_split` is now a thin wrapper over this: it reads the ranks and delegates,
+# so the split-and-sort itself is written in exactly one place.
 #
-# Sorting happens here, through `_inzsh_rank_sort`, so a caller has one call to make and
-# cannot forget the second. Callers that hold ranks of their own can use the sorter directly.
+# Otherwise identical to `_inzsh_rank_split` — same three arrays, same render order, same
+# ascending sort on both sides, same stability on ties, same "nothing to draw is not an error"
+# for an empty call. See it for the shape of the answer; this differs only in where the ranks
+# come from.
 #
-# `reply` is clobbered — the sorter answers there — so read it before splitting, not after.
-# Called with no segments, this leaves three empty arrays and status 0: nothing to draw is not
-# an error.
-_inzsh_rank_split() {
+# `reply` is clobbered — the sorter answers there — so a caller reads it before calling this,
+# not after.
+_inzsh_rank_split_pairs() {
   emulate -L zsh
 
   typeset -ga _inzsh_left _inzsh_right _inzsh_hidden
@@ -181,22 +187,24 @@ _inzsh_rank_split() {
   _inzsh_right=()
   _inzsh_hidden=()
 
-  local segment
   local -a left_pairs right_pairs
   left_pairs=()
   right_pairs=()
-  local -i rank
 
-  for segment in "$@"; do
-    _inzsh_rank_of "$segment"
-    rank=$REPLY
+  local -i rank
+  local name
+
+  while (( $# >= 2 )); do
+    rank=$1
+    name=$2
     if (( rank > 0 )); then
-      left_pairs+=("$rank" "$segment")
+      left_pairs+=("$rank" "$name")
     elif (( rank < 0 )); then
-      right_pairs+=("$rank" "$segment")
+      right_pairs+=("$rank" "$name")
     else
-      _inzsh_hidden+=("$segment")
+      _inzsh_hidden+=("$name")
     fi
+    shift 2
   done
 
   _inzsh_rank_sort "${left_pairs[@]}"
@@ -204,6 +212,35 @@ _inzsh_rank_split() {
 
   _inzsh_rank_sort "${right_pairs[@]}"
   _inzsh_right=("${reply[@]}")
+
+  return 0
+}
+
+# Split segments $@ into `_inzsh_left`, `_inzsh_right` and `_inzsh_hidden`, each already in
+# render order. Segment names come back exactly as they were passed; only the variable lookup
+# uppercases.
+#
+# Reads every segment's rank through `_inzsh_rank_of` and hands the (rank, name) pairs to
+# `_inzsh_rank_split_pairs`, which does the actual splitting and sorting. A caller that has
+# already read the ranks — `_inzsh_render` — calls `_inzsh_rank_split_pairs` directly instead
+# and skips this file's second read of the registry.
+#
+# `reply` is clobbered — the sorter answers there — so read it before splitting, not after.
+# Called with no segments, this leaves three empty arrays and status 0: nothing to draw is not
+# an error.
+_inzsh_rank_split() {
+  emulate -L zsh
+
+  local segment
+  local -a pairs
+  pairs=()
+
+  for segment in "$@"; do
+    _inzsh_rank_of "$segment"
+    pairs+=("$REPLY" "$segment")
+  done
+
+  _inzsh_rank_split_pairs "${pairs[@]}"
 
   return 0
 }
