@@ -72,6 +72,16 @@ for _inzsh_bench_segment in root user host dir venv retval time; do
 done
 unset _inzsh_bench_segment
 
+# The roster's baseline, captured once, right here, before anything else has a chance to touch
+# it. `render-prompt-hidden` below registers a dozen more segments into `_inzsh_segment_defaults`
+# and its two neighbour maps, PERMANENTLY, for the rest of the process — `_inzsh_bench_prep_
+# render_prompt` restores this snapshot before every run of its own case, so `render-prompt`
+# reads its seven segments back whichever case ran before it.
+typeset -gA _inzsh_bench_roster_defaults _inzsh_bench_roster_fg_role _inzsh_bench_roster_importance
+_inzsh_bench_roster_defaults=("${(@kv)_inzsh_segment_defaults}")
+_inzsh_bench_roster_fg_role=("${(@kv)_inzsh_segment_fg_role}")
+_inzsh_bench_roster_importance=("${(@kv)_inzsh_segment_importance}")
+
 # ------------------------------------------------------------------------------------------
 # The fixture
 #
@@ -301,7 +311,16 @@ _inzsh_bench_row() {
 #
 # `$COLUMNS` is pinned rather than inherited: a benchmark whose answer depends on the width of
 # the window it happened to run in is not a benchmark.
+#
+# The roster is restored from `_inzsh_bench_roster_defaults` and its two neighbours FIRST,
+# before anything else in this prep runs, so this case always measures the seven segments it
+# has always measured — whichever case in the table ran immediately before it.
 _inzsh_bench_prep_render_prompt() {
+  typeset -gA _inzsh_segment_defaults _inzsh_segment_fg_role _inzsh_segment_importance
+  _inzsh_segment_defaults=("${(@kv)_inzsh_bench_roster_defaults}")
+  _inzsh_segment_fg_role=("${(@kv)_inzsh_bench_roster_fg_role}")
+  _inzsh_segment_importance=("${(@kv)_inzsh_bench_roster_importance}")
+
   typeset -g INZSH_SURFACE_MODE=alternate
   typeset -g COLUMNS=80
   typeset -g INZSH_DEFAULT_USER=
@@ -370,28 +389,17 @@ _inzsh_bench_case_render_floor() {
 # `_inzsh_bench_fixture`, so all twelve stay hidden throughout.
 #
 # TWELVE RATHER THAN FOUR, on purpose. Four hidden segments — the real count today — move
-# `render-prompt`'s own number by less than the table's usual 6x headroom can resolve from
-# CI noise, the same way a 50% slowdown from honest extra work is the table's documented,
-# accepted blind spot everywhere else in it. Twelve is still a realistic count — the issue
-# names it as the shape the optional set is growing into — and pushing the fixture there for
-# THIS row widens the gap enough that it shows up plainly in the numbers without inventing a
-# tighter multiplier this file would then owe an explanation for surviving CI on. The synthetic
-# eight carry a real builder — `_inzsh_bench_hidden_build` below — rather than a no-op, because
-# a benchmark of a function that does nothing proves nothing about a function that is supposed
-# to be skipped.
+# `render-prompt`'s own number by less than this table's headroom can resolve from CI noise.
+# Twelve is still a realistic count — the issue names it as the shape the optional set is
+# growing into — and widens the gap enough to show up plainly without a tighter multiplier this
+# file would then owe an explanation for. The synthetic eight carry a real builder —
+# `_inzsh_bench_hidden_build` below — rather than a no-op, because a benchmark of a function
+# that does nothing proves nothing about a function that is supposed to be skipped.
 #
-# Sourced and registered in THIS case's prep and nowhere else, so `render-prompt` and
-# `render-floor` keep measuring the fixture they have always measured and their calibration
-# history above stays true. `_inzsh_segment_defaults` is a global the calls below extend, and
-# the extension is PERMANENT for the rest of the process — nothing in this file ever shrinks it
-# back down. So the ordering this depends on is not a convenience, it is LOAD-BEARING: this
-# case must run after `render-prompt` and `render-floor` in `_inzsh_bench_table` below, or their
-# numbers stop meaning what their own paragraphs above say they mean, contaminated by the same
-# dozen segments this row exists to add. `--only render-prompt-hidden` on its own is exactly as
-# valid as running the whole table, since a fresh process registers nothing until this case's
-# own prep runs — but `--only render-prompt --only render-prompt-hidden` together is safe only
-# because the table lists them in that order and the runner walks the table in order. Moving
-# this case above either of the other two in the table silently breaks that promise.
+# Sourced and registered in THIS case's prep and nowhere else. `_inzsh_segment_defaults` is a
+# global the calls below extend PERMANENTLY, for the rest of the process — so `render-prompt`
+# restores it from `_inzsh_bench_roster_defaults` at the top of its own prep, and keeps
+# measuring the seven segments it has always measured whichever case ran immediately before it.
 #
 # Budgeted the same way as every other row — best-of-5 × 6, the header's own rule — rather than
 # `render-prompt`'s tighter exception: that exception exists because `render-prompt` IS the row
@@ -405,21 +413,13 @@ _inzsh_bench_case_render_floor() {
 # is exactly the honest-extra-work class the table's own header says 6x will not catch, and this
 # row does not pretend otherwise.
 #
-# WHAT THIS ROW DOES NOT WATCH, PRECISELY. `_inzsh_bench_case_render_prompt` below is a
-# TRANSCRIPTION of `_inzsh_render`'s STEPS — the rank-first pass, the build loop, the width
-# filter, the split — not a call to `_inzsh_render` itself, which returns early in a
-# non-interactive shell and would time a no-op here. The transcription is how `render-prompt`
-# above has always worked around that, and this row inherits the same limit: it is blind to a
-# regression in the ORCHESTRATION, the function named `_inzsh_render`, because that function is
-# never called from this file at all.
-#
-# It is NOT blind to the rest of `lib/core/render.zsh`. This file sources that file at the top
-# and `_inzsh_render_build` and `_inzsh_render_hues` are called directly, in this case as in
-# `render-prompt`'s, so a regression in either is timed exactly like any other case here — the
-# blind spot is the one function this transcription stands in for, not the file it lives in.
-# Keeping the transcribed STEPS in step with `_inzsh_render`'s own is a discipline this file
-# owes the reader on every change to that function, not something the harness verifies for
-# itself.
+# WHAT THIS ROW DOES NOT WATCH, PRECISELY: `_inzsh_bench_case_render_prompt` below TRANSCRIBES
+# `_inzsh_render`'s steps rather than calling it, the same way `render-prompt` above always has,
+# because `_inzsh_render` returns early in the non-interactive shell this suite runs under. So
+# this row is blind to a regression in `_inzsh_render` ITSELF — but not to the rest of
+# `lib/core/render.zsh`: `_inzsh_render_build` and `_inzsh_render_hues` are called directly and
+# timed like any other case here. Keeping the transcribed steps in step with `_inzsh_render`'s
+# own is this file's job, not the harness's.
 _inzsh_bench_hidden_build() {
   emulate -L zsh
 
