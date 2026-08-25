@@ -32,7 +32,7 @@ jobs:
           pr=$(gh api "repos/$REPO/pulls/$NUM")
           milestone=$(echo "$pr" | jq -r '.milestone.title // ""')
           if [ -z "$milestone" ]; then
-            echo "::error::Set a milestone on this PR (M1–M9)."
+            echo "::error::Set a milestone on this PR — the release it ships in."
             exit 1
           fi
           text=$(echo "$pr" | jq -r '(.title // "") + " " + (.body // "")')
