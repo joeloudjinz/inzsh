@@ -216,6 +216,109 @@ Describe 'the prompt shape'
   End
 
   # -------------------------------------------------------------------------------------------
+  # Issue #185. A rank of 0 is switched off, and switched off must mean genuinely free: no build
+  # call, no width-filter registry read, no second read of the rank itself once a segment has
+  # survived to the sort. `DELTA` is added to the fixture's own `_inzsh_segment_defaults` here
+  # rather than swapped in for ALFA/BRAVO/CHARLIE, so every example still exercises a real split
+  # across all three rank signs alongside the one segment under test.
+  Describe 'a segment ranked zero costs nothing to draw'
+    It 'never calls the build function of a segment ranked zero'
+      unbuilt() {
+        inzsh_spec_shape '
+          typeset -gi inzsh_spec_delta_calls=0
+          _inzsh_segment_delta_build() { (( inzsh_spec_delta_calls++ )) }
+          _inzsh_segment_defaults[DELTA]=0
+
+          _inzsh_render
+          print -r -- "calls=$inzsh_spec_delta_calls hidden=${_inzsh_hidden[*]}"
+        '
+      }
+      When call unbuilt
+      The output should eq 'calls=0 hidden=DELTA'
+      The stderr should eq ''
+    End
+
+    # The width filter is what `_inzsh_mincols_of` answers on behalf of — see
+    # `lib/core/layout.zsh`. A segment that is already known to be hidden must never reach it,
+    # because reaching it is itself a registry read (`INZSH_<SEG>_MINCOLS`) this segment has no
+    # business paying for.
+    It 'never asks the width filter about a segment ranked zero'
+      unfiltered() {
+        inzsh_spec_shape '
+          typeset -ga inzsh_spec_asked=()
+          _inzsh_mincols_of() { inzsh_spec_asked+=$1; typeset -g REPLY=0 }
+          _inzsh_segment_defaults[DELTA]=0
+
+          _inzsh_render
+          print -r -- "${inzsh_spec_asked[*]}"
+        '
+      }
+      When call unfiltered
+      The output should eq 'ALFA BRAVO CHARLIE'
+      The stderr should eq ''
+    End
+
+    # The rank sort must not pay for a second registry read on a segment it already knows the
+    # rank of. Each survivor is asked its rank exactly once — by the pass that decides whether
+    # it is worth building at all — and never again by the sort that places it afterwards.
+    It "reads a surviving segment's rank exactly once, never again for the sort"
+      once() {
+        inzsh_spec_shape '
+          typeset -ga inzsh_spec_ranked=()
+          functions[_inzsh_rank_of_orig]=$functions[_inzsh_rank_of]
+          _inzsh_rank_of() { inzsh_spec_ranked+=$1; _inzsh_rank_of_orig "$@" }
+
+          _inzsh_render
+          print -r -- "${inzsh_spec_ranked[*]}"
+        '
+      }
+      When call once
+      The output should eq 'ALFA BRAVO CHARLIE'
+      The stderr should eq ''
+    End
+
+    # THE CORRECTNESS CONCERN. `_inzsh_segment_text` is a persistent global map, so a build
+    # skipped while hidden must never leave a stale entry that could be drawn later. Walked
+    # through the exact trip a user causes by editing a rank at a live prompt: visible, then
+    # hidden, then visible again — three draws, three checks.
+    It 'rebuilds fresh text the moment a rank returns from zero — nothing stale survives the trip'
+      churn() {
+        inzsh_spec_shape '
+          typeset -gi inzsh_spec_delta_calls=0
+          _inzsh_segment_delta_build() {
+            (( inzsh_spec_delta_calls++ ))
+            _inzsh_segment_text[DELTA]="delta-$inzsh_spec_delta_calls"
+          }
+          _inzsh_segment_defaults[DELTA]=0
+          typeset -g INZSH_DELTA_RANK=5
+
+          local -a wrong=()
+
+          _inzsh_render
+          [[ ${_inzsh_segment_text[DELTA]-} == delta-1 ]] || wrong+=first:${_inzsh_segment_text[DELTA]-unset}
+          (( ${_inzsh_left[(Ie)DELTA]} )) || wrong+=not-drawn-first
+
+          typeset -g INZSH_DELTA_RANK=0
+          _inzsh_render
+          (( inzsh_spec_delta_calls == 1 )) || wrong+=built-while-hidden:$inzsh_spec_delta_calls
+          (( ${_inzsh_left[(Ie)DELTA]} == 0 )) || wrong+=drawn-while-hidden
+
+          typeset -g INZSH_DELTA_RANK=5
+          _inzsh_render
+          (( inzsh_spec_delta_calls == 2 )) || wrong+=not-rebuilt:$inzsh_spec_delta_calls
+          [[ ${_inzsh_segment_text[DELTA]-} == delta-2 ]] || wrong+=stale-text:${_inzsh_segment_text[DELTA]-unset}
+          (( ${_inzsh_left[(Ie)DELTA]} )) || wrong+=not-drawn-again
+
+          print -r -- "${wrong[*]}"
+        '
+      }
+      When call churn
+      The output should eq ''
+      The stderr should eq ''
+    End
+  End
+
+  # -------------------------------------------------------------------------------------------
   # The padding is arithmetic over two widths the builder already tracked, and the answer is one
   # column short of the terminal — which is exactly where zsh puts `RPROMPT` itself. A row that
   # fills the last cell is the classic off-by-one that turns two rows into three on a terminal
