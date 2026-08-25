@@ -217,10 +217,11 @@ Describe 'the prompt shape'
 
   # -------------------------------------------------------------------------------------------
   # Issue #185. A rank of 0 is switched off, and switched off must mean genuinely free: no build
-  # call, no width-filter registry read, no second read of the rank itself once a segment has
-  # survived to the sort. `DELTA` is added to the fixture's own `_inzsh_segment_defaults` here
-  # rather than swapped in for ALFA/BRAVO/CHARLIE, so every example still exercises a real split
-  # across all three rank signs alongside the one segment under test.
+  # call, no width-filter registry read. `DELTA` is added to the fixture's own
+  # `_inzsh_segment_defaults` here rather than swapped in for ALFA/BRAVO/CHARLIE, so every
+  # example still exercises a real split across all three rank signs alongside the one segment
+  # under test. The rank sort's own no-second-read property is a claim about every survivor,
+  # not only a hidden one, and sits in its own group below this one.
   Describe 'a segment ranked zero costs nothing to draw'
     It 'never calls the build function of a segment ranked zero'
       unbuilt() {
@@ -238,13 +239,9 @@ Describe 'the prompt shape'
       The stderr should eq ''
     End
 
-    # `_inzsh_hidden`'s membership is observably different from before for a segment that is
-    # BOTH ranked 0 and too wide for the terminal — see the paragraph above `_inzsh_render`
-    # itself. Previously the width filter ran first and could drop such a segment before the
-    # split ever saw it, so a terminal narrower than its `INZSH_<SEG>_MINCOLS` could leave it
-    # out of `_inzsh_hidden` entirely; now rank is read first, so it lands there regardless of
-    # width. `INZSH_DELTA_MINCOLS` is set far past the fixture's 80 columns specifically so this
-    # example is the one width could have excluded, if width still ran before rank.
+    # The membership change the paragraph above `_inzsh_render` itself describes, pinned:
+    # `INZSH_DELTA_MINCOLS` is set far past the fixture's 80 columns specifically so this is the
+    # example width could have excluded, if width still ran before rank.
     It 'still lands in _inzsh_hidden when its own MINCOLS exceeds the terminal'
       too_wide() {
         inzsh_spec_shape '
@@ -264,6 +261,11 @@ Describe 'the prompt shape'
     # `lib/core/layout.zsh`. A segment that is already known to be hidden must never reach it,
     # because reaching it is itself a registry read (`INZSH_<SEG>_MINCOLS`) this segment has no
     # business paying for.
+    #
+    # Asserted as a per-name COUNT rather than against the literal `ALFA BRAVO CHARLIE`, so a
+    # fixture segment added to `inzsh_spec_shape` for some unrelated reason cannot break this
+    # example on a name it never mentions: DELTA must be asked zero times, and every OTHER
+    # registered segment — whatever the fixture happens to hold — exactly once.
     It 'never asks the width filter about a segment ranked zero'
       unfiltered() {
         inzsh_spec_shape '
@@ -272,30 +274,24 @@ Describe 'the prompt shape'
           _inzsh_segment_defaults[DELTA]=0
 
           _inzsh_render
-          print -r -- "${inzsh_spec_asked[*]}"
+
+          local -A tally
+          local name
+          for name in "${inzsh_spec_asked[@]}"; do (( tally[$name]++ )); done
+
+          local -a wrong=()
+          for name in ${(ok)_inzsh_segment_defaults}; do
+            if [[ $name == DELTA ]]; then
+              (( ${tally[$name]:-0} == 0 )) || wrong+="$name=${tally[$name]}"
+            else
+              (( tally[$name] == 1 )) || wrong+="$name=${tally[$name]:-0}"
+            fi
+          done
+          print -r -- "${wrong[*]}"
         '
       }
       When call unfiltered
-      The output should eq 'ALFA BRAVO CHARLIE'
-      The stderr should eq ''
-    End
-
-    # The rank sort must not pay for a second registry read on a segment it already knows the
-    # rank of. Each survivor is asked its rank exactly once — by the pass that decides whether
-    # it is worth building at all — and never again by the sort that places it afterwards.
-    It "reads a surviving segment's rank exactly once, never again for the sort"
-      once() {
-        inzsh_spec_shape '
-          typeset -ga inzsh_spec_ranked=()
-          functions[_inzsh_rank_of_orig]=$functions[_inzsh_rank_of]
-          _inzsh_rank_of() { inzsh_spec_ranked+=$1; _inzsh_rank_of_orig "$@" }
-
-          _inzsh_render
-          print -r -- "${inzsh_spec_ranked[*]}"
-        '
-      }
-      When call once
-      The output should eq 'ALFA BRAVO CHARLIE'
+      The output should eq ''
       The stderr should eq ''
     End
 
@@ -335,6 +331,42 @@ Describe 'the prompt shape'
         '
       }
       When call churn
+      The output should eq ''
+      The stderr should eq ''
+    End
+  End
+
+  # -------------------------------------------------------------------------------------------
+  # A property of every render, not only a hidden one — no fixture segment here is ranked zero
+  # — so it sits in its own group rather than inside "costs nothing to draw". The rank sort must
+  # not pay for a second registry read on a segment it already knows the rank of: each survivor
+  # is asked its rank exactly once, by the pass that decides whether it is worth building at
+  # all, and never again by the sort that places it afterwards.
+  Describe "the rank sort does not re-read a survivor's rank"
+    # Asserted as a per-name count rather than against the literal `ALFA BRAVO CHARLIE`, for the
+    # same reason the width-filter example above is: a fixture segment added later for an
+    # unrelated reason must not break this example on a name it never mentions.
+    It "reads a surviving segment's rank exactly once, never again for the sort"
+      once() {
+        inzsh_spec_shape '
+          typeset -ga inzsh_spec_ranked=()
+          functions[_inzsh_rank_of_orig]=$functions[_inzsh_rank_of]
+          _inzsh_rank_of() { inzsh_spec_ranked+=$1; _inzsh_rank_of_orig "$@" }
+
+          _inzsh_render
+
+          local -A tally
+          local name
+          for name in "${inzsh_spec_ranked[@]}"; do (( tally[$name]++ )); done
+
+          local -a wrong=()
+          for name in ${(ok)_inzsh_segment_defaults}; do
+            (( tally[$name] == 1 )) || wrong+="$name=${tally[$name]:-0}"
+          done
+          print -r -- "${wrong[*]}"
+        '
+      }
+      When call once
       The output should eq ''
       The stderr should eq ''
     End
