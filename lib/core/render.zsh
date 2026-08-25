@@ -941,6 +941,17 @@ fi
 #      asking the registry again for a segment that has already proven it is worth asking;
 #   5. each side is assembled, and only then is a prompt parameter assigned.
 #
+# `_inzsh_hidden`'s MEMBERSHIP is observably different from before, for a segment with both a
+# rank of 0 and an `INZSH_<SEG>_MINCOLS` wider than the terminal. Previously the width filter
+# ran first and could swallow such a segment before the split ever saw it, so a narrow enough
+# terminal could leave it out of `_inzsh_hidden` entirely; now rank is read before width is
+# considered, so it always lands in `_inzsh_hidden`, at every width. Nothing in this tree reads
+# `_inzsh_hidden` outside a caller that wants to know which segments are switched off, and
+# "switched off" is a property of the rank alone — this reading is the more defensible one, and
+# `test/render/prompt_shape_spec.sh` pins exactly this combination, a rank of 0 together with a
+# MINCOLS the fixture's terminal cannot meet. It is still a change worth naming for whoever next
+# reasons about what that array means.
+#
 # `_inzsh_layout_filter` answers in `reply`, so the survivors are copied out before anything
 # else claims it. Getting that wrong loses the filter's answer.
 _inzsh_render() {

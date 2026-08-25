@@ -238,6 +238,28 @@ Describe 'the prompt shape'
       The stderr should eq ''
     End
 
+    # `_inzsh_hidden`'s membership is observably different from before for a segment that is
+    # BOTH ranked 0 and too wide for the terminal — see the paragraph above `_inzsh_render`
+    # itself. Previously the width filter ran first and could drop such a segment before the
+    # split ever saw it, so a terminal narrower than its `INZSH_<SEG>_MINCOLS` could leave it
+    # out of `_inzsh_hidden` entirely; now rank is read first, so it lands there regardless of
+    # width. `INZSH_DELTA_MINCOLS` is set far past the fixture's 80 columns specifically so this
+    # example is the one width could have excluded, if width still ran before rank.
+    It 'still lands in _inzsh_hidden when its own MINCOLS exceeds the terminal'
+      too_wide() {
+        inzsh_spec_shape '
+          _inzsh_segment_defaults[DELTA]=0
+          typeset -g INZSH_DELTA_MINCOLS=999
+
+          _inzsh_render
+          print -r -- "hidden=${_inzsh_hidden[*]}"
+        '
+      }
+      When call too_wide
+      The output should eq 'hidden=DELTA'
+      The stderr should eq ''
+    End
+
     # The width filter is what `_inzsh_mincols_of` answers on behalf of — see
     # `lib/core/layout.zsh`. A segment that is already known to be hidden must never reach it,
     # because reaching it is itself a registry read (`INZSH_<SEG>_MINCOLS`) this segment has no
