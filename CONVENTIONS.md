@@ -44,6 +44,26 @@ the layout flat enough that this stays trivial.
 - **Colour is never the only signal.** Every state carries a glyph as well.
 - Separator glyphs live in the token layer, not in segment code.
 
+## Commands
+
+`inzsh` is the one public command the theme defines. Verbs go under it as subcommands —
+`inzsh doctor`, `inzsh locate`, `inzsh preset` — rather than as separate names in the user's
+namespace, so what the theme offers to be typed stays one word wide however many verbs it
+grows.
+
+**A positional argument is only allowed when the value names itself.** `inzsh preset warm` is
+right: `warm` is the thing being asked for, and `--name warm` would say nothing a reader
+couldn't already see. Anything a reader would have to guess at takes a named flag instead —
+`inzsh salah --days 7`, never a bare `7`, since seven what is not recoverable from the digit
+alone.
+
+A test seam is not an excuse for a positional. `inzsh locate [now]` fails this today: the
+injected clock is opaque to a reader and sits in the one slot a real argument would want.
+Issue #251 moves it to `--now` in 2.0.0; noted here, not fixed here.
+
+A usage string owes the reader the same clarity as the command itself — every subcommand
+named, every flag spelled out, nothing left to be inferred from position.
+
 ## Tests
 
 Match the layer to the concern:

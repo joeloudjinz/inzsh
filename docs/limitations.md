@@ -72,7 +72,9 @@ Setting `INZSH_SALAH_LAT`/`INZSH_SALAH_LON` by hand avoids all of this entirely.
 
 **Diagnostics stay clean.** `inzsh doctor` prints where your position came from and how old
 it is — never the coordinates themselves — so its output is safe to paste into a public
-issue.
+issue. The same care applies to the theme root it also prints (issue #245): the path is real,
+but your home directory within it is collapsed to `~`, since a raw `/Users/you/…` or
+`/home/you/…` carries your account name into the same public block.
 
 ## Colour accessibility
 

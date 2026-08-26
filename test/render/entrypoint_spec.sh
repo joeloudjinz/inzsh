@@ -42,6 +42,7 @@ Describe 'the entry point'
           (( ${+_inzsh_role} ))                      && leaked+=roles
           (( ${+_inzsh_color_depth} ))               && leaked+=depth
           (( ${+_inzsh_theme_root} ))                && leaked+=root
+          (( ${+_inzsh_version} ))                   && leaked+=version
           print -r -- "${leaked[*]}"
         ' inzsh-entry-inert "$(inzsh_spec_theme)"
       }
@@ -163,6 +164,19 @@ Describe 'the entry point'
       }
       When call loaded
       The output should eq ''
+      The stderr should eq ''
+    End
+
+    # Issue #244. A checkout has no tag to read without a subprocess, so it says exactly that
+    # rather than inventing a number — `tools/bundle.zsh` is the only place `_inzsh_version` is
+    # ever anything else, and `bundle_spec.sh` covers that half.
+    It 'reports a from-source load honestly, never a guessed version'
+      version() {
+        zsh -f -i -c 'source "$1"; print -r -- "$_inzsh_version"' \
+          inzsh-entry-version "$(inzsh_spec_theme)"
+      }
+      When call version
+      The output should eq 'source'
       The stderr should eq ''
     End
 

@@ -2,6 +2,7 @@ Include lib/core/config.zsh
 Include lib/core/detect.zsh
 Include lib/core/tokens.zsh
 Include lib/salah/calc.zsh
+Include lib/salah/methods.zsh
 Include lib/salah/cache.zsh
 Include lib/salah/location.zsh
 Include lib/core/doctor.zsh
@@ -35,6 +36,238 @@ inzsh_spec_doctor_env() {
   unset TMUX TERM_PROGRAM TERM_PROGRAM_VERSION LC_TERMINAL TERMINAL_EMULATOR 2>/dev/null
   unset INZSH_COLOR_DEPTH INZSH_MULTIBYTE INZSH_NERD_FONT 2>/dev/null
   unset INZSH_SALAH_LAT INZSH_SALAH_LON INZSH_SALAH_AUTOLOCATE 2>/dev/null
+  # Issue #245's three new rows. `_inzsh_theme_root`/`_inzsh_version` are the entry point's
+  # globals — never set by `Include`ing this file alone — and `ZSH`/`ZSH_THEME` are oh-my-zsh's,
+  # which the machine actually running this suite may have exported for real. Unset all four so
+  # every example starts from the one case none of them can beg the question with: nothing set.
+  unset _inzsh_theme_root _inzsh_version ZSH ZSH_THEME 2>/dev/null
+
+  return 0
+}
+
+# A scratch theme root shaped like `$1` — `clone`, `manual`, or `bundle` — in REPLY, for
+# `_inzsh_doctor_install_method`'s three code-shape branches. `clone` and `manual` both get a
+# `lib` directory, so the function sees a full checkout either way; `clone` additionally gets a
+# `.git` file, the one signal that tells the two apart. `bundle` gets neither — a bundle is
+# defined by the ABSENCE of `lib` beside it, not by anything present.
+inzsh_spec_doctor_root() {
+  emulate -L zsh
+
+  typeset -g REPLY=
+  local shape=$1
+  local dir
+  dir=$(mktemp -d "${TMPDIR:-/tmp}/inzsh-doctor-root-spec-XXXXXX") || return 1
+  # `:A` normalises a `$TMPDIR` that carries its own trailing slash — macOS's does — into one
+  # clean path with no doubled `/`. Without it the `$HOME`-collapse test below would build its
+  # expectation from a path shaped differently than the one `_inzsh_doctor` actually prefix-
+  # matches against, which is a fixture bug, not a doctor one.
+  dir=${dir:A}
+  case $shape in
+    (clone)  mkdir -p -- "$dir/lib" && : > "$dir/.git" ;;
+    (manual) mkdir -p -- "$dir/lib" ;;
+    (bundle) : ;;
+  esac
+  typeset -g REPLY=$dir
+
+  return 0
+}
+
+inzsh_spec_doctor_root_clean() {
+  emulate -L zsh
+
+  local target=${1-}
+  [[ ${target:t} == inzsh-doctor-root-spec-* ]] || return 1
+  rm -rf -- "$target" 2>/dev/null
+
+  return 0
+}
+
+Describe 'the near-miss matcher (issue #228)'
+  # Pure functions, no environment and no `inzsh doctor` — the two building blocks the block's
+  # `ignored` rows read a suggestion from further down this file.
+
+  Describe '_inzsh_doctor_distance'
+    # $1 the pattern (may carry one `*`), $2 the candidate, $3 the expected distance. The
+    # wildcard cases are the reason this is not plain Levenshtein: `*` matches a run of zero or
+    # more characters of $2 for free, which is what lets a family PATTERN be compared directly
+    # against a candidate name without knowing what the wildcard stands for.
+    Parameters
+      INZSH_SEPARATOR_STYLE INZSH_SEPARATOR_STYLE 0
+      INZSH_SEPARATOR_STYL  INZSH_SEPARATOR_STYLE  1
+      kitten                sitting                3
+      ''                    ''                     0
+      abc                   ''                     3
+      'INZSH_*_RANK'        INZSH_GIT_RANK         0
+      'INZSH_*_RANK'        INZSH_GIT_RANNK        1
+      'INZSH_*_BG'          INZSH_MY_OWN_THING     2
+      '*X'                  ''                     1
+    End
+
+    It "measures $1 against $2 as $3"
+      measured() {
+        _inzsh_doctor_distance "$1" "$2"
+        print -r -- "$REPLY"
+      }
+      When call measured "$1" "$2"
+      The output should eq "$3"
+    End
+  End
+
+  Describe '_inzsh_doctor_near_miss'
+    It 'suggests the registered singleton a near-miss name is probably meant to be'
+      When call _inzsh_doctor_near_miss INZSH_SEPARATOR_STYL
+      The status should be success
+      The variable REPLY should eq 'INZSH_SEPARATOR_STYLE'
+    End
+
+    # `INZSH_<SEGMENT>_RANK` is not a name this file can complete — nothing here knows which
+    # segment `RANNK` was reaching for — so the family PATTERN itself is the suggestion, verbatim,
+    # the same vocabulary `lib/core/config.zsh`'s own comments already use for the shape.
+    It 'suggests the family pattern a near-miss segment knob is probably meant to be'
+      When call _inzsh_doctor_near_miss INZSH_GIT_RANNK
+      The status should be success
+      The variable REPLY should eq 'INZSH_*_RANK'
+    End
+
+    # `INZSH_GLYPH_*` — `lib/core/tokens.zsh`'s family, registered once the token layer is
+    # loaded, which this spec's own `Include` list already does — is the theme's other TRAILING
+    # wildcard, the same shape as `INZSH_SALAH_OFFSET_*` below. Nothing about the cap or the
+    # distance walk treats a trailing wildcard differently from a middle one, but it had no
+    # example of its own until now.
+    It 'suggests a trailing-wildcard family the same way as a middle one'
+      When call _inzsh_doctor_near_miss INZSH_GLPH_SEP_LEFT
+      The status should be success
+      The variable REPLY should eq 'INZSH_GLYPH_*'
+    End
+
+    # The example the issue names directly. Measured on its own two rows up, `INZSH_*_BG` sits
+    # only 2 from this name once the wildcard is credited for swallowing the middle of it — a
+    # flat house threshold of 2 would have reported it. `_inzsh_doctor_cap` is what keeps a
+    # three-letter discriminant from being read that generously, which is why this name stays
+    # silent rather than becoming a false "probably".
+    It 'refuses a name that only looks close once a family wildcard is credited too much'
+      When call _inzsh_doctor_near_miss INZSH_MY_OWN_THING
+      The status should be failure
+      The variable REPLY should eq ''
+    End
+
+    It 'refuses an empty name'
+      When call _inzsh_doctor_near_miss ''
+      The status should be failure
+      The variable REPLY should eq ''
+    End
+
+    # The cap is not only a family concern. `INZSH_PS2` is discriminated by `PS2` alone, three
+    # characters same as `_BG` — and the theme SHIPS an `ssh` segment, so a user turning it off
+    # with `INZSH_SSH=0` is doing a wholly ordinary thing, not typing `INZSH_PS2` badly. Without
+    # `_inzsh_doctor_cap` applying to plain names too, all three of these read as "probably
+    # INZSH_PS2" at the flat threshold; capped at 1, none of them clear it.
+    Parameters
+      INZSH_SSH
+      INZSH_ZSH
+      INZSH_OS
+    End
+
+    It "does not read $1 as a near miss of a short registered name"
+      When call _inzsh_doctor_near_miss "$1"
+      The status should be failure
+      The variable REPLY should eq ''
+    End
+
+    # Pins the threshold itself. Both examples are one mutation of `2` away from flipping: at 1,
+    # the transposition below stops reporting; at 3, the truncated name below starts to.
+    It 'reports a transposition sitting exactly at the threshold'
+      When call _inzsh_doctor_near_miss INZSH_SEPARATOR_SYTLE
+      The status should be success
+      The variable REPLY should eq 'INZSH_SEPARATOR_STYLE'
+    End
+
+    It 'stays silent one edit past the threshold'
+      When call _inzsh_doctor_near_miss INZSH_SEPARATOR_ST
+      The status should be failure
+      The variable REPLY should eq ''
+    End
+
+    # Every example above runs against the names `config.zsh` and `tokens.zsh` register directly
+    # — this file's own `Include` list never sources `lib/salah/methods.zsh` and never calls
+    # `_inzsh_config_absorb_all`, so `INZSH_SALAH_*` and the one TRAILING-wildcard family,
+    # `INZSH_SALAH_OFFSET_*`, are otherwise untouched by any near-miss example in this suite. A
+    # `zsh -f` of its own, sourced the way `tools/doctor.zsh` — the real `make doctor` launcher —
+    # sources it, so this is the registry a reporter's near miss is actually matched against.
+    It 'matches a near miss against the salah knobs and the trailing-wildcard family'
+      salah() {
+        zsh -f -c '
+          source "$1/lib/core/config.zsh"
+          source "$1/lib/core/detect.zsh"
+          source "$1/lib/salah/calc.zsh"
+          source "$1/lib/salah/methods.zsh"
+          source "$1/lib/salah/cache.zsh"
+          source "$1/lib/salah/location.zsh"
+          source "$1/lib/core/doctor.zsh"
+          _inzsh_config_absorb_all
+          _inzsh_doctor_near_miss INZSH_SALAH_MEHTOD
+          print -r -- "singleton: $REPLY"
+          _inzsh_doctor_near_miss INZSH_SALAH_OFSET_FAJR
+          print -r -- "family: $REPLY"
+        ' inzsh-doctor-near-miss-salah "$SHELLSPEC_PROJECT_ROOT"
+      }
+      When call salah
+      The line 1 should eq 'singleton: INZSH_SALAH_METHOD'
+      The line 2 should eq 'family: INZSH_SALAH_OFFSET_*'
+      The stderr should eq ''
+    End
+  End
+End
+# --------------------------------------------------------------------------------------------
+# Issue #229. The table row lives beside the location row and shares its cache fixture with
+# `salah_cache_spec.sh` — `inzsh_spec_salah_env`, `inzsh_spec_salah_dir`, `inzsh_spec_salah_clean`
+# and the pinned `inzsh_spec_salah_now` all live in `test/spec_helper.sh` now, loaded into every
+# spec, so nothing here reads or writes the real `$XDG_CACHE_HOME` and nothing here restates a
+# fixture instant a sibling suite already owns.
+#
+# `_inzsh_doctor` TAKES THE SAME INJECTED CLOCK EVERY SALAH FUNCTION DOES. An earlier version of
+# these examples captured `$EPOCHSECONDS` at setup and relied on it still being the same second
+# by the time `inzsh doctor` read the wall clock a moment later — true almost always, and false
+# for one example a run at the wrong instant near a Riyadh midnight, which is exactly what
+# CLAUDE.md's "never against the real time" rule exists to rule out. `inzsh doctor
+# $inzsh_spec_salah_now` below is pinned exactly as every `_inzsh_salah_cache_health` call in
+# `salah_cache_spec.sh` is.
+
+# The doctor environment plus a resolved position (Mecca) and a scratch cache directory,
+# composed from the shared salah fixture and this file's own terminal fixture.
+inzsh_spec_doctor_salah_env() {
+  emulate -L zsh
+
+  inzsh_spec_doctor_env
+  inzsh_spec_salah_env
+
+  return 0
+}
+
+# Writes a valid entry at the path the current configuration's recipe hashes to, under a chosen
+# key, in REPLY as the file path. `$1`, when given, is the key to store; empty or omitted stores
+# today's real key. The caller decides whether that is today's real key or one built to look
+# stale — the twelve moments underneath it only have to parse, never to mean anything, since the
+# doctor never reads them.
+inzsh_spec_doctor_cache_write() {
+  emulate -L zsh
+
+  typeset -g REPLY=
+
+  _inzsh_salah_cache_keys $inzsh_spec_salah_now "$INZSH_SALAH_LAT" "$INZSH_SALAH_LON" ||
+    return 1
+  local key=${1:-$_inzsh_salah_key}
+  _inzsh_salah_cache_path "$_inzsh_salah_seed" || return 1
+  local file=$REPLY
+
+  _inzsh_salah_compute_table $inzsh_spec_salah_now "$INZSH_SALAH_LAT" "$INZSH_SALAH_LON" ||
+    return 1
+  _inzsh_salah_table[key]=$key
+  _inzsh_salah_table[day]=${key%%\|*}
+
+  _inzsh_salah_cache_write "$file" || return 1
+
+  typeset -g REPLY=$file
 
   return 0
 }
@@ -70,6 +303,226 @@ Describe 'inzsh doctor'
     The output should include 'nerd font'
     The output should include 'tmux'
     The status should be success
+  End
+
+  # Issue #245. `version`, `install` and `theme root` — what is running, how it arrived, and
+  # from where. `_inzsh_doctor_install_method` is exercised directly first, since it is the one
+  # piece of actual judgment in the three rows; the full block afterwards checks the rows as a
+  # bug reporter would actually see them, version stamp and path collapse included.
+  Describe '_inzsh_doctor_install_method (issue #245)'
+    It 'calls a root with no lib/ beside it a bundle'
+      bundle_shape() {
+        inzsh_spec_doctor_env
+        inzsh_spec_doctor_root bundle || return 1
+        {
+          local root=$REPLY
+          local _inzsh_theme_root=$root
+          _inzsh_doctor_install_method
+          print -r -- "$REPLY"
+        } always {
+          inzsh_spec_doctor_root_clean "$root"
+        }
+      }
+      When call bundle_shape
+      The output should eq 'bundle'
+    End
+
+    It 'calls a root with lib/ and .git beside it a clone'
+      clone_shape() {
+        inzsh_spec_doctor_env
+        inzsh_spec_doctor_root clone || return 1
+        {
+          local root=$REPLY
+          local _inzsh_theme_root=$root
+          _inzsh_doctor_install_method
+          print -r -- "$REPLY"
+        } always {
+          inzsh_spec_doctor_root_clean "$root"
+        }
+      }
+      When call clone_shape
+      The output should eq 'clone'
+    End
+
+    It 'calls a root with lib/ but no .git manual, rather than guessing clone'
+      manual_shape() {
+        inzsh_spec_doctor_env
+        inzsh_spec_doctor_root manual || return 1
+        {
+          local root=$REPLY
+          local _inzsh_theme_root=$root
+          _inzsh_doctor_install_method
+          print -r -- "$REPLY"
+        } always {
+          inzsh_spec_doctor_root_clean "$root"
+        }
+      }
+      When call manual_shape
+      The output should eq 'manual'
+    End
+
+    # `_inzsh_theme_root` is resolved through `:A` at the entry point, which follows the symlink
+    # `install.zsh`'s omz path leaves behind, so by the time this runs the root already points at
+    # the real checkout and looks exactly like a clone loaded plainly. The framework itself is
+    # the signal that survives that resolution.
+    It 'names oh-my-zsh over the code shape when the framework says it did the sourcing'
+      omz_clone() {
+        inzsh_spec_doctor_env
+        inzsh_spec_doctor_root clone || return 1
+        {
+          local root=$REPLY
+          local _inzsh_theme_root=$root
+          local ZSH=/fixture/omz ZSH_THEME=inzsh
+          _inzsh_doctor_install_method
+          print -r -- "$REPLY"
+        } always {
+          inzsh_spec_doctor_root_clean "$root"
+        }
+      }
+      When call omz_clone
+      The output should eq 'oh-my-zsh (clone)'
+    End
+
+    # `tools/bundle.zsh`'s own emitted header names dropping the bundle straight into an
+    # oh-my-zsh themes directory as a supported path, so the two signals combining here is a
+    # real case, not a hypothetical.
+    It 'still names oh-my-zsh when the code dropped there is a bundle'
+      omz_bundle() {
+        inzsh_spec_doctor_env
+        inzsh_spec_doctor_root bundle || return 1
+        {
+          local root=$REPLY
+          local _inzsh_theme_root=$root
+          local ZSH=/fixture/omz ZSH_THEME=inzsh
+          _inzsh_doctor_install_method
+          print -r -- "$REPLY"
+        } always {
+          inzsh_spec_doctor_root_clean "$root"
+        }
+      }
+      When call omz_bundle
+      The output should eq 'oh-my-zsh (bundle)'
+    End
+
+    It 'names oh-my-zsh alone when there is no theme root to look beside at all'
+      omz_no_root() {
+        inzsh_spec_doctor_env
+        local ZSH=/fixture/omz ZSH_THEME=inzsh
+        _inzsh_doctor_install_method
+        print -r -- "$REPLY"
+      }
+      When call omz_no_root
+      The output should eq 'oh-my-zsh'
+    End
+
+    It 'does not read a ZSH_THEME set to something else as oh-my-zsh loading inzsh'
+      other_theme() {
+        inzsh_spec_doctor_env
+        inzsh_spec_doctor_root clone || return 1
+        {
+          local root=$REPLY
+          local _inzsh_theme_root=$root
+          local ZSH=/fixture/omz ZSH_THEME=robbyrussell
+          _inzsh_doctor_install_method
+          print -r -- "$REPLY"
+        } always {
+          inzsh_spec_doctor_root_clean "$root"
+        }
+      }
+      When call other_theme
+      The output should eq 'clone'
+    End
+
+    # The unrecognisable layout the design decisions call for: no theme root to look beside, and
+    # no oh-my-zsh signal either. Nothing here is a wrong guess dressed up as an answer.
+    It 'is honest about not knowing when neither signal answers anything'
+      nothing() {
+        inzsh_spec_doctor_env
+        _inzsh_doctor_install_method
+        print -r -- "$REPLY"
+      }
+      When call nothing
+      The output should eq 'unknown'
+    End
+  End
+
+  Describe 'version and theme root rows, through the full block (issue #245)'
+    It 'reports source from a from-source checkout'
+      clone_block() {
+        inzsh_spec_doctor_env
+        inzsh_spec_doctor_root clone || return 1
+        {
+          local root=$REPLY
+          local _inzsh_theme_root=$root _inzsh_version=source
+          inzsh doctor
+        } always {
+          inzsh_spec_doctor_root_clean "$root"
+        }
+      }
+      When call clone_block
+      The output should include 'version       source'
+      The output should include 'install       clone'
+    End
+
+    It 'reports the released tag a bundle was stamped with'
+      bundle_block() {
+        inzsh_spec_doctor_env
+        inzsh_spec_doctor_root bundle || return 1
+        {
+          local root=$REPLY
+          local _inzsh_theme_root=$root _inzsh_version=v1.2.0
+          inzsh doctor
+        } always {
+          inzsh_spec_doctor_root_clean "$root"
+        }
+      }
+      When call bundle_block
+      The output should include 'version       v1.2.0'
+      The output should include 'install       bundle'
+    End
+
+    # The narrower harness `tools/doctor.zsh` (`make doctor`) runs — and this file's own
+    # `standalone` example below — never set either global. All three rows still print, and none
+    # of them invents an answer it does not have.
+    It 'degrades all three rows to an honest word rather than a wrong guess'
+      unrecognisable() {
+        inzsh_spec_doctor_env
+        inzsh doctor
+      }
+      When call unrecognisable
+      The output should include 'version       unknown'
+      The output should include 'install       unknown'
+      The output should include 'theme root    unknown'
+      The status should be success
+    End
+
+    # The judgment call this milestone cared about most: the theme root is a filesystem path,
+    # and it very often carries the reporter's own account name. `$HOME` is collapsed to `~`
+    # rather than printed raw — checked here two ways at once, in the SAME block, so a future
+    # change cannot satisfy one half while quietly breaking the other: the row reads `~/…`, and
+    # the fixture's raw `$HOME` string never appears anywhere in the output at all.
+    It 'collapses the theme root to ~ and never prints the raw $HOME underneath it'
+      collapsed() {
+        inzsh_spec_doctor_env
+        inzsh_spec_doctor_root clone || return 1
+        {
+          local root=$REPLY
+          local leaf=${root:t}
+          local HOME=${root:h}
+          local _inzsh_theme_root=$root
+          local block
+          block=$(inzsh doctor)
+          local -a bad=()
+          [[ $block == *"theme root    ~/$leaf"* ]] || bad+=not-collapsed
+          [[ $block == *"$HOME"* ]] && bad+=leaked
+          print -rl -- $bad
+        } always {
+          inzsh_spec_doctor_root_clean "$root"
+        }
+      }
+      When call collapsed
+      The output should eq ''
+    End
   End
 
   It 'reports the running zsh version'
@@ -252,8 +705,9 @@ Describe 'inzsh doctor'
 
     # Set-but-empty is UNSET at every level of this theme — an `INZSH_DIR_BG=` left in a zshrc
     # falls through to the role rather than blanking the segment — so it is not an ignored value
-    # and must not be listed as one. A name the registry has never heard of is not listed either:
-    # there is no vocabulary to state, and no way to tell a typo from a variable that is not ours.
+    # and must not be listed as one. `INZSH_NOT_A_KNOB` is quiet for a different reason since
+    # issue #228: the registry has heard of nothing close enough to it, not because nothing here
+    # can ever tell a typo from a variable that was never ours — see the near-miss examples below.
     It 'lists neither an empty value nor a name the registry never heard of'
       quiet() {
         zsh -f -c '
@@ -321,6 +775,107 @@ Describe 'inzsh doctor'
       The output should eq ''
       The stderr should eq ''
     End
+
+    # Issue #228. `_inzsh_doctor_ignored` above only ever sees a name the registry recognises;
+    # this is the other half — a name it does NOT recognise, close enough to one it does that it
+    # is almost certainly the same slipped key. Printed as the same `ignored` row shape, straight
+    # after the ones above, because a reader pasting this block is asking one question of both:
+    # "what did I set here that did nothing?"
+    Describe 'a near miss for a name the registry has never heard of'
+      It 'names the singleton it is probably a typo of'
+        singleton_typo() {
+          inzsh_spec_doctor_env
+          local INZSH_SEPARATOR_STYL=round
+          inzsh doctor
+        }
+        When call singleton_typo
+        The output should include 'ignored'
+        The output should include 'INZSH_SEPARATOR_STYL=round - probably INZSH_SEPARATOR_STYLE'
+      End
+
+      # The shape offered for a mistyped family member is the pattern itself, not a guessed
+      # segment name — nothing here knows which segment `RANNK` was reaching for.
+      It 'names the family shape a mistyped segment knob is probably one of'
+        family_typo() {
+          inzsh_spec_doctor_env
+          local INZSH_GIT_RANNK=3
+          inzsh doctor
+        }
+        When call family_typo
+        The output should include 'ignored'
+        The output should include 'INZSH_GIT_RANNK=3 - probably INZSH_*_RANK'
+      End
+
+      # The example the issue itself asks to stay silent for — a name that is not close to
+      # anything registered, however plausible it looks as a knob.
+      It 'stays silent for a name that is not close to anything registered'
+        unrelated() {
+          inzsh_spec_doctor_env
+          local INZSH_MY_OWN_THING=banana
+          inzsh doctor
+        }
+        When call unrelated
+        The output should not include 'ignored'
+      End
+
+      # The same "set-but-empty is unset" rule `_inzsh_doctor_ignored` keeps: a near miss on an
+      # empty value is still nothing set, and must not grow a row of its own.
+      It 'skips a near miss whose value is empty'
+        blank() {
+          zsh -f -c '
+            TERM=xterm-256color COLORTERM=truecolor LC_ALL=en_US.UTF-8
+            source "$1/lib/core/config.zsh"
+            source "$1/lib/core/detect.zsh"
+            source "$1/lib/core/doctor.zsh"
+            INZSH_SEPARATOR_STYL=
+            inzsh doctor
+          ' inzsh-doctor-near-miss-blank "$SHELLSPEC_PROJECT_ROOT"
+        }
+        When call blank
+        The output should not include 'ignored'
+        The stderr should eq ''
+      End
+
+      # A registered name is never a near miss, of itself or of anything else — that question is
+      # `_inzsh_doctor_ignored`'s, and the two lists are read from the same walk but never
+      # overlap: `_inzsh_config_spec_of` gates one in exactly where it gates the other out.
+      It 'never lists a registered name as a near miss'
+        registered() {
+          zsh -f -c '
+            TERM=xterm-256color COLORTERM=truecolor LC_ALL=en_US.UTF-8
+            source "$1/lib/core/config.zsh"
+            source "$1/lib/core/detect.zsh"
+            source "$1/lib/core/doctor.zsh"
+            INZSH_SEPARATOR_STYLE=round
+            _inzsh_doctor_near_misses
+            print -r -- "${reply[*]}"
+          ' inzsh-doctor-near-miss-registered "$SHELLSPEC_PROJECT_ROOT"
+        }
+        When call registered
+        The output should eq ''
+        The stderr should eq ''
+      End
+
+      # The house rule this whole file keeps: a diagnostic that can fail is one nobody can run in
+      # the broken environment it exists for.
+      It 'returns success even though nothing here is a valid knob'
+        odd() {
+          zsh -f -c '
+            TERM=xterm-256color COLORTERM=truecolor LC_ALL=en_US.UTF-8
+            source "$1/lib/core/config.zsh"
+            source "$1/lib/core/detect.zsh"
+            source "$1/lib/core/doctor.zsh"
+            INZSH_SEPARATOR_STYL=round
+            INZSH_GIT_RANNK=abc
+            _inzsh_doctor_near_misses
+            print $?
+          ' inzsh-doctor-near-miss-status "$SHELLSPEC_PROJECT_ROOT"
+        }
+        When call odd
+        The output should eq '0'
+        The stderr should eq ''
+      End
+    End
   End
 
   It 'reports where the location came from when coordinates are configured'
@@ -350,6 +905,333 @@ Describe 'inzsh doctor'
     nowhere() { inzsh_spec_doctor_env; inzsh doctor; }
     When call nowhere
     The output should include 'location: none'
+  End
+
+  # Issue #229. The table row: whether an entry is cached, readable and current — and, in every
+  # one of those states, never the coordinates or a hash of them the recipe was built from. Every
+  # example is wrapped `{ … } always { cleanup }`, and every call to `inzsh doctor` is pinned to
+  # `$inzsh_spec_salah_now` — see the fixture comment above for why neither is optional.
+  Describe 'the prayer table'
+    It 'reports no table when no position is known'
+      no_position() { inzsh_spec_doctor_env; inzsh doctor $inzsh_spec_salah_now; }
+      When call no_position
+      The output should include 'table: none (no position)'
+    End
+
+    It 'reports the table as not cached yet when nothing has ever been written for the recipe'
+      not_cached() {
+        inzsh_spec_doctor_salah_env || return 1
+        {
+          inzsh doctor $inzsh_spec_salah_now
+        } always {
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+      }
+      When call not_cached
+      The output should include 'table: not cached yet (method MWL, asr standard)'
+      The status should be success
+    End
+
+    It 'reports a table that covers today as current'
+      current() {
+        inzsh_spec_doctor_salah_env || return 1
+        {
+          inzsh_spec_doctor_cache_write || print -r -- no-entry
+          inzsh doctor $inzsh_spec_salah_now
+        } always {
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+      }
+      When call current
+      The output should include 'table: current, covers today (method MWL, asr standard)'
+    End
+
+    # Review finding N-1. The row used to echo `$INZSH_SALAH_METHOD` and `$INZSH_SALAH_ASR`
+    # straight into the block, which meant a config value could contradict the `ignored` section
+    # a few rows up, or worse, put arbitrary bytes into a block whose entire purpose is to be
+    # trustworthy evidence in a public issue. The row now resolves a NAME through the same closed
+    # vocabulary `lib/salah/methods.zsh` computes from, so nothing typed into either knob reaches
+    # the block unchanged.
+    Describe 'the recipe words never echo the raw knob'
+      It 'resolves an unrecognised method to the default rather than printing it'
+        invalid_method() {
+          inzsh_spec_doctor_salah_env || return 1
+          {
+            typeset -g INZSH_SALAH_METHOD=frobnicate
+            inzsh doctor $inzsh_spec_salah_now
+          } always {
+            inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+          }
+        }
+        When call invalid_method
+        The output should include 'table: not cached yet (method MWL, asr standard)'
+        The output should not include 'frobnicate'
+      End
+
+      It 'resolves an alias to the canonical method the alias means'
+        alias_method() {
+          inzsh_spec_doctor_salah_env || return 1
+          {
+            typeset -g INZSH_SALAH_METHOD=MECCA
+            inzsh doctor $inzsh_spec_salah_now
+          } always {
+            inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+          }
+        }
+        When call alias_method
+        The output should include 'table: not cached yet (method UMMALQURA, asr standard)'
+      End
+
+      # The `ignored` section reports `INZSH_SALAH_METHOD` unusable in the same breath the OLD
+      # table row would have called it the recipe in force — two rows contradicting each other
+      # about the same value. Asserted directly: `ignored` still fires, and the table row no
+      # longer names the value `ignored` just rejected.
+      It 'does not contradict the ignored section for the same invalid value'
+        contradiction() {
+          inzsh_spec_doctor_salah_env || return 1
+          {
+            typeset -g INZSH_SALAH_METHOD=frobnicate
+            # `INZSH_SALAH_METHOD` is declared as DATA in `_inzsh_salah_knobs`, not registered
+            # directly — `lib/salah/` may not name the engine — so the `ignored` section only
+            # ever sees it once something has absorbed that table, which is normally
+            # `inzsh.zsh-theme` or `tools/doctor.zsh` and neither is sourced by this fixture.
+            (( ${+functions[_inzsh_config_absorb_all]} )) && _inzsh_config_absorb_all
+            inzsh doctor $inzsh_spec_salah_now
+          } always {
+            inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+          }
+        }
+        When call contradiction
+        The output should include 'ignored       INZSH_SALAH_METHOD=frobnicate'
+        The output should include 'table: not cached yet (method MWL, asr standard)'
+      End
+
+      It 'never lets an escape sequence out of the method knob'
+        escaped() {
+          inzsh_spec_doctor_salah_env || return 1
+          {
+            typeset -g INZSH_SALAH_METHOD=$'MWL\e[31m\e[2J'
+            inzsh doctor $inzsh_spec_salah_now
+          } always {
+            inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+          }
+        }
+        When call escaped
+        The output should include 'table: not cached yet (method MWL, asr standard)'
+        The output should not include $'\e'
+      End
+
+      # The whole point: a config value cannot forge an extra row. Exactly two `salah` rows
+      # before and after, whatever either knob is set to.
+      It 'never forges an extra row through a newline in either knob'
+        forged() {
+          inzsh_spec_doctor_salah_env || return 1
+          {
+            typeset -g INZSH_SALAH_ASR=$'standard\nsalah         table: forged, covers today'
+            local -i n
+            n=$(inzsh doctor $inzsh_spec_salah_now | grep -c '^  salah')
+            print -r -- "salah-rows=$n"
+          } always {
+            inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+          }
+        }
+        When call forged
+        The output should eq 'salah-rows=2'
+      End
+
+      It 'keeps the row width bounded whatever the method knob holds'
+        long_method() {
+          inzsh_spec_doctor_salah_env || return 1
+          {
+            typeset -g INZSH_SALAH_METHOD=${(pl:200::A:)}
+            local -i width
+            width=$(inzsh doctor $inzsh_spec_salah_now | grep 'table:' | wc -c)
+            (( width < 120 )) && print -r -- ok
+          } always {
+            inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+          }
+        }
+        When call long_method
+        The output should eq 'ok'
+      End
+    End
+
+    # Review finding N-2. `inzsh doctor` has no argument of its own in the usage string — the
+    # clock is an undocumented seam for the suite, the same way `[now]` is for `inzsh locate` —
+    # but `inzsh()` forwards `"$@"`, so a second word typed by a person reaches it too, and a
+    # value that is not an epoch must not turn into a false `no position` beside a `location:
+    # config` that is telling the truth.
+    It 'falls back to the wall clock rather than lying about the position for a bad argument'
+      bad_clock() {
+        inzsh_spec_doctor_salah_env || return 1
+        {
+          inzsh doctor notanumber
+        } always {
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+      }
+      When call bad_clock
+      The output should include 'location: config'
+      The output should not include 'table: none (no position)'
+    End
+
+    It 'reports a table computed under the same recipe for a day that is not today as stale'
+      stale() {
+        inzsh_spec_doctor_salah_env || return 1
+        {
+          _inzsh_salah_cache_keys $inzsh_spec_salah_now "$INZSH_SALAH_LAT" "$INZSH_SALAH_LON"
+          # Same seed as today's, a day three days earlier — the ordinary case of a shell that
+          # has not opened since.
+          local stale_key="2026-5-29|${_inzsh_salah_seed}"
+          inzsh_spec_doctor_cache_write "$stale_key" || print -r -- no-entry
+          inzsh doctor $inzsh_spec_salah_now
+        } always {
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+      }
+      When call stale
+      The output should include 'table: stale, computed for a day that is not today'
+    End
+
+    It 'reports denied for an entry it cannot read'
+      Skip if 'root bypasses permission bits, so chmod 000 cannot provoke a refusal' \
+        inzsh_spec_is_root
+      denied() {
+        inzsh_spec_doctor_salah_env || return 1
+        {
+          inzsh_spec_doctor_cache_write || print -r -- no-entry
+          local file=$REPLY
+          chmod 000 "$file"
+          inzsh doctor $inzsh_spec_salah_now
+        } always {
+          chmod 644 "$file" 2>/dev/null
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+      }
+      When call denied
+      The output should include 'table: unreadable, permission denied (method MWL, asr standard)'
+      The status should be success
+    End
+
+    It 'reports future for an entry written by a format version this one does not know'
+      future() {
+        inzsh_spec_doctor_salah_env || return 1
+        {
+          inzsh_spec_doctor_cache_write || print -r -- no-entry
+          local file=$REPLY
+          local content=$(<"$file")
+          content=${content/version$'\t'1/version$'\t'9}
+          print -r -- "$content" > "$file"
+          inzsh doctor $inzsh_spec_salah_now
+        } always {
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+      }
+      When call future
+      The output should include 'table: unreadable, written by a newer InZsh (method MWL, asr standard)'
+      The status should be success
+    End
+
+    It 'reports an empty entry file as unreadable rather than failing'
+      # A full filesystem or an interrupted write can leave nothing behind at all — no version
+      # to reject, no slot to fail — and the doctor still owes a row rather than a crash.
+      empty() {
+        inzsh_spec_doctor_salah_env || return 1
+        {
+          inzsh_spec_doctor_cache_write || print -r -- no-entry
+          local file=$REPLY
+          : > "$file"
+          inzsh doctor $inzsh_spec_salah_now
+        } always {
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+      }
+      When call empty
+      The output should include 'table: unreadable (method MWL, asr standard)'
+      The status should be success
+    End
+
+    # Issue #229 review, finding I2. A directory that does not exist, is a stray file, or cannot
+    # be searched must not read as "not cached" — that word means the directory is fine and only
+    # the recipe has never been written, which is a different fact from "the segment is
+    # recomputing every shell and this is why".
+    It 'reports no cache directory rather than not cached when the directory cannot be used'
+      nodir() {
+        inzsh_spec_doctor_salah_env || return 1
+        {
+          typeset -g INZSH_SALAH_CACHE_DIR=$inzsh_spec_salah_cache/never-created
+          inzsh doctor $inzsh_spec_salah_now
+        } always {
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+      }
+      When call nodir
+      The output should include 'table: no cache directory (recomputed every shell)'
+    End
+
+    # Issue #229 review, finding I3. `inzsh doctor` had zero filesystem side effects before this
+    # row existed and still must have none — the regression test for the `mkdir -p` an earlier
+    # version of `_inzsh_salah_cache_health` triggered by reusing the write-capable path builder.
+    It 'never creates the cache directory it only reports on'
+      readonly_probe() {
+        inzsh_spec_doctor_env
+        local scratch
+        scratch=$(mktemp -d "${TMPDIR:-/tmp}/inzsh-salah-spec-XXXXXX") || return 1
+        {
+          typeset -gx TZ=Asia/Riyadh
+          typeset -g INZSH_SALAH_CACHE_DIR=$scratch/never-created
+          typeset -g INZSH_SALAH_LAT=$inzsh_spec_salah_lat INZSH_SALAH_LON=$inzsh_spec_salah_lon
+          typeset -g INZSH_SALAH_AUTOLOCATE=0
+
+          inzsh doctor $inzsh_spec_salah_now >/dev/null
+          if [[ -e $INZSH_SALAH_CACHE_DIR ]]; then
+            print -r -- created
+          fi
+        } always {
+          inzsh_spec_salah_clean "$scratch"
+        }
+      }
+      When call readonly_probe
+      The output should eq ''
+    End
+
+    # The whole point of the row, and the review's central finding (C1): a hash of the recipe is
+    # a slow but complete encoding of the position it was built from, not a redaction of it, and
+    # is checked for here on the same footing as the raw coordinates — a `[0-9a-f]{8}` word next
+    # to `table:` would be exactly what that finding was about. Checked across several states, so
+    # a future word choice cannot reintroduce a leak that only the untested branch would show.
+    It 'never prints the coordinates or a digest of them in any state of the table'
+      leakproof() {
+        inzsh_spec_doctor_salah_env || return 1
+        {
+          setopt local_options extended_glob
+          local -a bad=()
+          local block
+
+          block=$(inzsh doctor $inzsh_spec_salah_now 2>&1)
+          [[ $block == *21.4225* || $block == *39.8262* ]] && bad+=not-cached
+          [[ $block == *'table: '*[0-9a-f](#c8)* ]]         && bad+=digest-shaped-not-cached
+
+          inzsh_spec_doctor_cache_write >/dev/null
+          block=$(inzsh doctor $inzsh_spec_salah_now 2>&1)
+          [[ $block == *21.4225* || $block == *39.8262* ]] && bad+=current
+          [[ $block == *'table: '*[0-9a-f](#c8)* ]]         && bad+=digest-shaped-current
+
+          _inzsh_salah_cache_keys $inzsh_spec_salah_now "$INZSH_SALAH_LAT" "$INZSH_SALAH_LON"
+          local other_key="$_inzsh_salah_day|10.0000|20.0000|+0000|OTHER asr:1"
+          inzsh_spec_doctor_cache_write "$other_key" >/dev/null
+          block=$(inzsh doctor $inzsh_spec_salah_now 2>&1)
+          [[ $block == *21.4225* || $block == *39.8262* ]] && bad+=collision
+          [[ $block == *'table: '*[0-9a-f](#c8)* ]]         && bad+=digest-shaped-collision
+
+          print -rl -- $bad
+        } always {
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+      }
+      When call leakproof
+      The output should eq ''
+    End
   End
 
   # The command ships with the theme, so it has to work from a partial load — a bundle that
@@ -718,5 +1600,31 @@ Describe 'make doctor'
     The output should include 'colour depth'
     The output should include 'zsh'
     The status should be success
+  End
+End
+
+Describe 'the house rule, kept anyway'
+  # Not on the render path — nothing calls the near-miss matcher per prompt — but issue #228
+  # says outright that it keeps the rule regardless: parameter operations and arithmetic only.
+  # `$((` is taken out of the way first, the same way `salah_calc_spec.sh` clears it for its own
+  # forkless check, so the arithmetic-expansion opener is never mistaken for a command one.
+  It 'never starts a subprocess'
+    forkless() {
+      setopt local_options extended_glob
+      local line bare
+      local -a bad=()
+      while IFS= read -r line; do
+        [[ ${line##[[:space:]]#} == \#* ]] && continue
+        bare=${line//\$\(\(/}
+        [[ $bare == *'$('* || $bare == *'`'* ]] && bad+=$line
+      done < "$SHELLSPEC_PROJECT_ROOT/lib/core/doctor.zsh"
+      # The offending lines themselves, not only their count — stderr, so a failing count in the
+      # assertion below still leaves the actual `$(` or backtick visible in the run's own output
+      # rather than sending whoever is chasing it back to grep the file by hand.
+      (( ${#bad} )) && print -ru2 -- "${bad[@]}"
+      print -r -- "${#bad}"
+    }
+    When call forkless
+    The output should eq '0'
   End
 End
