@@ -53,10 +53,10 @@ Nothing hand-maintains a version number anywhere in the tree, so there is nothin
 can drift from the tag: the tag and the stamp are the same `nextRelease.gitTag`, read
 once, in the same process.
 
-`inzsh doctor` will print whichever `_inzsh_version` a running shell finds — `source`
+`inzsh doctor` prints whichever `_inzsh_version` a running shell finds — `source`
 from a clone or an unstamped bundle, the released tag from one built by the workflow
-— and never invent a third answer (issue #245, not this one — `doctor.zsh` does not
-read it yet).
+— and never invents a third answer (issue #245's `version` row, beside `install` and
+`theme root`, in `lib/core/doctor.zsh`).
 
 ## Configuration
 
