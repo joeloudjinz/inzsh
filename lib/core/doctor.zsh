@@ -48,6 +48,75 @@ _inzsh_doctor_overridden() {
   _inzsh_config_validate "$1" "$value"
 }
 
+# Edit distance between `$1` and `$2`, in REPLY. Plain Levenshtein — insert, delete, substitute,
+# each costing one — with a single generalisation: a literal `*` in `$1` matches a run of ZERO OR
+# MORE characters of `$2` for no cost at all, the same as it does as a glob. That is what lets one
+# function serve both shapes of registered knob: pass a plain name and it is ordinary Levenshtein;
+# pass a family pattern such as `INZSH_*_RANK` and the wildcard absorbs whatever segment name sits
+# where it does in the real registry, so a typo in the SEGMENT never counts against the match — a
+# typo in `_RANK` itself is the only thing this distance can report for that family.
+#
+# The wildcard is only honoured in `$1`. A knob name can never contain `*` — it would not pass
+# `_inzsh_config_register`'s own identifier check — so `$2` is always a plain string here, and the
+# function does not need to reason about a wildcard on both sides at once.
+#
+# Textbook dynamic programming, two rows instead of a full table, because nothing here needs the
+# rows it has already finished with. `prev` holds the row above the one being built; `cur` grows
+# one cell at a time and becomes `prev` for the next row. The one departure from the textbook
+# recurrence is the wildcard row: `dp[i][j] = min(dp[i-1][j], dp[i][j-1])` rather than the usual
+# insert/delete/substitute triple, because finishing the wildcard here costs whatever finishing
+# everything BEFORE it already cost (`dp[i-1][j]`), or one more character of `$2` absorbed into it
+# for free (`dp[i][j-1]`) — never a real edit.
+#
+# Not on the render path, and it keeps the house rule anyway: no subprocess, `$((` arithmetic and
+# parameter expansion only. `test/unit/doctor_spec.sh` greps this file for `$(` and a backtick
+# outside a comment to hold it to that.
+_inzsh_doctor_distance() {
+  emulate -L zsh
+
+  typeset -g REPLY=0
+  local a=$1 b=$2
+  local -i la=${#a} lb=${#b}
+
+  local -a prev cur
+  local -i i j cost del ins sub best
+  local ai bj
+
+  prev=(0)
+  for (( j = 1; j <= lb; j++ )); do
+    prev+=$j
+  done
+
+  for (( i = 1; i <= la; i++ )); do
+    ai=$a[$i]
+    if [[ $ai == '*' ]]; then
+      cur=(${prev[1]})
+      for (( j = 1; j <= lb; j++ )); do
+        best=$(( prev[j+1] < cur[j] ? prev[j+1] : cur[j] ))
+        cur+=$best
+      done
+    else
+      cur=($i)
+      for (( j = 1; j <= lb; j++ )); do
+        bj=$b[$j]
+        [[ $ai == $bj ]] && cost=0 || cost=1
+        del=$(( prev[j+1] + 1 ))
+        ins=$(( cur[j] + 1 ))
+        sub=$(( prev[j] + cost ))
+        best=$del
+        (( ins < best )) && best=$ins
+        (( sub < best )) && best=$sub
+        cur+=$best
+      done
+    fi
+    prev=("${cur[@]}")
+  done
+
+  REPLY=${prev[$(( lb + 1 ))]}
+
+  return 0
+}
+
 # Every `INZSH_` variable that is SET to something the registry refuses, sorted, in `reply`.
 #
 # Issue #210. "Validate, then fall back" is the rule that stops a typo breaking the prompt: a

@@ -39,6 +39,37 @@ inzsh_spec_doctor_env() {
   return 0
 }
 
+Describe 'the near-miss matcher (issue #228)'
+  # Pure functions, no environment and no `inzsh doctor` — the two building blocks the block's
+  # `ignored` rows read a suggestion from further down this file.
+
+  Describe '_inzsh_doctor_distance'
+    # $1 the pattern (may carry one `*`), $2 the candidate, $3 the expected distance. The
+    # wildcard cases are the reason this is not plain Levenshtein: `*` matches a run of zero or
+    # more characters of $2 for free, which is what lets a family PATTERN be compared directly
+    # against a candidate name without knowing what the wildcard stands for.
+    Parameters
+      INZSH_SEPARATOR_STYLE INZSH_SEPARATOR_STYLE 0
+      INZSH_SEPARATOR_STYL  INZSH_SEPARATOR_STYLE  1
+      kitten                sitting                3
+      ''                    ''                     0
+      abc                   ''                     3
+      'INZSH_*_RANK'        INZSH_GIT_RANK         0
+      'INZSH_*_RANK'        INZSH_GIT_RANNK        1
+      'INZSH_*_BG'          INZSH_MY_OWN_THING     2
+    End
+
+    It "measures $1 against $2 as $3"
+      measured() {
+        _inzsh_doctor_distance "$1" "$2"
+        print -r -- "$REPLY"
+      }
+      When call measured "$1" "$2"
+      The output should eq "$3"
+    End
+  End
+End
+
 Describe 'the inzsh command'
   It 'refuses a subcommand it has never heard of, and says what it does know'
     unknown() { inzsh frobnicate; }
@@ -718,5 +749,27 @@ Describe 'make doctor'
     The output should include 'colour depth'
     The output should include 'zsh'
     The status should be success
+  End
+End
+
+Describe 'the house rule, kept anyway'
+  # Not on the render path — nothing calls the near-miss matcher per prompt — but issue #228
+  # says outright that it keeps the rule regardless: parameter operations and arithmetic only.
+  # `$((` is taken out of the way first, the same way `salah_calc_spec.sh` clears it for its own
+  # forkless check, so the arithmetic-expansion opener is never mistaken for a command one.
+  It 'never starts a subprocess'
+    forkless() {
+      setopt local_options extended_glob
+      local line bare
+      local -a bad=()
+      while IFS= read -r line; do
+        [[ ${line##[[:space:]]#} == \#* ]] && continue
+        bare=${line//\$\(\(/}
+        [[ $bare == *'$('* || $bare == *'`'* ]] && bad+=$line
+      done < "$SHELLSPEC_PROJECT_ROOT/lib/core/doctor.zsh"
+      print -r -- "${#bad}"
+    }
+    When call forkless
+    The output should eq '0'
   End
 End
