@@ -303,30 +303,38 @@ _inzsh_salah_slots() {
   return 0
 }
 
-# `_inzsh_salah_cache_read <key> <entry-path>` — the entry into `_inzsh_salah_table`.
+# `_inzsh_salah_cache_parse <entry-path>` — the raw tab fields of an entry, validated for SHAPE,
+# into `_inzsh_salah_cache_raw`. Shared by the two things that read an entry off disk for two
+# different questions: `_inzsh_salah_cache_read` below, which also insists the entry is for the
+# key it was asked about, and `_inzsh_salah_cache_health`, which asks a question a strict
+# pass/fail cannot answer — not "is this usable" but "usable under what recipe, for what day".
+# One parse, two callers, so the read loop, the key filter, the version check and the slot
+# validation each exist once.
 #
 # EVERY FIELD IS VALIDATED, and this is the whole of the corrupt-cache story. The file outlives
 # the shell that wrote it, a full filesystem can truncate it mid-write, and a user can open it in
-# an editor. So the version must be the one this file writes, the key must be the one being asked
-# about, and every one of the twelve moments must be an epoch or the sentinel — a slot that is
-# missing, empty or anything else fails the whole entry rather than defaulting to a number.
+# an editor. So the version must be the one this file writes and every one of the twelve moments
+# must be an epoch or the sentinel — a slot that is missing, empty or anything else fails the
+# whole entry rather than defaulting to a number.
 #
-# A miss leaves the table EMPTY and returns 1, which the segment already reads as "nothing to
-# draw". Never an error, never a partial table, and never a diagnostic: a prompt is not a place to
-# report that a cache file was odd.
-_inzsh_salah_cache_read() {
+# Status 1 leaves `_inzsh_salah_cache_raw` EMPTY and REPLY carrying the reason, for a caller that
+# wants to say more than "no": `open` — the file cannot be opened or read; `future` — the format
+# VERSION is a number, just not this one, which in a project that has only ever shipped version 1
+# means a later InZsh wrote it; `corrupt` — anything else: no version line at all, a truncated
+# write, a hand-edited slot. REPLY is empty on success.
+_inzsh_salah_cache_parse() {
   emulate -L zsh
   setopt extended_glob
 
-  typeset -gA _inzsh_salah_table
-  _inzsh_salah_table=()
+  typeset -gA _inzsh_salah_cache_raw
+  _inzsh_salah_cache_raw=()
+  typeset -g REPLY=
 
-  local key=$1 file=$2
-  [[ -n $key && -n $file ]] || return 1
-  [[ -f $file && -r $file ]] || return 1
-
-  _inzsh_salah_slots || return 1
-  local -a slots=("${reply[@]}")
+  local file=$1
+  if [[ -z $file || ! -f $file || ! -r $file ]]; then
+    typeset -g REPLY=open
+    return 1
+  fi
 
   local -A raw
   local line k v
@@ -338,22 +346,99 @@ _inzsh_salah_cache_read() {
     raw[$k]=$v
   done < "$file" 2>/dev/null
 
-  [[ ${raw[version]-} == $_inzsh_salah_cache_version ]] || return 1
-  [[ ${raw[key]-} == $key ]]                            || return 1
+  local version=${raw[version]-}
+  if [[ $version != $_inzsh_salah_cache_version ]]; then
+    # `<2->` and not `<->`: this file has shipped exactly one format, version 1, so a NUMBER that
+    # is not 1 is only honestly "future" starting at 2. `<->` would have called `0` and a
+    # leading-zero `01` future too — neither is a version anything has ever written, both are as
+    # corrupt as a version field with no digits in it at all.
+    if [[ $version == <2-> ]]; then
+      typeset -g REPLY=future
+    else
+      typeset -g REPLY=corrupt
+    fi
+    return 1
+  fi
+
+  _inzsh_salah_slots || { typeset -g REPLY=corrupt; return 1 }
+  local -a slots=("${reply[@]}")
 
   local absent=${_inzsh_salah_absent:-none}
-  local -A table
   local slot value
   for slot in "${slots[@]}"; do
     value=${raw[$slot]-}
-    [[ $value == (|-)<-> || $value == $absent ]] || return 1
-    table[$slot]=$value
+    [[ $value == (|-)<-> || $value == $absent ]] || { typeset -g REPLY=corrupt; return 1 }
   done
 
+  _inzsh_salah_cache_raw=("${(@kv)raw}")
+
+  return 0
+}
+
+# `_inzsh_salah_cache_read <key> <entry-path>` — the entry into `_inzsh_salah_table`.
+#
+# The key check is the second half of the corrupt-cache story `_inzsh_salah_cache_parse` starts:
+# a shape that parses cleanly can still be the wrong day, the wrong place or the wrong method, so
+# the exact key being asked about is compared before anything is trusted.
+#
+# A miss leaves the table EMPTY and returns 1, which the segment already reads as "nothing to
+# draw". Never an error, never a partial table, and never a diagnostic: a prompt is not a place to
+# report that a cache file was odd.
+#
+# REPLY IS THE CALLER'S, NOT THIS FUNCTION'S, AND IT IS RESTORED ON EVERY PATH OUT. Before the
+# parse split this never touched REPLY at all; `_inzsh_salah_cache_parse` answers in it, so
+# borrowing that answer without giving REPLY back would be a silent contract change on a function
+# the render path calls. `_inzsh_salah_cache_raw`, likewise, is `_inzsh_salah_cache_parse`'s
+# workspace and not somewhere this function's coordinates belong once they are copied into
+# `_inzsh_salah_table` — cleared here for the same reason `_inzsh_salah_table` itself is emptied
+# at the top on a miss, not because holding it longer would leak anything new, but because a file
+# under COORDINATES NEVER LEAVE should not grow a fourth place they sit without a reason to.
+_inzsh_salah_cache_read() {
+  emulate -L zsh
+
+  typeset -gA _inzsh_salah_table
+  _inzsh_salah_table=()
+
+  local saved_reply=$REPLY
+
+  local key=$1 file=$2
+  if [[ -z $key || -z $file ]]; then
+    typeset -g REPLY=$saved_reply
+    return 1
+  fi
+
+  if ! _inzsh_salah_cache_parse "$file"; then
+    typeset -g REPLY=$saved_reply
+    return 1
+  fi
+  if [[ ${_inzsh_salah_cache_raw[key]-} != $key ]]; then
+    typeset -gA _inzsh_salah_cache_raw
+    _inzsh_salah_cache_raw=()
+    typeset -g REPLY=$saved_reply
+    return 1
+  fi
+
+  if ! _inzsh_salah_slots; then
+    typeset -gA _inzsh_salah_cache_raw
+    _inzsh_salah_cache_raw=()
+    typeset -g REPLY=$saved_reply
+    return 1
+  fi
+  local -a slots=("${reply[@]}")
+
+  local -A table
+  local slot
+  for slot in "${slots[@]}"; do
+    table[$slot]=${_inzsh_salah_cache_raw[$slot]-}
+  done
   table[key]=$key
-  table[day]=${raw[day]-}
+  table[day]=${_inzsh_salah_cache_raw[day]-}
 
   _inzsh_salah_table=("${(@kv)table}")
+
+  typeset -gA _inzsh_salah_cache_raw
+  _inzsh_salah_cache_raw=()
+  typeset -g REPLY=$saved_reply
 
   return 0
 }
@@ -524,6 +609,208 @@ _inzsh_salah_cache_refresh() {
   # A write that fails costs nothing but the next shell's two milliseconds. The table in memory
   # is already correct, so the status is deliberately not propagated.
   [[ -n $file ]] && _inzsh_salah_cache_write "$file"
+
+  return 0
+}
+
+# --------------------------------------------------------------------------------------------
+# Diagnostics
+#
+# `_inzsh_salah_cache_dir_probe` — the cache directory in REPLY, resolved the same way
+# `_inzsh_salah_cache_dir` resolves it, but NEVER CREATED. Status 1 when it cannot be resolved
+# (no override, no `$HOME`) or does not already exist as a directory this process can look
+# inside — missing, a stray file where the directory should be, or one neither readable nor
+# searchable. `-r` and never `-w`: an unwritable directory a reader can still list is not this
+# function's business, only a directory it cannot see into is.
+#
+# The read-only sibling of `_inzsh_salah_cache_dir`, for `_inzsh_salah_cache_health` below, which
+# only ever LOOKS. `inzsh doctor` had zero filesystem side effects before that function existed,
+# and it still must have none — an earlier version of it called `_inzsh_salah_cache_path`, which
+# calls `_inzsh_salah_cache_dir`, which `mkdir -p`s a directory that was not there. Running the
+# diagnostic is not a reason to create the thing it is diagnosing the absence of.
+_inzsh_salah_cache_dir_probe() {
+  emulate -L zsh
+
+  typeset -g REPLY=
+
+  local dir=${INZSH_SALAH_CACHE_DIR-}
+  if [[ -z $dir ]]; then
+    local base=${XDG_CACHE_HOME:-${HOME:+$HOME/.cache}}
+    [[ -n $base ]] || return 1
+    dir=$base/inzsh/salah
+  fi
+
+  [[ -d $dir && -r $dir && -x $dir ]] || return 1
+
+  typeset -g REPLY=$dir
+
+  return 0
+}
+
+# The entry path for seed `$1`, in REPLY, exactly as `_inzsh_salah_cache_path` builds it but from
+# `_inzsh_salah_cache_dir_probe` rather than `_inzsh_salah_cache_dir` — so it answers the same
+# question without the side effect. Status 1 under the same conditions the probe refuses on.
+_inzsh_salah_cache_path_probe() {
+  emulate -L zsh
+
+  typeset -g REPLY=
+
+  [[ -n $1 ]] || return 1
+
+  _inzsh_salah_cache_dir_probe || return 1
+  local base=$REPLY
+
+  _inzsh_salah_cache_key "$1"
+  typeset -g REPLY=$base/$REPLY
+
+  return 0
+}
+
+# `_inzsh_salah_cache_health [epoch]` — issue #229. `inzsh doctor` reports where the POSITION
+# came from; it says nothing about the TABLE computed from it, and a blank prayer segment gives
+# a reader nothing to act on beyond that. This answers what the issue asked for: whether a table
+# is cached, whether it is readable, and how stale — deliberately not "for which recipe key", the
+# fourth question the issue also asked, because that turned out to be unanswerable without a
+# second problem. See NO DIGEST below.
+#
+# READ-ONLY, ON PURPOSE. `_inzsh_salah_cache_refresh` above is the function that may compute and
+# write — it is what the segment's own hook calls, and calling it from a diagnostic would make
+# running `inzsh doctor` have a side effect nobody asked for, exactly the reason `inzsh doctor`
+# calls `_inzsh_salah_location` rather than `_inzsh_salah_locate_refresh` for the position. This
+# never touches `_inzsh_salah_table`, never computes a table, never writes a file, and never
+# creates the cache directory — `_inzsh_salah_cache_dir_probe` above is what makes that last part
+# true, and is the whole reason it exists.
+#
+# NO DIGEST. An earlier version of this hashed the recipe — position, offset and method together
+# — with the same one-way hash `_inzsh_salah_cache_path` uses for a filename, on the theory that a
+# hash a human cannot read back is not a coordinate. It is wrong twice over. First, the coordinate
+# space at any precision a person actually types is smaller than the 32-bit hash space, so the
+# hash is a slow but complete ENCODING of the position rather than a redaction of it — a two-
+# minute brute force recovers it globally, twenty seconds inside one degree once a reader has
+# narrowed the city, which the same doctor block helps with by printing `locale`. Second, it is
+# STABLE: two doctor blocks pasted into two issues months apart with the same eight characters
+# prove the same reporter at the same place, which `location: config` never does, because that
+# reads identically for everyone who configured a position at all. Existence on the filesystem is
+# not publication; a public issue tracker is. What `lib/salah/methods.zsh` already has words for —
+# a method name, an Asr school — IS the recipe a reader can act on, and neither is derived from
+# where anyone is standing, so `inzsh doctor` prints them the way it prints `TERM` or the locale.
+#
+# REPLY is one word, cheapest fact first:
+#
+#   none         no position is resolved, so there is no recipe to look for. Not an error — the
+#                segment has nothing to draw either, and this says why.
+#   nodir        the cache directory cannot be found or looked inside — missing, a stray file
+#                where it should be, or one this process cannot read or search. Whatever is or is
+#                not inside it, the segment recomputes every shell it does not learn otherwise.
+#   missing      the directory is fine and nothing has ever been written under today's recipe.
+#   denied       an entry sits at that path and this process cannot read it — a permissions
+#                problem, not a format one.
+#
+# NEITHER `nodir` NOR `denied` IS REACHABLE FOR A ROOT SHELL. `-r`, `-x` and `-w` read true for
+# root whatever a file's or directory's mode says — permission bits are advisory to root, not
+# enforced — so nothing this function can `chmod` away from itself will ever make either branch
+# fire while running as root. Worth knowing for whoever runs InZsh from a root shell: the two
+# states this diagnostic has for "I cannot get to it" simply do not exist there, and a permission
+# problem that a normal user would see as `denied` or `nodir` will read as whatever the entry
+# actually contains instead.
+#   future       an entry sits at that path with a format VERSION that is not this file's own —
+#                in a project that has only ever shipped version 1, the honest reading is that a
+#                newer InZsh wrote it, and this one should not guess at what else changed.
+#   unreadable   an entry sits at that path and cannot be trusted for any other reason: garbage,
+#                a truncated write, a hand-edited slot, or a key naming a seed this path's hash
+#                could not have produced. That last case is a 32-bit collision or a hand edit —
+#                either way not an entry this recipe wrote — and gets the same word as one that
+#                does not parse at all, rather than a word implying a cause nobody could act on.
+#   stale        the entry parses cleanly and was computed under the SAME recipe, for a day that
+#                is not today's — the ordinary case of a shell that has not opened since.
+#   current      the entry matches today and matches the recipe in force. This is what the
+#                segment itself would read right now, with nothing left to compute.
+#
+# Always returns 0. A diagnostic that could fail is a diagnostic nobody could run in the broken
+# environment it exists to describe, and every branch below ends on an honest word instead.
+_inzsh_salah_cache_health() {
+  emulate -L zsh
+  setopt extended_glob
+
+  # No default of its own: `_inzsh_salah_cache_refresh` above is the one place this file reads
+  # `EPOCHSECONDS`, and a second place would be a second clock a fixture could not pin. The one
+  # caller this has — `inzsh doctor` — already reads it once and passes the same reading here.
+  local now=$1
+
+  # `REPLY` IS SET LAST ON EVERY PATH BELOW, NEVER FIRST. `_inzsh_salah_location`,
+  # `_inzsh_salah_cache_path_probe` and `_inzsh_salah_cache_parse` all answer in REPLY
+  # themselves, so setting this function's own word before calling any of them only means the
+  # call throws the word away a moment later.
+  if (( ! ${+functions[_inzsh_salah_location]} )); then
+    typeset -g REPLY=none
+    return 0
+  fi
+  if ! _inzsh_salah_location "$now"; then
+    typeset -g REPLY=none
+    return 0
+  fi
+  local -a where=(${=REPLY})
+  if (( ${#where} != 2 )); then
+    typeset -g REPLY=none
+    return 0
+  fi
+
+  if ! _inzsh_salah_cache_keys "$now" "${where[1]}" "${where[2]}"; then
+    typeset -g REPLY=none
+    return 0
+  fi
+  local key=$_inzsh_salah_key seed=$_inzsh_salah_seed
+
+  if ! _inzsh_salah_cache_path_probe "$seed"; then
+    typeset -g REPLY=nodir
+    return 0
+  fi
+  local file=$REPLY
+
+  if [[ ! -e $file ]]; then
+    typeset -g REPLY=missing
+    return 0
+  fi
+  if [[ ! -f $file || ! -r $file ]]; then
+    typeset -g REPLY=denied
+    return 0
+  fi
+
+  if ! _inzsh_salah_cache_parse "$file"; then
+    # `future` is the one reason worth keeping; anything else — an unreadable open, a garbled
+    # version, a bad slot — is the same `unreadable` this function would say about a file that
+    # never parsed at all.
+    [[ $REPLY == future ]] || typeset -g REPLY=unreadable
+    return 0
+  fi
+
+  local stored=${_inzsh_salah_cache_raw[key]-}
+  # Copied out; `_inzsh_salah_cache_parse`'s workspace has nothing left to answer for once this
+  # function has taken the one field it needed from it.
+  typeset -gA _inzsh_salah_cache_raw
+  _inzsh_salah_cache_raw=()
+
+  if [[ -z $stored ]]; then
+    typeset -g REPLY=unreadable
+    return 0
+  fi
+
+  if [[ $stored == $key ]]; then
+    typeset -g REPLY=current
+    return 0
+  fi
+
+  # Everything after the first `|` is the seed — position, offset and recipe — and everything
+  # before it is the day. Same seed, different day is the ordinary case of a shell that has not
+  # opened since. A different seed at THIS path is not a different recipe's entry: the path is
+  # itself a hash of the seed, so a real recipe change moves the FILE rather than leaving a
+  # conflicting one behind — what is left is a collision or a hand edit, and neither is trustable
+  # enough to earn a word implying a cause a reader could act on.
+  if [[ ${stored#*|} == ${key#*|} ]]; then
+    typeset -g REPLY=stale
+  else
+    typeset -g REPLY=unreadable
+  fi
 
   return 0
 }

@@ -17,7 +17,14 @@
 #   COORDINATES NEVER LEAVE. The block exists to be pasted into a public issue, and
 #   CONTRIBUTING.md asks reporters not to include their position. `lib/salah/location.zsh`
 #   writes the PROVENANCE of the resolved position down for this reader — `config`, `cache`,
-#   or nothing — and provenance is all the doctor prints. The numbers stay on the machine.
+#   or nothing — and provenance is all the doctor prints. Issue #229 extends the same rule to
+#   the prayer TABLE computed from that position: `lib/salah/cache.zsh` answers whether an
+#   entry is cached, readable and current in words only — `none`, `stale`, `current` and the
+#   rest — never a hash of the recipe. A hash of a position is not a redaction of it: the
+#   coordinate space at any precision a person types is smaller than the hash space, so it is a
+#   slow but complete encoding, and a stable one, which a raw coordinate at least is not. What
+#   the row names instead is the method and Asr school in force — configuration, not position,
+#   the same as `TERM` or the locale two rows up.
 #
 # `inzsh` is the one public command the theme defines; the playground's `inzsh-*` helpers are
 # dev tooling and are not sourced by the theme. Subcommands dispatch below, so a later command
@@ -358,8 +365,22 @@ _inzsh_doctor_age() {
 # The block itself. Always status 0: a diagnostic that can fail is a diagnostic nobody can run
 # in the broken environment it exists for, so every line degrades to an honest word — `unknown`,
 # `none` — rather than to an error.
+#
+# `[now]` is the injected clock every salah function under `lib/salah/` takes, threaded through
+# here for the same reason: a fixture pins the instant and asks what the block says, and no
+# example in the suite can be affected by what the sun is doing while it runs. Unset, the wall
+# clock answers, which is the one property that makes this a diagnostic of the terminal you are
+# looking at right now rather than a memory of source time.
 _inzsh_doctor() {
   emulate -L zsh
+
+  local now=${1:-${EPOCHSECONDS-}}
+  # A malformed clock is not the fixture seam misused, it is `inzsh doctor` reachable through
+  # `inzsh()`'s `"$@"` forwarding from anyone who types a second word — and the wall clock is the
+  # one thing here that is always right, so a value that cannot be an epoch falls back to it
+  # rather than reaching `_inzsh_salah_location` and `_inzsh_salah_cache_health` as a clock that
+  # makes the position line say `config` beside a table line that says `no position`.
+  [[ $now == <-> ]] || now=${EPOCHSECONDS-}
 
   # Re-ask every question. Recompute-never-cache is each detector's own contract; calling them
   # here is what makes the block current rather than a memory of source time.
@@ -488,10 +509,11 @@ _inzsh_doctor() {
     _inzsh_doctor_row ignored "$knob=$value - probably $suggestion"
   done
 
-  # Where the prayer segment's position came from — never where it is. Omitted entirely when
-  # the salah library is not loaded: a partial load has nothing honest to say here.
+  # Where the prayer segment's position came from, and the state of the table computed from
+  # it — never the numbers behind either. Omitted entirely when the salah library is not
+  # loaded: a partial load has nothing honest to say here.
   if (( ${+functions[_inzsh_salah_location]} )); then
-    if _inzsh_salah_location "${EPOCHSECONDS-}"; then
+    if _inzsh_salah_location "$now"; then
       value=$_inzsh_salah_location_source
       if [[ $value == cache ]] && (( _inzsh_salah_location_age >= 0 )); then
         _inzsh_doctor_age $_inzsh_salah_location_age
@@ -501,6 +523,54 @@ _inzsh_doctor() {
       value=none
     fi
     _inzsh_doctor_row salah "location: $value"
+
+    # Issue #229. `_inzsh_salah_cache_health` never returns an error, so this always has a word
+    # to report — the same "recompute-never-cache" habit every other row in this block keeps.
+    #
+    # `recipe` names the METHOD AND ASR SCHOOL, never a hash of the position: see
+    # `lib/salah/cache.zsh` for why a hash of a coordinate is a slow encoding of it rather than a
+    # redaction. The method and school are configuration a reader can act on, and doubly
+    # defaulted — the knob, then the compiled-in default — so the row never goes empty even where
+    # `lib/salah/methods.zsh` was sourced without ever having read a config file.
+    #
+    # THE NAME IS RESOLVED, NEVER ECHOED. Printing `$INZSH_SALAH_METHOD` straight would make this
+    # row wrong in two ways at once: it would say a value is the recipe IN FORCE while the
+    # `ignored` section a few rows up says the same value is not in force at all, and — the one
+    # that matters more — a config value would reach a block whose whole purpose is to be
+    # trustworthy evidence in a public issue, unsanitised. `_inzsh_salah_method_key` maps
+    # whatever was typed onto one of six literal table keys or falls back to the default, and the
+    # Asr line is matched against its own three-word vocabulary directly — so what lands in
+    # `recipe` is always one of a closed, hand-written set of words, never a byte of user input,
+    # which is what actually being SANITISED as text can never fully be.
+    if (( ${+functions[_inzsh_salah_cache_health]} )); then
+      _inzsh_salah_cache_health "$now"
+      # Captured immediately: `_inzsh_salah_method_key` below answers in REPLY too, and this
+      # function has already been caught once by exactly this — a later call quietly discarding
+      # an earlier one's word before anything read it.
+      local state=$REPLY
+
+      local method=${_inzsh_salah_default_method:-MWL}
+      if (( ${+functions[_inzsh_salah_method_key]} )); then
+        _inzsh_salah_method_key "${INZSH_SALAH_METHOD-}"
+        [[ -n ${_inzsh_salah_methods[$REPLY]-} ]] && method=$REPLY
+      fi
+      local asr=standard
+      [[ ${(L)INZSH_SALAH_ASR-} == (standard|shafi|hanafi) ]] && asr=${(L)INZSH_SALAH_ASR}
+      local recipe="method $method, asr $asr"
+
+      case $state in
+        (none)       value='none (no position)' ;;
+        (nodir)      value='no cache directory (recomputed every shell)' ;;
+        (missing)    value="not cached yet ($recipe)" ;;
+        (denied)     value="unreadable, permission denied ($recipe)" ;;
+        (future)     value="unreadable, written by a newer InZsh ($recipe)" ;;
+        (unreadable) value="unreadable ($recipe)" ;;
+        (stale)      value="stale, computed for a day that is not today ($recipe)" ;;
+        (current)    value="current, covers today ($recipe)" ;;
+        (*)          value=unknown ;;
+      esac
+      _inzsh_doctor_row salah "table: $value"
+    fi
   fi
 
   local note

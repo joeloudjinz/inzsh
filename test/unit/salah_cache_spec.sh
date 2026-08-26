@@ -26,64 +26,11 @@ Include lib/salah/location.zsh
 # EVERY EXAMPLE OWNS ITS OWN CACHE DIRECTORY. `INZSH_SALAH_CACHE_DIR` is pointed at a fresh
 # `mktemp -d` and removed afterwards, so no example can read an entry another one wrote and
 # nothing is ever written to the real `$XDG_CACHE_HOME`.
-
-# The fixture instant: 2026-06-01, 15:00 in Asia/Riyadh, which is 12:00 UTC. Riyadh keeps no
-# daylight saving, so the wall clock in these examples moves only when the code moves it.
-typeset -gi inzsh_spec_salah_now=1780315200
-
-# The neutral position the whole repository uses.
-typeset -g inzsh_spec_salah_lat=21.4225
-typeset -g inzsh_spec_salah_lon=39.8262
-
-# A scratch cache directory, in REPLY. Named so the cleanup below can refuse anything else.
-inzsh_spec_salah_dir() {
-  emulate -L zsh
-
-  typeset -g REPLY=
-  local dir
-  dir=$(mktemp -d "${TMPDIR:-/tmp}/inzsh-salah-spec-XXXXXX") || return 1
-  typeset -g REPLY=$dir
-
-  return 0
-}
-
-inzsh_spec_salah_clean() {
-  emulate -L zsh
-
-  local target=${1-}
-  [[ ${target:t} == inzsh-salah-spec-* ]] || return 1
-  rm -rf -- "$target" 2>/dev/null
-
-  return 0
-}
-
-# The fixture environment, as locals in the CALLER: a scratch directory, the neutral position,
-# Riyadh, and an empty table. Every example starts here.
-inzsh_spec_salah_env() {
-  emulate -L zsh
-
-  inzsh_spec_salah_dir || return 1
-  typeset -g inzsh_spec_salah_cache=$REPLY
-
-  typeset -gx TZ=Asia/Riyadh
-  typeset -g INZSH_SALAH_CACHE_DIR=$inzsh_spec_salah_cache
-  typeset -g INZSH_SALAH_LAT=$inzsh_spec_salah_lat
-  typeset -g INZSH_SALAH_LON=$inzsh_spec_salah_lon
-  typeset -g INZSH_SALAH_AUTOLOCATE=0
-  typeset -g INZSH_SALAH_METHOD=MWL
-  typeset -g INZSH_SALAH_ASR=standard
-  typeset -g INZSH_SALAH_HIGHLAT=angle
-  typeset -g INZSH_SALAH_FAJR_ANGLE= INZSH_SALAH_ISHA_ANGLE= INZSH_SALAH_ISHA_INTERVAL=
-  local name
-  for name in FAJR SUNRISE DHUHR ASR MAGHRIB ISHA; do
-    typeset -g INZSH_SALAH_OFFSET_$name=0
-  done
-
-  typeset -gA _inzsh_salah_table
-  _inzsh_salah_table=()
-
-  return 0
-}
+#
+# The fixture instant, the neutral position, the scratch directory and the environment builder
+# — `inzsh_spec_salah_now`, `inzsh_spec_salah_dir`, `inzsh_spec_salah_clean`,
+# `inzsh_spec_salah_env` — live in `test/spec_helper.sh` now, shared with `doctor_spec.sh`, which
+# exercises this same cache through `inzsh doctor` rather than through these functions directly.
 
 # The only entry file in the scratch directory, in REPLY. Status 1 when there is not exactly one,
 # which is itself a fact worth failing on.
@@ -667,6 +614,462 @@ Describe 'the day cache'
   End
 
   # --------------------------------------------------------------------------------------------
+  Describe 'the parse split leaves no trace of it on the caller — review findings N-3, N-4'
+    # Before the parse extraction, `_inzsh_salah_cache_read` never touched `REPLY` at all — it is
+    # a render-path function, and the caller here (`_inzsh_salah_cache_refresh`) captures `file`
+    # from a DIFFERENT call before this one runs, so there is no live bug — but
+    # `_inzsh_salah_cache_parse` answers in REPLY, and borrowing it without giving it back is an
+    # undocumented contract change on exactly the kind of function this file's own header warns
+    # about in capitals.
+    It "restores the caller's REPLY after a successful read"
+      preserved_ok() {
+        inzsh_spec_salah_env || return 1
+        {
+          _inzsh_salah_cache_refresh $inzsh_spec_salah_now || print -r -- refresh-failed
+          inzsh_spec_salah_entry || print -r -- no-entry
+          local file=$REPLY
+          local key=${_inzsh_salah_table[key]}
+
+          REPLY=untouched-marker
+          _inzsh_salah_cache_read "$key" "$file"
+          [[ $REPLY == untouched-marker ]] || print -r -- "reply=$REPLY"
+        } always {
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+      }
+      When call preserved_ok
+      The output should eq ''
+    End
+
+    It "restores the caller's REPLY after a read that misses"
+      preserved_miss() {
+        inzsh_spec_salah_env || return 1
+        {
+          REPLY=untouched-marker
+          _inzsh_salah_cache_read 'a key nothing was written for' "$inzsh_spec_salah_cache/nothing-here"
+          [[ $REPLY == untouched-marker ]] || print -r -- "reply=$REPLY"
+        } always {
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+      }
+      When call preserved_miss
+      The output should eq ''
+    End
+
+    # `_inzsh_salah_cache_raw` is `_inzsh_salah_cache_parse`'s workspace, holding the same
+    # coordinates `_inzsh_salah_table` and `_inzsh_salah_seed` already carry for the life of the
+    # shell — not a new exposure, but a file headed COORDINATES NEVER LEAVE should not grow a
+    # fourth place they sit once the one caller that needed them has copied them out.
+    It 'clears the raw entry once a read has copied what it needs'
+      cleared() {
+        inzsh_spec_salah_env || return 1
+        {
+          _inzsh_salah_cache_refresh $inzsh_spec_salah_now || print -r -- refresh-failed
+          inzsh_spec_salah_entry || print -r -- no-entry
+          local file=$REPLY
+          local key=${_inzsh_salah_table[key]}
+
+          _inzsh_salah_cache_read "$key" "$file"
+          (( ${#_inzsh_salah_cache_raw} == 0 )) || print -r -- "left=${#_inzsh_salah_cache_raw}"
+        } always {
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+      }
+      When call cleared
+      The output should eq ''
+    End
+
+    It 'clears the raw entry once a health check has copied what it needs'
+      cleared_health() {
+        inzsh_spec_salah_env || return 1
+        {
+          _inzsh_salah_cache_refresh $inzsh_spec_salah_now || print -r -- refresh-failed
+          _inzsh_salah_cache_health $inzsh_spec_salah_now
+          (( ${#_inzsh_salah_cache_raw} == 0 )) || print -r -- "left=${#_inzsh_salah_cache_raw}"
+        } always {
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+      }
+      When call cleared_health
+      The output should eq ''
+    End
+  End
+
+  # --------------------------------------------------------------------------------------------
+  Describe 'diagnostic health — issue #229'
+    # `inzsh doctor` reports where the position came from; this is the other half, the state of
+    # the TABLE computed from it. Read-only throughout: every example below either writes an
+    # entry by hand or leaves the cache untouched, and none of them expects
+    # `_inzsh_salah_cache_health` to compute or write anything itself.
+    #
+    # NO DIGEST HERE, AND THAT IS THE POINT. An earlier version of this function hashed the
+    # recipe and exposed it as `_inzsh_salah_cache_health_recipe`; a review of the doctor row
+    # that hash fed found the coordinate space at any precision a person types is smaller than
+    # the 32-bit hash space, so the hash was a slow but complete encoding of the position rather
+    # than a redaction of it. `_inzsh_salah_cache_health` now answers in a single status word and
+    # nothing else — there is no coordinate for any example below to leak, so none of them test
+    # for one; the leak-proof examples live in `doctor_spec.sh`, against the actual printed row.
+    #
+    # Every example is wrapped `{ … } always { cleanup }` — the `always` block runs whether the
+    # body returns early or falls through, so a failed setup assertion cannot leak the scratch
+    # directory the way an ordinary early `return` would.
+
+    It 'reports none when no position is known'
+      no_position() {
+        inzsh_spec_salah_env || return 1
+        {
+          typeset -g INZSH_SALAH_LAT= INZSH_SALAH_LON= INZSH_SALAH_AUTOLOCATE=0
+          _inzsh_salah_cache_health $inzsh_spec_salah_now
+          [[ $REPLY == none ]] || print -r -- "reply=$REPLY"
+        } always {
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+      }
+      When call no_position
+      The output should eq ''
+    End
+
+    It 'reports missing when the directory is fine and nothing has been cached yet'
+      missing() {
+        inzsh_spec_salah_env || return 1
+        {
+          _inzsh_salah_cache_health $inzsh_spec_salah_now
+          [[ $REPLY == missing ]] || print -r -- "reply=$REPLY"
+        } always {
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+      }
+      When call missing
+      The output should eq ''
+    End
+
+    It 'reports current when the entry matches today and matches the recipe in force'
+      current() {
+        inzsh_spec_salah_env || return 1
+        {
+          _inzsh_salah_cache_refresh $inzsh_spec_salah_now || print -r -- refresh-failed
+          _inzsh_salah_cache_health $inzsh_spec_salah_now
+          [[ $REPLY == current ]] || print -r -- "reply=$REPLY"
+        } always {
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+      }
+      When call current
+      The output should eq ''
+    End
+
+    It 'reports stale when the entry was computed under the same recipe for another day'
+      stale() {
+        inzsh_spec_salah_env || return 1
+        {
+          _inzsh_salah_cache_refresh $inzsh_spec_salah_now || print -r -- refresh-failed
+          inzsh_spec_salah_entry || print -r -- no-entry
+          local file=$REPLY
+          local seed=${_inzsh_salah_table[key]#*|}
+          _inzsh_salah_table[key]="2026-5-29|$seed"
+          _inzsh_salah_table[day]='2026-5-29'
+          _inzsh_salah_cache_write "$file" || print -r -- write-failed
+
+          _inzsh_salah_cache_health $inzsh_spec_salah_now
+          [[ $REPLY == stale ]] || print -r -- "reply=$REPLY"
+        } always {
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+      }
+      When call stale
+      The output should eq ''
+    End
+
+    # Issue #229 review, finding I1. The entry PATH is a hash of the seed, so a real recipe
+    # change moves the file rather than leaving a conflicting one behind at the old path — the
+    # only way to reach this path with a key naming a different seed is a hand edit or a 32-bit
+    # collision, and either way it is not an entry this recipe wrote. `unreadable` is the honest
+    # word: the same one an entry that does not parse at all gets, rather than a `mismatch` that
+    # would name a cause reachable in practice.
+    It 'folds a key naming a different seed at this path into unreadable, not a distinct state'
+      collision() {
+        inzsh_spec_salah_env || return 1
+        {
+          _inzsh_salah_cache_refresh $inzsh_spec_salah_now || print -r -- refresh-failed
+          inzsh_spec_salah_entry || print -r -- no-entry
+          local file=$REPLY
+          local day=${_inzsh_salah_table[key]%%|*}
+          _inzsh_salah_table[key]="$day|10.0000|20.0000|+0000|OTHER asr:1"
+          _inzsh_salah_cache_write "$file" || print -r -- write-failed
+
+          _inzsh_salah_cache_health $inzsh_spec_salah_now
+          [[ $REPLY == unreadable ]] || print -r -- "reply=$REPLY"
+        } always {
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+      }
+      When call collision
+      The output should eq ''
+    End
+
+    Describe 'an entry that cannot be trusted, reported as unreadable rather than as a failure'
+      # $1 what to do to the file; $2 the fault it stands for.
+      Parameters
+        'print -r -- junk > $file'                             'garbage'
+        ': > $file'                                             'an empty file'
+        'inzsh_spec_salah_edit "$file" "s/^isha	.*/isha	soon/"'  'a single corrupted slot'
+      End
+
+      It "reports unreadable for $2"
+        # Issue #229 review, finding I4: the four ORIGINAL cases here (garbage, empty, a future
+        # version, an unreadable file) all short-circuited before the slot-validation loop in
+        # `_inzsh_salah_cache_parse` — the version check or the open check failed first, so
+        # deleting the loop entirely left every one of them green. The future-version and
+        # permission cases moved to their own dedicated examples below, each now asserting its
+        # own more specific word, and this third case is new: a version and a key that are both
+        # exactly right, with one slot corrupted, which is the only fault that loop alone catches.
+        damaged() {
+          inzsh_spec_salah_env || return 1
+          {
+            _inzsh_salah_cache_refresh $inzsh_spec_salah_now || print -r -- refresh-failed
+            inzsh_spec_salah_entry || print -r -- no-entry
+            local file=$REPLY
+
+            eval "$1"
+
+            _inzsh_salah_cache_health $inzsh_spec_salah_now
+            [[ $REPLY == unreadable ]] || print -r -- "reply=$REPLY"
+          } always {
+            inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+          }
+        }
+        When call damaged "$1"
+        The output should eq ''
+      End
+    End
+
+    # Issue #229 review, finding I5: `denied` and `future` are actionable in a way a generic
+    # `unreadable` is not — a permissions fix versus an upgrade — so each keeps its own word
+    # rather than folding into the parse-failure catch-all above.
+    It 'reports denied for a file that exists and cannot be read'
+      Skip if 'root bypasses permission bits, so chmod 000 cannot provoke a refusal' \
+        inzsh_spec_is_root
+      denied() {
+        inzsh_spec_salah_env || return 1
+        {
+          _inzsh_salah_cache_refresh $inzsh_spec_salah_now || print -r -- refresh-failed
+          inzsh_spec_salah_entry || print -r -- no-entry
+          local file=$REPLY
+          chmod 000 "$file"
+
+          _inzsh_salah_cache_health $inzsh_spec_salah_now
+          [[ $REPLY == denied ]] || print -r -- "reply=$REPLY"
+        } always {
+          chmod 644 "$file" 2>/dev/null
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+      }
+      When call denied
+      The output should eq ''
+    End
+
+    It 'reports future for a format version this file did not write'
+      future() {
+        inzsh_spec_salah_env || return 1
+        {
+          _inzsh_salah_cache_refresh $inzsh_spec_salah_now || print -r -- refresh-failed
+          inzsh_spec_salah_entry || print -r -- no-entry
+          local file=$REPLY
+          inzsh_spec_salah_edit "$file" 's/^version.*/version	9/'
+
+          _inzsh_salah_cache_health $inzsh_spec_salah_now
+          [[ $REPLY == future ]] || print -r -- "reply=$REPLY"
+        } always {
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+      }
+      When call future
+      The output should eq ''
+    End
+
+    # Review finding N-6. `0` and a leading-zero `01` are both NUMBERS, so the naive `<->` range
+    # this used to check with called each of them "future" — a version this file has never
+    # written and, worse, that nothing could ever have written, since versions start at 1. Both
+    # are exactly as untrustworthy as a version field with no digits in it, and now read that way.
+    Describe 'does not call a version that could never have been written future'
+      Parameters
+        0  zero
+        01 leading-zero
+      End
+
+      It "reports unreadable, not future, for version $1"
+        low_version() {
+          inzsh_spec_salah_env || return 1
+          {
+            _inzsh_salah_cache_refresh $inzsh_spec_salah_now || print -r -- refresh-failed
+            inzsh_spec_salah_entry || print -r -- no-entry
+            local file=$REPLY
+            inzsh_spec_salah_edit "$file" "s/^version.*/version	$1/"
+
+            _inzsh_salah_cache_health $inzsh_spec_salah_now
+            [[ $REPLY == unreadable ]] || print -r -- "reply=$REPLY"
+          } always {
+            inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+          }
+        }
+        When call low_version "$1"
+        The output should eq ''
+      End
+    End
+
+    # Issue #229 review, finding I2. A cache directory that is a stray file, does not exist, or
+    # cannot be looked inside is not the same fact as "the directory is fine and this recipe has
+    # never been cached" — the reader needs to know the segment is recomputing every shell for a
+    # reason that has nothing to do with today's recipe. `nodir` names that reason on its own.
+    Describe 'a cache directory that cannot be used, reported as nodir rather than as missing'
+      It 'reports nodir when the directory does not exist at all'
+        absent() {
+          local scratch
+          scratch=$(mktemp -d "${TMPDIR:-/tmp}/inzsh-salah-spec-XXXXXX") || return 1
+          {
+            inzsh_spec_salah_env || print -r -- setup-failed
+            typeset -g INZSH_SALAH_CACHE_DIR=$scratch/never-created
+
+            _inzsh_salah_cache_health $inzsh_spec_salah_now
+            [[ $REPLY == nodir ]] || print -r -- "reply=$REPLY"
+          } always {
+            inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+            inzsh_spec_salah_clean "$scratch"
+          }
+        }
+        When call absent
+        The output should eq ''
+      End
+
+      It 'reports nodir when a file sits where the directory should be'
+        is_a_file() {
+          inzsh_spec_salah_env || return 1
+          {
+            : > "$inzsh_spec_salah_cache/a-file"
+            typeset -g INZSH_SALAH_CACHE_DIR=$inzsh_spec_salah_cache/a-file
+
+            _inzsh_salah_cache_health $inzsh_spec_salah_now
+            [[ $REPLY == nodir ]] || print -r -- "reply=$REPLY"
+          } always {
+            inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+          }
+        }
+        When call is_a_file
+        The output should eq ''
+      End
+
+      It 'reports nodir, not the valid entry inside, when the directory cannot be searched'
+        Skip if 'root bypasses permission bits, so chmod 000 cannot provoke a refusal' \
+          inzsh_spec_is_root
+        mode_000() {
+          inzsh_spec_salah_env || return 1
+          {
+            _inzsh_salah_cache_refresh $inzsh_spec_salah_now || print -r -- refresh-failed
+            chmod 000 "$inzsh_spec_salah_cache"
+
+            _inzsh_salah_cache_health $inzsh_spec_salah_now
+            [[ $REPLY == nodir ]] || print -r -- "reply=$REPLY"
+          } always {
+            chmod 755 "$inzsh_spec_salah_cache" 2>/dev/null
+            inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+          }
+        }
+        When call mode_000
+        The output should eq ''
+      End
+
+      # Review finding N-5. `chmod 000` fails BOTH `-r` and `-x` at once, so it cannot tell a
+      # probe that dropped one of the two conjuncts from a correct one — either half alone would
+      # still pass that example. `chmod 111` and `chmod 444` each hold one half up and take the
+      # other away, and both must still read `nodir`.
+      It 'reports nodir when the directory can be searched but not read'
+        Skip if 'root bypasses permission bits, so chmod 111 cannot provoke a refusal' \
+          inzsh_spec_is_root
+        mode_111() {
+          inzsh_spec_salah_env || return 1
+          {
+            _inzsh_salah_cache_refresh $inzsh_spec_salah_now || print -r -- refresh-failed
+            chmod 111 "$inzsh_spec_salah_cache"
+
+            _inzsh_salah_cache_health $inzsh_spec_salah_now
+            [[ $REPLY == nodir ]] || print -r -- "reply=$REPLY"
+          } always {
+            chmod 755 "$inzsh_spec_salah_cache" 2>/dev/null
+            inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+          }
+        }
+        When call mode_111
+        The output should eq ''
+      End
+
+      It 'reports nodir when the directory can be read but not searched'
+        Skip if 'root bypasses permission bits, so chmod 444 cannot provoke a refusal' \
+          inzsh_spec_is_root
+        mode_444() {
+          inzsh_spec_salah_env || return 1
+          {
+            _inzsh_salah_cache_refresh $inzsh_spec_salah_now || print -r -- refresh-failed
+            chmod 444 "$inzsh_spec_salah_cache"
+
+            _inzsh_salah_cache_health $inzsh_spec_salah_now
+            [[ $REPLY == nodir ]] || print -r -- "reply=$REPLY"
+          } always {
+            chmod 755 "$inzsh_spec_salah_cache" 2>/dev/null
+            inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+          }
+        }
+        When call mode_444
+        The output should eq ''
+      End
+    End
+
+    # Issue #229 review, finding I3. `_inzsh_salah_cache_path`, which the first version of this
+    # function called, `mkdir -p`s a missing directory — the ordinary behaviour for the render
+    # path, and exactly wrong for a diagnostic that is supposed to describe the machine without
+    # changing it. `_inzsh_salah_cache_dir_probe` is the read-only sibling this function uses
+    # instead, and this is the regression test for the side effect it replaced.
+    It 'never creates the cache directory it is only reporting on'
+      readonly_probe() {
+        local scratch
+        scratch=$(mktemp -d "${TMPDIR:-/tmp}/inzsh-salah-spec-XXXXXX") || return 1
+        {
+          inzsh_spec_salah_env || print -r -- setup-failed
+          local target=$scratch/never-created
+          typeset -g INZSH_SALAH_CACHE_DIR=$target
+
+          _inzsh_salah_cache_health $inzsh_spec_salah_now
+          if [[ -e $target ]]; then
+            print -r -- "created: $REPLY"
+          fi
+        } always {
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+          inzsh_spec_salah_clean "$scratch"
+        }
+      }
+      When call readonly_probe
+      The output should eq ''
+    End
+
+    It 'never returns failure, whatever it finds'
+      resilient() {
+        inzsh_spec_salah_env || return 1
+        {
+          local -a bad=()
+          _inzsh_salah_cache_health $inzsh_spec_salah_now || bad+=no-position
+          typeset -g INZSH_SALAH_LAT= INZSH_SALAH_LON=
+          _inzsh_salah_cache_health $inzsh_spec_salah_now || bad+=missing
+          print -rl -- $bad
+        } always {
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+      }
+      When call resilient
+      The output should eq ''
+      The stderr should eq ''
+    End
+  End
+
+  # --------------------------------------------------------------------------------------------
   Describe 'as a file'
     It 'parses'
       syntax() { zsh -n "$SHELLSPEC_PROJECT_ROOT/lib/salah/cache.zsh"; }
@@ -706,6 +1109,24 @@ Describe 'the day cache'
       }
       When call unloaded
       The output should eq ''
+      The stderr should eq ''
+    End
+
+    # `_inzsh_salah_cache_health` is the one entry point above that is a diagnostic rather than
+    # part of the render path, and its contract is the opposite of its neighbours': it must
+    # NEVER report failure, standalone load included. `_inzsh_salah_location` missing is exactly
+    # the "no position" case it already reports for a configured shell, so the honest answer here
+    # is the same word, not a status-1 refusal.
+    It 'reports none, at status 0, when sourced alone without the location it depends on'
+      standalone() {
+        zsh -f -c '
+          source "$1/lib/salah/cache.zsh"
+          _inzsh_salah_cache_health 1780315200
+          print -r -- "status=$? reply=$REPLY"
+        ' inzsh-salah-cache-health-standalone "$SHELLSPEC_PROJECT_ROOT" < /dev/null
+      }
+      When call standalone
+      The output should eq 'status=0 reply=none'
       The stderr should eq ''
     End
 
