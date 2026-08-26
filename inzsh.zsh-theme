@@ -17,6 +17,17 @@
 # preset loader need the same answer, and computing it twice invites the two to disagree.
 typeset -g _inzsh_theme_root=${${(%):-%x}:A:h}
 
+# The exact code running, read by `inzsh doctor` (issue #245) beside the install method and the
+# theme root above. There is no tag to read here — a clone has no `.git` guarantee, and asking
+# one for a subprocess is refused even off the render path, since a plugin manager may re-source
+# this very file every shell. So a from-source load says so plainly rather than guessing at a
+# number: `source`, never a version that could be the last tag, the next one, or neither.
+#
+# `tools/bundle.zsh` stamps the real released tag over this line in the copy it emits — see the
+# comment at its own head — which is the only place `_inzsh_version` is ever anything else. This
+# file's own copy never changes, so a checkout always tells the truth about being one.
+typeset -g _inzsh_version=source
+
 # Dependency order, strictly downward. Config is the defaults-and-validation registry everything
 # above it reads through, and it comes first because it reads nothing itself — detection asks it
 # what the user said about colour depth before it starts guessing; detection then answers what
