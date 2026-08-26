@@ -41,7 +41,7 @@ inzsh_sep_build() {
     _inzsh_left=("${order[@]}")
   fi
 
-  _inzsh_render_build "$side"
+  _inzsh_render_build "$side" "${order[@]}"
   typeset -g inzsh_sep_built=$REPLY
   typeset -g inzsh_sep_width=$_inzsh_render_width
   typeset -g inzsh_sep_glyph=$_inzsh_sep_left
@@ -566,8 +566,7 @@ Describe 'separator style'
           source "$1/lib/core/render.zsh"
           typeset -g INZSH_SEPARATOR_STYLE=round
           _inzsh_segment_text=(A one B two)
-          _inzsh_left=(A B)
-          _inzsh_render_build left
+          _inzsh_render_build left A B
           local out=$REPLY
           out=${out//(%[KF]\{[^\}]#\}|%[fk])/}
           print -r -- "[$out]"

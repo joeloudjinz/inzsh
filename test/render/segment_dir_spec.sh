@@ -515,7 +515,7 @@ Describe 'the dir segment'
         _inzsh_left=(DIR)
         _inzsh_right=()
         _inzsh_segment_dir_build /spec/home/dev
-        _inzsh_render_build left
+        _inzsh_render_build left "${_inzsh_left[@]}"
         local face=${_inzsh_role[${_inzsh_segment_fg_role[DIR]}]}
         local -a wrong=()
         [[ $REPLY == *"%F{$face} ~/dev "* ]] || wrong+=face

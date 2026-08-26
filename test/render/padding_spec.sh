@@ -29,7 +29,7 @@ inzsh_pad_build() {
   _inzsh_left=(A B)
   _inzsh_right=()
 
-  _inzsh_render_build left
+  _inzsh_render_build left "${_inzsh_left[@]}"
   typeset -g inzsh_pad_width=$_inzsh_render_width
   local built=$REPLY
   built=${built//(%[KF]\{[^\}]#\}|%[fk])/}

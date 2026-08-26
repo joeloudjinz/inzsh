@@ -522,11 +522,20 @@ _inzsh_render_hues() {
   return 0
 }
 
-# `_inzsh_render_build <side>` — the assembled prompt string for `left` or `right`, in REPLY, with
-# its visible width in `_inzsh_render_width`. `reply` is clobbered; read it before building.
+# `_inzsh_render_build <left|right> <segment>...` — the assembled prompt string for that side, in
+# REPLY, with its visible width in `_inzsh_render_width`. `reply` is clobbered; read it before
+# building.
 #
-# The order comes from `_inzsh_left` / `_inzsh_right`, which `_inzsh_rank_split` has already
-# sorted. This function never re-sorts, never re-ranks and never writes either array.
+# The segment list is INJECTED rather than read off a global, which is what lets a caller build a
+# side without writing `_inzsh_left` / `_inzsh_right` first — the seam every segment already has,
+# since none of them read their own state off a global either. `_inzsh_render`, today, still
+# passes exactly what `_inzsh_rank_split` sorted into those two arrays, so nothing about the
+# order changes: this function still never re-sorts, never re-ranks and never writes the arrays it
+# used to read.
+#
+# The SIDE argument survives the change. It is not part of the list — it decides which way the
+# separators chain and which edge the ribbon opens on, and that half of the contract is untouched.
+# See the CHAINING block below for why left and right run opposite ways.
 #
 # An empty side, a side with nothing visible, and a side name that is neither `left` nor `right`
 # all yield an empty REPLY, a width of 0 and status 0 — nothing to draw is not an error, the same
@@ -597,12 +606,13 @@ _inzsh_render_build() {
   typeset -g REPLY=
   typeset -g _inzsh_render_width=0
 
-  local -a order
-  case $1 in
-    (left)  order=("${_inzsh_left[@]}")  ;;
-    (right) order=("${_inzsh_right[@]}") ;;
-    (*)     return 0 ;;
+  local side=${1-}
+  (( $# )) && shift
+  case $side in
+    (left|right) ;;
+    (*)          return 0 ;;
   esac
+  local -a order=("$@")
 
   # Pass one: who is visible. Done before anything is assigned or drawn, which is what keeps a
   # segment that has no text from leaving a separator behind — it never enters the run, so there
@@ -673,7 +683,7 @@ _inzsh_render_build() {
   done
 
   local glyph=$_inzsh_sep_left
-  [[ $1 == right ]] && glyph=$_inzsh_sep_right
+  [[ $side == right ]] && glyph=$_inzsh_sep_right
 
   local -i sep=0
   if (( measure )); then
@@ -684,7 +694,7 @@ _inzsh_render_build() {
   # Pass three: draw, accumulating the width as the pieces go on.
   local drawn=''
   local -i used=0
-  if [[ $1 == left ]]; then
+  if [[ $side == left ]]; then
     for (( i = 1; i <= n; i++ )); do
       drawn+="${fill[i]}${face[i]}${air}${texts[i]}${air}"
       if (( i < n )); then
@@ -1059,11 +1069,11 @@ _inzsh_render() {
     done
   fi
 
-  _inzsh_render_build right
+  _inzsh_render_build right "${_inzsh_right[@]}"
   local right=$REPLY
   local -i right_width=$_inzsh_render_width
 
-  _inzsh_render_build left
+  _inzsh_render_build left "${_inzsh_left[@]}"
   local left=$REPLY
   local -i left_width=$_inzsh_render_width
 
@@ -1083,7 +1093,7 @@ _inzsh_render() {
     local -i budget=$(( cols - right_width - (left_width - dir_width) - 1 ))
     (( budget < 0 )) && budget=0
     _inzsh_segment_dir_build "" "$budget"
-    _inzsh_render_build left
+    _inzsh_render_build left "${_inzsh_left[@]}"
     left=$REPLY
     left_width=$_inzsh_render_width
   fi

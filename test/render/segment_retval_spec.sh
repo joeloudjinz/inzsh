@@ -55,7 +55,7 @@ inzsh_spec_retval_drawn() {
   _inzsh_segment_retval_build "$@"
   _inzsh_left=()
   _inzsh_right=(RETVAL)
-  _inzsh_render_build right
+  _inzsh_render_build right "${_inzsh_right[@]}"
   typeset -g inzsh_spec_drawn=$REPLY
 
   return 0

@@ -84,7 +84,7 @@ def build(
             assignments,
             declarations,
             f"_inzsh_{'right' if side == 'right' else 'left'}=({order})",
-            f"_inzsh_render_build {shlex.quote(side)}",
+            f"_inzsh_render_build {shlex.quote(side)} {order}",
             'print -r -- "${(%%)REPLY}"',
             'print -r -- "width=$_inzsh_render_width"',
         ]
