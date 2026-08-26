@@ -684,6 +684,135 @@ Describe 'inzsh doctor'
       The output should include 'table: current, covers today (method MWL, asr standard)'
     End
 
+    # Review finding N-1. The row used to echo `$INZSH_SALAH_METHOD` and `$INZSH_SALAH_ASR`
+    # straight into the block, which meant a config value could contradict the `ignored` section
+    # a few rows up, or worse, put arbitrary bytes into a block whose entire purpose is to be
+    # trustworthy evidence in a public issue. The row now resolves a NAME through the same closed
+    # vocabulary `lib/salah/methods.zsh` computes from, so nothing typed into either knob reaches
+    # the block unchanged.
+    Describe 'the recipe words never echo the raw knob'
+      It 'resolves an unrecognised method to the default rather than printing it'
+        invalid_method() {
+          inzsh_spec_doctor_salah_env || return 1
+          {
+            typeset -g INZSH_SALAH_METHOD=frobnicate
+            inzsh doctor $inzsh_spec_salah_now
+          } always {
+            inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+          }
+        }
+        When call invalid_method
+        The output should include 'table: not cached yet (method MWL, asr standard)'
+        The output should not include 'frobnicate'
+      End
+
+      It 'resolves an alias to the canonical method the alias means'
+        alias_method() {
+          inzsh_spec_doctor_salah_env || return 1
+          {
+            typeset -g INZSH_SALAH_METHOD=MECCA
+            inzsh doctor $inzsh_spec_salah_now
+          } always {
+            inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+          }
+        }
+        When call alias_method
+        The output should include 'table: not cached yet (method UMMALQURA, asr standard)'
+      End
+
+      # The `ignored` section reports `INZSH_SALAH_METHOD` unusable in the same breath the OLD
+      # table row would have called it the recipe in force — two rows contradicting each other
+      # about the same value. Asserted directly: `ignored` still fires, and the table row no
+      # longer names the value `ignored` just rejected.
+      It 'does not contradict the ignored section for the same invalid value'
+        contradiction() {
+          inzsh_spec_doctor_salah_env || return 1
+          {
+            typeset -g INZSH_SALAH_METHOD=frobnicate
+            # `INZSH_SALAH_METHOD` is declared as DATA in `_inzsh_salah_knobs`, not registered
+            # directly — `lib/salah/` may not name the engine — so the `ignored` section only
+            # ever sees it once something has absorbed that table, which is normally
+            # `inzsh.zsh-theme` or `tools/doctor.zsh` and neither is sourced by this fixture.
+            (( ${+functions[_inzsh_config_absorb_all]} )) && _inzsh_config_absorb_all
+            inzsh doctor $inzsh_spec_salah_now
+          } always {
+            inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+          }
+        }
+        When call contradiction
+        The output should include 'ignored       INZSH_SALAH_METHOD=frobnicate'
+        The output should include 'table: not cached yet (method MWL, asr standard)'
+      End
+
+      It 'never lets an escape sequence out of the method knob'
+        escaped() {
+          inzsh_spec_doctor_salah_env || return 1
+          {
+            typeset -g INZSH_SALAH_METHOD=$'MWL\e[31m\e[2J'
+            inzsh doctor $inzsh_spec_salah_now
+          } always {
+            inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+          }
+        }
+        When call escaped
+        The output should include 'table: not cached yet (method MWL, asr standard)'
+        The output should not include $'\e'
+      End
+
+      # The whole point: a config value cannot forge an extra row. Exactly two `salah` rows
+      # before and after, whatever either knob is set to.
+      It 'never forges an extra row through a newline in either knob'
+        forged() {
+          inzsh_spec_doctor_salah_env || return 1
+          {
+            typeset -g INZSH_SALAH_ASR=$'standard\nsalah         table: forged, covers today'
+            local -i n
+            n=$(inzsh doctor $inzsh_spec_salah_now | grep -c '^  salah')
+            print -r -- "salah-rows=$n"
+          } always {
+            inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+          }
+        }
+        When call forged
+        The output should eq 'salah-rows=2'
+      End
+
+      It 'keeps the row width bounded whatever the method knob holds'
+        long_method() {
+          inzsh_spec_doctor_salah_env || return 1
+          {
+            typeset -g INZSH_SALAH_METHOD=${(pl:200::A:)}
+            local -i width
+            width=$(inzsh doctor $inzsh_spec_salah_now | grep 'table:' | wc -c)
+            (( width < 120 )) && print -r -- ok
+          } always {
+            inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+          }
+        }
+        When call long_method
+        The output should eq 'ok'
+      End
+    End
+
+    # Review finding N-2. `inzsh doctor` has no argument of its own in the usage string — the
+    # clock is an undocumented seam for the suite, the same way `[now]` is for `inzsh locate` —
+    # but `inzsh()` forwards `"$@"`, so a second word typed by a person reaches it too, and a
+    # value that is not an epoch must not turn into a false `no position` beside a `location:
+    # config` that is telling the truth.
+    It 'falls back to the wall clock rather than lying about the position for a bad argument'
+      bad_clock() {
+        inzsh_spec_doctor_salah_env || return 1
+        {
+          inzsh doctor notanumber
+        } always {
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+      }
+      When call bad_clock
+      The output should include 'location: config'
+      The output should not include 'table: none (no position)'
+    End
+
     It 'reports a table computed under the same recipe for a day that is not today as stale'
       stale() {
         inzsh_spec_doctor_salah_env || return 1

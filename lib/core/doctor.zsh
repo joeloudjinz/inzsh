@@ -375,6 +375,12 @@ _inzsh_doctor() {
   emulate -L zsh
 
   local now=${1:-${EPOCHSECONDS-}}
+  # A malformed clock is not the fixture seam misused, it is `inzsh doctor` reachable through
+  # `inzsh()`'s `"$@"` forwarding from anyone who types a second word — and the wall clock is the
+  # one thing here that is always right, so a value that cannot be an epoch falls back to it
+  # rather than reaching `_inzsh_salah_location` and `_inzsh_salah_cache_health` as a clock that
+  # makes the position line say `config` beside a table line that says `no position`.
+  [[ $now == <-> ]] || now=${EPOCHSECONDS-}
 
   # Re-ask every question. Recompute-never-cache is each detector's own contract; calling them
   # here is what makes the block current rather than a memory of source time.
@@ -526,10 +532,33 @@ _inzsh_doctor() {
     # redaction. The method and school are configuration a reader can act on, and doubly
     # defaulted — the knob, then the compiled-in default — so the row never goes empty even where
     # `lib/salah/methods.zsh` was sourced without ever having read a config file.
+    #
+    # THE NAME IS RESOLVED, NEVER ECHOED. Printing `$INZSH_SALAH_METHOD` straight would make this
+    # row wrong in two ways at once: it would say a value is the recipe IN FORCE while the
+    # `ignored` section a few rows up says the same value is not in force at all, and — the one
+    # that matters more — a config value would reach a block whose whole purpose is to be
+    # trustworthy evidence in a public issue, unsanitised. `_inzsh_salah_method_key` maps
+    # whatever was typed onto one of six literal table keys or falls back to the default, and the
+    # Asr line is matched against its own three-word vocabulary directly — so what lands in
+    # `recipe` is always one of a closed, hand-written set of words, never a byte of user input,
+    # which is what actually being SANITISED as text can never fully be.
     if (( ${+functions[_inzsh_salah_cache_health]} )); then
       _inzsh_salah_cache_health "$now"
-      local recipe="method ${INZSH_SALAH_METHOD:-${_inzsh_salah_default_method:-MWL}}, asr ${INZSH_SALAH_ASR:-standard}"
-      case $REPLY in
+      # Captured immediately: `_inzsh_salah_method_key` below answers in REPLY too, and this
+      # function has already been caught once by exactly this — a later call quietly discarding
+      # an earlier one's word before anything read it.
+      local state=$REPLY
+
+      local method=${_inzsh_salah_default_method:-MWL}
+      if (( ${+functions[_inzsh_salah_method_key]} )); then
+        _inzsh_salah_method_key "${INZSH_SALAH_METHOD-}"
+        [[ -n ${_inzsh_salah_methods[$REPLY]-} ]] && method=$REPLY
+      fi
+      local asr=standard
+      [[ ${(L)INZSH_SALAH_ASR-} == (standard|shafi|hanafi) ]] && asr=${(L)INZSH_SALAH_ASR}
+      local recipe="method $method, asr $asr"
+
+      case $state in
         (none)       value='none (no position)' ;;
         (nodir)      value='no cache directory (recomputed every shell)' ;;
         (missing)    value="not cached yet ($recipe)" ;;
