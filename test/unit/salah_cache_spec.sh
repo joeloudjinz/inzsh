@@ -482,6 +482,55 @@ Describe 'the day cache'
       When call raced
       The output should eq ''
     End
+
+    It 'gives every writer its own temporary name, checked directly'
+      # The spec above proves this only by INFERENCE, through whether a corrupted read ever
+      # turns up — and that is exactly as reliable as the scheduler's luck on the day the suite
+      # happens to run: two writers can share a temporary name and still never overlap in TIME
+      # closely enough to visibly corrupt each other. This asks the narrower question directly,
+      # with no timing luck involved: capture the temporary NAME each of twenty concurrently
+      # forked writers actually picks, by standing `_inzsh_salah_mv` in for the duration inside
+      # each fork (as the "renames a temporary" spec above does for one), and require all
+      # twenty to differ. `issue #265`: before the fix this failed with ONE distinct name across
+      # all twenty, every run, not merely most of them — the collision this file now avoids was
+      # never a matter of chance.
+      uniq() {
+        inzsh_spec_salah_env || return 1
+        _inzsh_salah_cache_refresh $inzsh_spec_salah_now
+        inzsh_spec_salah_entry || { print -r -- no-entry; return }
+        local file=$REPLY
+
+        local -i n
+        for (( n = 1; n <= 20; n++ )); do
+          (
+            local out="$inzsh_spec_salah_cache/name.$n"
+            _inzsh_salah_mv() {
+              print -r -- "${@[-2]}" > "$out"
+              command mv "$@" 2>/dev/null
+            }
+            _inzsh_salah_cache_write "$file"
+          ) &
+        done
+        wait
+
+        local -a bad=()
+        local -a collected=("$inzsh_spec_salah_cache"/name.<->(N))
+        (( ${#collected} == 20 )) || bad+="collected=${#collected}"
+
+        local -a names=()
+        local f
+        for f in "${collected[@]}"; do
+          names+="$(<$f)"
+        done
+        local -i distinct=${#${(u)names}}
+        (( distinct == 20 )) || bad+="distinct=$distinct"
+
+        print -rl -- $bad
+        inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+      }
+      When call uniq
+      The output should eq ''
+    End
   End
 
   # --------------------------------------------------------------------------------------------
@@ -1152,9 +1201,13 @@ Describe 'the day cache'
       The output should eq ''
     End
 
-    It 'reads the clock in exactly one place, as a default nobody has to take'
+    It 'reads the clock in exactly two places, both nobody has to fixture around'
       # `EPOCHSECONDS` anywhere else here would mean a fixture could not pin what "now" is, and
       # every example above would be checking the sun's position at the moment the suite ran.
+      # The second place is `_inzsh_salah_cache_write`'s fallback temp name, reached only when
+      # `zsh/system` could not be loaded: it reads `$EPOCHREALTIME` for entropy to keep two
+      # forked writers from picking the same temporary, never to decide what day or table is
+      # correct, so no fixture's assertion about a computed time can be affected by it.
       clockless() {
         setopt local_options extended_glob
         local line
@@ -1166,9 +1219,10 @@ Describe 'the day cache'
         print -rl -- "${#found}" "${found[@]}"
       }
       When call clockless
-      The lines of output should eq 2
-      The line 1 of output should eq '1'
-      The line 2 of output should include 'local now=${1:-${EPOCHSECONDS-}}'
+      The lines of output should eq 3
+      The line 1 of output should eq '2'
+      The line 2 of output should include 'tmp=$file.$$.$EPOCHREALTIME.$RANDOM.tmp'
+      The line 3 of output should include 'local now=${1:-${EPOCHSECONDS-}}'
     End
 
     It 'names no `.claude` path and no absolute path from this machine'
