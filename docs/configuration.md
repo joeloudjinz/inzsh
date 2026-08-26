@@ -393,3 +393,40 @@ show each other half an entry, and a truncated or edited entry is a miss, which 
 | `INZSH_SALAH_ISHA_ANGLE` | a number above `0` and no higher than `30` | the method's | The same for isha. Setting it clears any interval in play — an angle and an interval are two answers to one question. |
 | `INZSH_SALAH_ISHA_INTERVAL` | integer, 1–240 | the method's, where it has one | Minutes after maghrib, for the authorities that fix isha that way rather than by an angle. Setting it clears the isha angle, for the same reason. |
 | `INZSH_SALAH_OFFSET_<PRAYER>` | integer, −180 to 180 | `0` | Minutes to nudge one prayer's displayed time. `<PRAYER>` is `FAJR`, `SUNRISE`, `DHUHR`, `ASR`, `MAGHRIB` or `ISHA`. This calibrates a display against a local masjid, so it never feeds back into the arithmetic: moving maghrib does not move an isha measured as an interval from it. |
+
+### Diagnosing it — `inzsh doctor`
+
+A blank or stuck segment has exactly two moving parts: where the position came from, and whether
+a table has been computed from it. `inzsh doctor` (see [Something looks wrong?](../README.md#something-looks-wrong)
+in the README, which already says your coordinates are never among what it prints) prints one row
+for each — the provenance of the position and the health of the cache built from it, never the
+position or the table itself.
+
+```
+salah         location: config
+salah         table: not cached yet (method MWL, asr standard)
+```
+
+**`location:`** is the provenance of the position the segment is using, one of three words:
+
+| Value | Meaning | If it is not what you expect |
+|---|---|---|
+| `config` | `INZSH_SALAH_LAT`/`LON` are set and in range. This wins over everything else, even a stale lookup. | Check the two variables for a typo or an out-of-range value — an unreadable pair is treated as unset, which is `none` below. |
+| `cache` | No usable `LAT`/`LON`, so the last answer from `inzsh locate` is in use. Suffixed `(refreshed Nm/Nh/Nd ago)` — how long since that lookup ran, not since it was last read. | A large age is not itself a problem — a stale answer is used deliberately, because a stale city beats no prayer times — but if the number is surprising, run `inzsh locate --force`. |
+| `none` | No position at all: no config pair, and either autolocate is off or nothing has ever been cached. The segment is absent — there is nothing else for it to draw. | Set `INZSH_SALAH_LAT`/`LON` (see *Where you are* above), or turn on `INZSH_SALAH_AUTOLOCATE` and run `inzsh locate` (see *Looking it up* above). |
+
+**`table:`** is the health of the cached day table computed from that position — never the
+numbers in it, only a word about it — with the calculation recipe (`method …, asr …`) folded in
+wherever a recipe is relevant, since that is configuration a reader can act on and the position
+is not. Eight states, exactly as `inzsh doctor` prints them:
+
+| State | Printed as | Meaning | Action |
+|---|---|---|---|
+| `none` | `none (no position)` | Nothing to cache because nothing to compute — the same fact `location: none` already reported. | Fix the position first; the table follows on its own. |
+| `nodir` | `no cache directory (recomputed every shell)` | `INZSH_SALAH_CACHE_DIR` (or the default `$XDG_CACHE_HOME/inzsh/salah`, or `~/.cache/inzsh/salah`) cannot be found or looked into — missing, a file sitting where the directory should be, or one this shell cannot read or search. | Check the variable and the permissions on that path. The segment still draws — the table is held in memory for the life of the shell instead of on disk — so this costs a few milliseconds once per shell, not a broken prompt. Not reachable running as root: permission bits are advisory to root, so a root shell that would hit this instead sees whatever is actually in the directory. |
+| `missing` | `not cached yet (method …, asr …)` | The directory is fine; nothing has ever been written under today's recipe. | Nothing to do — the next prompt (or `inzsh salah`, which reads the same position) computes and writes it. |
+| `denied` | `unreadable, permission denied (method …, asr …)` | An entry exists at that path and this process cannot read it. A permissions problem, not a format one. | Check the entry's mode and ownership under the cache directory. Also not reachable as root, for the same reason as `nodir`. |
+| `future` | `unreadable, written by a newer InZsh (method …, asr …)` | The entry's format version is not one this build wrote — read literally, a newer InZsh wrote it. | Harmless on its own: the segment recomputes in memory rather than guessing at a format it does not know. Worth a look if two installs of different versions share one `INZSH_SALAH_CACHE_DIR`. |
+| `unreadable` | `unreadable (method …, asr …)` | The entry does not parse: a garbled version line, a truncated write, a hand-edited slot, or a key that could not have hashed to this path (a 32-bit collision, or an edit) — any of these gets this one word rather than a diagnosis implying a cause nobody could act on. | Nothing to do. It self-heals: the next write replaces the file atomically with a fresh, valid entry. |
+| `stale` | `stale, computed for a day that is not today (method …, asr …)` | The entry parses and matches the recipe in force, but for a day other than today — the ordinary case of a shell that has not been opened since. | Nothing to do. It self-heals on the next render, which recomputes for today and overwrites it. |
+| `current` | `current, covers today (method …, asr …)` | The entry matches today and the recipe in force. This is what the segment itself is reading right now. | Nothing to do. |

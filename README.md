@@ -167,6 +167,10 @@ was, with what it accepts:
 ignored       INZSH_SEPARATOR_STYLE=rounded - accepts arrow · round · divider
 ```
 
+The prayer segment gets two rows of its own, `location:` and `table:` — what each value and each
+state of the table means, and what to do about it, is in
+[Diagnosing it — `inzsh doctor`](docs/configuration.md#diagnosing-it--inzsh-doctor).
+
 ## Contributing
 
 Issues are welcome. Pull requests are considered case-by-case — see
