@@ -121,9 +121,15 @@ _inzsh_doctor_distance() {
 }
 
 # How close is `$1` allowed to sit to a registered shape before `_inzsh_doctor_near_miss` will
-# say so? Two, chosen against the registry `make doctor` actually loads — `tools/doctor.zsh`
-# sources config, detect and the salah library, then calls `_inzsh_config_absorb_all`, which
-# today comes to 23 names and 6 families — not against an abstract worst case:
+# say so? Two, chosen against the registry a REPORTER actually has — the bug template this block
+# exists for (see the top of this file) asks for `inzsh doctor` pasted from the live shell that
+# hit the bug, where the whole theme is loaded and every segment has registered its own knobs —
+# `INZSH_TIME_FORMAT`, `INZSH_GIT_BRANCH_MAX`, `INZSH_RETVAL_SIGNAL`, `INZSH_DIR_COMPONENTS` and
+# the rest, plus the glyph family `INZSH_GLYPH_*`. Sourcing `inzsh.zsh-theme` itself and counting
+# comes to 43 names and 7 families today — not against an abstract worst case. (`tools/doctor.zsh`
+# loads a narrower slice — config, detect and the salah library, no segments, no token layer — so
+# `make doctor` and this file's own test suite both run against 23 names and 6 families; a
+# smaller pool the threshold is measured to still hold against, not the one it is chosen for.)
 #
 #   INZSH_SEPARATOR_STYL   -> INZSH_SEPARATOR_STYLE   distance 1 (one letter short)
 #   INZSH_GIT_RANNK        -> INZSH_*_RANK            distance 1 (one letter too many)
