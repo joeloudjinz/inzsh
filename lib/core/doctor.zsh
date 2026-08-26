@@ -26,6 +26,19 @@
 #   the row names instead is the method and Asr school in force — configuration, not position,
 #   the same as `TERM` or the locale two rows up.
 #
+#   THE ROOT IS PRINTED WITH `$HOME` COLLAPSED TO `~`. Issue #245. `_inzsh_theme_root` is a
+#   filesystem path, and on every platform this theme installs to, that path very often carries
+#   the reporter's own account name — `/Users/jane/dev/inzsh`, `/home/jane/.oh-my-zsh/custom/
+#   themes/inzsh` — inside a block whose whole purpose is to sit in a PUBLIC issue. A username is
+#   not a coordinate, and this file does not pretend the two carry the same weight: it is not
+#   secret, it is often already the reporter's own GitHub handle, and knowing it teaches a
+#   maintainer nothing a coordinate would. But it is a piece of somebody's real identity that the
+#   theme has no reason to ask them to publish, and the fix costs nothing a debugger would miss —
+#   `~/dev/inzsh` says exactly as much about WHERE the checkout lives and HOW it loaded as the
+#   raw path would. So the same instinct behind COORDINATES NEVER LEAVE applies one size down: not
+#   a redaction, because nothing here is sensitive enough to need one, just the same collapse
+#   `install.zsh` already prints every path through for the identical reason.
+#
 # `inzsh` is the one public command the theme defines; the playground's `inzsh-*` helpers are
 # dev tooling and are not sourced by the theme. Subcommands dispatch below, so a later command
 # arrives beside `doctor` rather than as a second name in the user's namespace.
@@ -343,6 +356,75 @@ _inzsh_doctor_near_misses() {
   return 0
 }
 
+# The install method — `clone`, `bundle`, `manual`, `oh-my-zsh`, or a combination of the last
+# with one of the first three — in REPLY. Issue #245. No subprocess: every signal below is a
+# filesystem test or a parameter read, because this is reachable from the exact broken
+# environment where a `git` or `uname` on `$PATH` could be the very thing that is broken.
+#
+# OH-MY-ZSH IS CHECKED FIRST, code shape second, and the two are independent rather than a
+# ladder of exclusive cases. `_inzsh_theme_root` is resolved through `:A` at the entry point —
+# `${${(%):-%x}:A:h}` — which follows symlinks, and `install.zsh`'s omz path IS a symlink: it
+# links `$ZSH_CUSTOM/themes/inzsh.zsh-theme` back at the real checkout, so by the time this runs
+# the root has already been walked back to that checkout and looks exactly like a clone loaded
+# plainly. The one signal that still tells the two apart is the framework itself — oh-my-zsh
+# exports `$ZSH` to its own root and reads `$ZSH_THEME` to decide what to source, so `$ZSH_THEME`
+# reading `inzsh` while `$ZSH` is set is proof the framework did the sourcing, symlink or not.
+# It is asked independently of the shape below, and combined with it when both answer, because a
+# bundle can be oh-my-zsh's target too — `tools/bundle.zsh`'s own emitted header says as much:
+# "drop it into an oh-my-zsh themes directory" is a supported way to arrive here, not a fluke.
+#
+# BUNDLE is the one shape provable from the fact this code is running at all, not guessed from
+# a path. The entry point sources `lib/core/*.zsh` and the rest as separate files; a bundle
+# inlines all of it into the one file it ships. So if `_inzsh_doctor` exists to be called and
+# there is no `lib/` sitting beside `_inzsh_theme_root`, the only way that could be true is that
+# everything this file needed was already in the file that got sourced — which is what a bundle
+# IS, by `tools/bundle.zsh`'s own construction, not a shape that merely looks like one.
+#
+# CLONE vs MANUAL is the one genuine judgment call here, and it is narrower than it looks: both
+# are a full source tree (`lib/` present) sourced directly, and this function cannot see whether
+# a human ran `install.zsh --plain` or typed the `source` line into their own `.zshrc` — the two
+# leave an identical shell behind. What it CAN check is whether the tree is a git checkout:
+# `.git` beside the root is real evidence, not a guess dressed up as one, so its presence is
+# called `clone`; its absence — a zip extraction, a copied directory, anything that carries the
+# source without git's own evidence of it — is called `manual` rather than assumed to be a clone
+# it cannot prove.
+#
+# `unknown` is left for the one case that cannot even ask the question: no theme root to look
+# beside, and no oh-my-zsh signal either. That is not a hypothetical — `tools/doctor.zsh` (`make
+# doctor`) sources this file directly without ever setting `_inzsh_theme_root`, on purpose (see
+# its own header), and this function has to keep working for that caller exactly as it does for
+# the shipped command.
+_inzsh_doctor_install_method() {
+  emulate -L zsh
+
+  typeset -g REPLY=unknown
+  local root=${_inzsh_theme_root-}
+  local -i omz=0
+  [[ -n ${ZSH:-} && ${ZSH_THEME:-} == inzsh ]] && omz=1
+
+  if [[ -z $root || ! -d $root ]]; then
+    (( omz )) && REPLY=oh-my-zsh
+    return 0
+  fi
+
+  local shape
+  if [[ ! -d $root/lib ]]; then
+    shape=bundle
+  elif [[ -e $root/.git ]]; then
+    shape=clone
+  else
+    shape=manual
+  fi
+
+  if (( omz )); then
+    REPLY="oh-my-zsh ($shape)"
+  else
+    REPLY=$shape
+  fi
+
+  return 0
+}
+
 # `$1` seconds as a coarse age — minutes, then hours, then days. A bug reader needs "about a
 # day", never the arithmetic.
 _inzsh_doctor_age() {
@@ -393,6 +475,29 @@ _inzsh_doctor() {
   local value
 
   print -r -- 'InZsh doctor'
+
+  # What is running, how it got here, and from where — issue #245. `_inzsh_version` and
+  # `_inzsh_theme_root` are the entry point's own globals (`inzsh.zsh-theme`, stamped over by
+  # `tools/bundle.zsh` for a release build — see docs/releasing.md), read here rather than
+  # recomputed: there is nothing to detect, only to report, and `${VAR-}` rather than `${VAR}`
+  # because a narrower harness than the shipped command — `tools/doctor.zsh` (`make doctor`) —
+  # never sets either one, on purpose, and this block still has to degrade to an honest word
+  # instead of an unset-variable error.
+  _inzsh_doctor_row version "${_inzsh_version:-unknown}"
+
+  _inzsh_doctor_install_method
+  _inzsh_doctor_row install "$REPLY"
+
+  # `$HOME` collapsed to `~` — see THE ROOT IS PRINTED WITH `$HOME` COLLAPSED at the top of this
+  # file for why. Guarded on `$HOME` being set at all, because an empty pattern in `${x/#$y/z}`
+  # matches the start of EVERY string, which would prepend `~` to the whole path rather than
+  # leave it alone. The whole substitution is quoted, not just handed to `value=`: an UNQUOTED
+  # `~` in the replacement is itself a filename expansion in zsh, so it would resolve to `$HOME`
+  # a second time before it ever became the literal character — replacing the matched prefix
+  # with itself and silently undoing the entire collapse this line exists to do.
+  value=${_inzsh_theme_root:-unknown}
+  [[ -n ${HOME:-} ]] && value="${value/#$HOME/~}"
+  _inzsh_doctor_row 'theme root' "$value"
 
   _inzsh_doctor_row zsh "${ZSH_VERSION:-unknown}"
 

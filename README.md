@@ -154,9 +154,10 @@ Run the built-in diagnostic and paste its output into the issue:
 inzsh doctor
 ```
 
-One block covering zsh version, terminal, `$TERM`, colour depth, locale, Nerd Font and tmux —
-everything the bug template asks for, and nothing private: your coordinates, if the prayer
-segment has any, are never printed.
+One block covering the InZsh version, how it was installed and from where, zsh version,
+terminal, `$TERM`, colour depth, locale, Nerd Font and tmux — everything the bug template asks
+for, and nothing private: your coordinates, if the prayer segment has any, are never printed,
+and the theme's own path is printed with your home directory collapsed to `~`.
 
 It also answers the quieter failure. A setting the theme cannot read is dropped rather than
 obeyed, so that a typo can never stop the prompt drawing — and the doctor lists each one that
