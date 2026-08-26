@@ -36,6 +36,48 @@ inzsh_spec_doctor_env() {
   unset TMUX TERM_PROGRAM TERM_PROGRAM_VERSION LC_TERMINAL TERMINAL_EMULATOR 2>/dev/null
   unset INZSH_COLOR_DEPTH INZSH_MULTIBYTE INZSH_NERD_FONT 2>/dev/null
   unset INZSH_SALAH_LAT INZSH_SALAH_LON INZSH_SALAH_AUTOLOCATE 2>/dev/null
+  # Issue #245's three new rows. `_inzsh_theme_root`/`_inzsh_version` are the entry point's
+  # globals — never set by `Include`ing this file alone — and `ZSH`/`ZSH_THEME` are oh-my-zsh's,
+  # which the machine actually running this suite may have exported for real. Unset all four so
+  # every example starts from the one case none of them can beg the question with: nothing set.
+  unset _inzsh_theme_root _inzsh_version ZSH ZSH_THEME 2>/dev/null
+
+  return 0
+}
+
+# A scratch theme root shaped like `$1` — `clone`, `manual`, or `bundle` — in REPLY, for
+# `_inzsh_doctor_install_method`'s three code-shape branches. `clone` and `manual` both get a
+# `lib` directory, so the function sees a full checkout either way; `clone` additionally gets a
+# `.git` file, the one signal that tells the two apart. `bundle` gets neither — a bundle is
+# defined by the ABSENCE of `lib` beside it, not by anything present.
+inzsh_spec_doctor_root() {
+  emulate -L zsh
+
+  typeset -g REPLY=
+  local shape=$1
+  local dir
+  dir=$(mktemp -d "${TMPDIR:-/tmp}/inzsh-doctor-root-spec-XXXXXX") || return 1
+  # `:A` normalises a `$TMPDIR` that carries its own trailing slash — macOS's does — into one
+  # clean path with no doubled `/`. Without it the `$HOME`-collapse test below would build its
+  # expectation from a path shaped differently than the one `_inzsh_doctor` actually prefix-
+  # matches against, which is a fixture bug, not a doctor one.
+  dir=${dir:A}
+  case $shape in
+    (clone)  mkdir -p -- "$dir/lib" && : > "$dir/.git" ;;
+    (manual) mkdir -p -- "$dir/lib" ;;
+    (bundle) : ;;
+  esac
+  typeset -g REPLY=$dir
+
+  return 0
+}
+
+inzsh_spec_doctor_root_clean() {
+  emulate -L zsh
+
+  local target=${1-}
+  [[ ${target:t} == inzsh-doctor-root-spec-* ]] || return 1
+  rm -rf -- "$target" 2>/dev/null
 
   return 0
 }
@@ -261,6 +303,226 @@ Describe 'inzsh doctor'
     The output should include 'nerd font'
     The output should include 'tmux'
     The status should be success
+  End
+
+  # Issue #245. `version`, `install` and `theme root` — what is running, how it arrived, and
+  # from where. `_inzsh_doctor_install_method` is exercised directly first, since it is the one
+  # piece of actual judgment in the three rows; the full block afterwards checks the rows as a
+  # bug reporter would actually see them, version stamp and path collapse included.
+  Describe '_inzsh_doctor_install_method (issue #245)'
+    It 'calls a root with no lib/ beside it a bundle'
+      bundle_shape() {
+        inzsh_spec_doctor_env
+        inzsh_spec_doctor_root bundle || return 1
+        {
+          local root=$REPLY
+          local _inzsh_theme_root=$root
+          _inzsh_doctor_install_method
+          print -r -- "$REPLY"
+        } always {
+          inzsh_spec_doctor_root_clean "$root"
+        }
+      }
+      When call bundle_shape
+      The output should eq 'bundle'
+    End
+
+    It 'calls a root with lib/ and .git beside it a clone'
+      clone_shape() {
+        inzsh_spec_doctor_env
+        inzsh_spec_doctor_root clone || return 1
+        {
+          local root=$REPLY
+          local _inzsh_theme_root=$root
+          _inzsh_doctor_install_method
+          print -r -- "$REPLY"
+        } always {
+          inzsh_spec_doctor_root_clean "$root"
+        }
+      }
+      When call clone_shape
+      The output should eq 'clone'
+    End
+
+    It 'calls a root with lib/ but no .git manual, rather than guessing clone'
+      manual_shape() {
+        inzsh_spec_doctor_env
+        inzsh_spec_doctor_root manual || return 1
+        {
+          local root=$REPLY
+          local _inzsh_theme_root=$root
+          _inzsh_doctor_install_method
+          print -r -- "$REPLY"
+        } always {
+          inzsh_spec_doctor_root_clean "$root"
+        }
+      }
+      When call manual_shape
+      The output should eq 'manual'
+    End
+
+    # `_inzsh_theme_root` is resolved through `:A` at the entry point, which follows the symlink
+    # `install.zsh`'s omz path leaves behind, so by the time this runs the root already points at
+    # the real checkout and looks exactly like a clone loaded plainly. The framework itself is
+    # the signal that survives that resolution.
+    It 'names oh-my-zsh over the code shape when the framework says it did the sourcing'
+      omz_clone() {
+        inzsh_spec_doctor_env
+        inzsh_spec_doctor_root clone || return 1
+        {
+          local root=$REPLY
+          local _inzsh_theme_root=$root
+          local ZSH=/fixture/omz ZSH_THEME=inzsh
+          _inzsh_doctor_install_method
+          print -r -- "$REPLY"
+        } always {
+          inzsh_spec_doctor_root_clean "$root"
+        }
+      }
+      When call omz_clone
+      The output should eq 'oh-my-zsh (clone)'
+    End
+
+    # `tools/bundle.zsh`'s own emitted header names dropping the bundle straight into an
+    # oh-my-zsh themes directory as a supported path, so the two signals combining here is a
+    # real case, not a hypothetical.
+    It 'still names oh-my-zsh when the code dropped there is a bundle'
+      omz_bundle() {
+        inzsh_spec_doctor_env
+        inzsh_spec_doctor_root bundle || return 1
+        {
+          local root=$REPLY
+          local _inzsh_theme_root=$root
+          local ZSH=/fixture/omz ZSH_THEME=inzsh
+          _inzsh_doctor_install_method
+          print -r -- "$REPLY"
+        } always {
+          inzsh_spec_doctor_root_clean "$root"
+        }
+      }
+      When call omz_bundle
+      The output should eq 'oh-my-zsh (bundle)'
+    End
+
+    It 'names oh-my-zsh alone when there is no theme root to look beside at all'
+      omz_no_root() {
+        inzsh_spec_doctor_env
+        local ZSH=/fixture/omz ZSH_THEME=inzsh
+        _inzsh_doctor_install_method
+        print -r -- "$REPLY"
+      }
+      When call omz_no_root
+      The output should eq 'oh-my-zsh'
+    End
+
+    It 'does not read a ZSH_THEME set to something else as oh-my-zsh loading inzsh'
+      other_theme() {
+        inzsh_spec_doctor_env
+        inzsh_spec_doctor_root clone || return 1
+        {
+          local root=$REPLY
+          local _inzsh_theme_root=$root
+          local ZSH=/fixture/omz ZSH_THEME=robbyrussell
+          _inzsh_doctor_install_method
+          print -r -- "$REPLY"
+        } always {
+          inzsh_spec_doctor_root_clean "$root"
+        }
+      }
+      When call other_theme
+      The output should eq 'clone'
+    End
+
+    # The unrecognisable layout the design decisions call for: no theme root to look beside, and
+    # no oh-my-zsh signal either. Nothing here is a wrong guess dressed up as an answer.
+    It 'is honest about not knowing when neither signal answers anything'
+      nothing() {
+        inzsh_spec_doctor_env
+        _inzsh_doctor_install_method
+        print -r -- "$REPLY"
+      }
+      When call nothing
+      The output should eq 'unknown'
+    End
+  End
+
+  Describe 'version and theme root rows, through the full block (issue #245)'
+    It 'reports source from a from-source checkout'
+      clone_block() {
+        inzsh_spec_doctor_env
+        inzsh_spec_doctor_root clone || return 1
+        {
+          local root=$REPLY
+          local _inzsh_theme_root=$root _inzsh_version=source
+          inzsh doctor
+        } always {
+          inzsh_spec_doctor_root_clean "$root"
+        }
+      }
+      When call clone_block
+      The output should include 'version       source'
+      The output should include 'install       clone'
+    End
+
+    It 'reports the released tag a bundle was stamped with'
+      bundle_block() {
+        inzsh_spec_doctor_env
+        inzsh_spec_doctor_root bundle || return 1
+        {
+          local root=$REPLY
+          local _inzsh_theme_root=$root _inzsh_version=v1.2.0
+          inzsh doctor
+        } always {
+          inzsh_spec_doctor_root_clean "$root"
+        }
+      }
+      When call bundle_block
+      The output should include 'version       v1.2.0'
+      The output should include 'install       bundle'
+    End
+
+    # The narrower harness `tools/doctor.zsh` (`make doctor`) runs — and this file's own
+    # `standalone` example below — never set either global. All three rows still print, and none
+    # of them invents an answer it does not have.
+    It 'degrades all three rows to an honest word rather than a wrong guess'
+      unrecognisable() {
+        inzsh_spec_doctor_env
+        inzsh doctor
+      }
+      When call unrecognisable
+      The output should include 'version       unknown'
+      The output should include 'install       unknown'
+      The output should include 'theme root    unknown'
+      The status should be success
+    End
+
+    # The judgment call this milestone cared about most: the theme root is a filesystem path,
+    # and it very often carries the reporter's own account name. `$HOME` is collapsed to `~`
+    # rather than printed raw — checked here two ways at once, in the SAME block, so a future
+    # change cannot satisfy one half while quietly breaking the other: the row reads `~/…`, and
+    # the fixture's raw `$HOME` string never appears anywhere in the output at all.
+    It 'collapses the theme root to ~ and never prints the raw $HOME underneath it'
+      collapsed() {
+        inzsh_spec_doctor_env
+        inzsh_spec_doctor_root clone || return 1
+        {
+          local root=$REPLY
+          local leaf=${root:t}
+          local HOME=${root:h}
+          local _inzsh_theme_root=$root
+          local block
+          block=$(inzsh doctor)
+          local -a bad=()
+          [[ $block == *"theme root    ~/$leaf"* ]] || bad+=not-collapsed
+          [[ $block == *"$HOME"* ]] && bad+=leaked
+          print -rl -- $bad
+        } always {
+          inzsh_spec_doctor_root_clean "$root"
+        }
+      }
+      When call collapsed
+      The output should eq ''
+    End
   End
 
   It 'reports the running zsh version'
