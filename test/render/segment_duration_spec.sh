@@ -50,7 +50,7 @@ inzsh_spec_duration_drawn() {
   _inzsh_segment_duration_build "$@"
   _inzsh_left=()
   _inzsh_right=(DURATION)
-  _inzsh_render_build right
+  _inzsh_render_build right "${_inzsh_right[@]}"
   typeset -g inzsh_spec_drawn=$REPLY
 
   return 0

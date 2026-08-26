@@ -276,7 +276,7 @@ Describe 'the host segment'
         _inzsh_segment_text=()
         _inzsh_segment_host_build box ssh
         _inzsh_left=(HOST)
-        _inzsh_render_build left
+        _inzsh_render_build left "${_inzsh_left[@]}"
         [[ $REPLY == *' box '* ]] && print -r -- drawn || print -r -- "missing:$REPLY"
       }
       When call drawn
@@ -288,7 +288,7 @@ Describe 'the host segment'
         _inzsh_segment_text=()
         _inzsh_segment_host_build box ''
         _inzsh_left=(HOST)
-        _inzsh_render_build left
+        _inzsh_render_build left "${_inzsh_left[@]}"
         print -r -- "len=${#REPLY} width=$_inzsh_render_width"
       }
       When call undrawn
@@ -302,7 +302,7 @@ Describe 'the host segment'
         _inzsh_segment_text=()
         _inzsh_segment_host_build '%m' ssh
         _inzsh_left=(HOST)
-        _inzsh_render_build left
+        _inzsh_render_build left "${_inzsh_left[@]}"
         local expanded=${(%%)REPLY}
         [[ $expanded == *'%m'* ]] && print -r -- literal || print -r -- "expanded:$expanded"
       }

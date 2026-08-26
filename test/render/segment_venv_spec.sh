@@ -264,7 +264,7 @@ Describe 'the venv segment'
         _inzsh_segment_text=()
         _inzsh_segment_venv_build /opt/envs/api ''
         _inzsh_left=(VENV)
-        _inzsh_render_build left
+        _inzsh_render_build left "${_inzsh_left[@]}"
         [[ $REPLY == *' api '* ]] && print -r -- drawn || print -r -- "missing:$REPLY"
       }
       When call drawn
@@ -276,7 +276,7 @@ Describe 'the venv segment'
         _inzsh_segment_text=()
         _inzsh_segment_venv_build '' ''
         _inzsh_left=(VENV)
-        _inzsh_render_build left
+        _inzsh_render_build left "${_inzsh_left[@]}"
         print -r -- "len=${#REPLY} width=$_inzsh_render_width"
       }
       When call undrawn
@@ -290,7 +290,7 @@ Describe 'the venv segment'
         _inzsh_segment_text=()
         _inzsh_segment_venv_build '/opt/envs/%~' ''
         _inzsh_left=(VENV)
-        _inzsh_render_build left
+        _inzsh_render_build left "${_inzsh_left[@]}"
         local expanded=${(%%)REPLY}
         [[ $expanded == *'%~'* ]] && print -r -- literal || print -r -- "expanded:$expanded"
       }

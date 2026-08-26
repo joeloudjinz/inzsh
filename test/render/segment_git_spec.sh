@@ -63,7 +63,7 @@ inzsh_spec_git_drawn() {
   _inzsh_segment_git_build pinned
   _inzsh_left=(GIT)
   _inzsh_right=()
-  _inzsh_render_build left
+  _inzsh_render_build left "${_inzsh_left[@]}"
   typeset -g inzsh_spec_drawn=$REPLY
 
   return 0

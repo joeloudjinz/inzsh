@@ -324,7 +324,7 @@ Describe 'the user segment'
         _inzsh_segment_text=()
         _inzsh_segment_user_build root joe
         _inzsh_left=(USER)
-        _inzsh_render_build left
+        _inzsh_render_build left "${_inzsh_left[@]}"
         [[ $REPLY == *' root '* ]] && print -r -- drawn || print -r -- "missing:$REPLY"
       }
       When call drawn
@@ -336,7 +336,7 @@ Describe 'the user segment'
         _inzsh_segment_text=()
         _inzsh_segment_user_build joe joe
         _inzsh_left=(USER)
-        _inzsh_render_build left
+        _inzsh_render_build left "${_inzsh_left[@]}"
         print -r -- "len=${#REPLY} width=$_inzsh_render_width"
       }
       When call undrawn
@@ -348,7 +348,7 @@ Describe 'the user segment'
         _inzsh_segment_text=()
         _inzsh_segment_user_build '%n' '' ssh
         _inzsh_left=(USER)
-        _inzsh_render_build left
+        _inzsh_render_build left "${_inzsh_left[@]}"
         local expanded=${(%%)REPLY}
         [[ $expanded == *'%n'* ]] && print -r -- literal || print -r -- "expanded:$expanded"
       }

@@ -339,7 +339,7 @@ Describe 'the root segment'
         _inzsh_segment_root_build 0
         _inzsh_left=(ROOT OTHER)
         _inzsh_right=()
-        _inzsh_render_build left
+        _inzsh_render_build left "${_inzsh_left[@]}"
         local face=${_inzsh_role[${_inzsh_segment_fg_role[ROOT]}]}
         local stripped=${REPLY//$_inzsh_sep_left/}
         local bare=${REPLY//(%[KF]\{[^\}]#\}|%[fk]|$_inzsh_sep_left)/}
@@ -361,7 +361,7 @@ Describe 'the root segment'
         _inzsh_segment_root_build 501
         _inzsh_left=(ROOT OTHER)
         _inzsh_right=()
-        _inzsh_render_build left
+        _inzsh_render_build left "${_inzsh_left[@]}"
         local stripped=${REPLY//$_inzsh_sep_left/}
         local bare=${REPLY//(%[KF]\{[^\}]#\}|%[fk]|$_inzsh_sep_left)/}
         print -r -- "seps=$(( ${#REPLY} - ${#stripped} )) bare=[${bare//  / }]"

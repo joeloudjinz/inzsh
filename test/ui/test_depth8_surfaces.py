@@ -98,7 +98,7 @@ def build(*, preset, mode, fgs, side="left", importances=(), hues=(), cols=COLS)
             lines.append(f"_inzsh_segment_bg_role[{name}]={shlex.quote(hues[index])}")
     lines += [
         f"_inzsh_{'right' if side == 'right' else 'left'}=({' '.join(names)})",
-        f"_inzsh_render_build {shlex.quote(side)}",
+        f"_inzsh_render_build {shlex.quote(side)} {' '.join(names)}",
         'print -r -- "${(%%)REPLY}"',
     ]
     return grid_runner.render("\n".join(lines), cols=cols)

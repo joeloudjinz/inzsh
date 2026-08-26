@@ -53,7 +53,7 @@ inzsh_spec_date_drawn() {
   _inzsh_segment_date_build "$@"
   _inzsh_left=()
   _inzsh_right=(DATE)
-  _inzsh_render_build right
+  _inzsh_render_build right "${_inzsh_right[@]}"
   typeset -g inzsh_spec_drawn=$REPLY
 
   return 0
