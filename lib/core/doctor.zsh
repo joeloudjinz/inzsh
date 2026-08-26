@@ -224,7 +224,7 @@ _inzsh_doctor_near_miss() {
     # the COMMON one. A FAMILY pattern gets no such shortcut — its wildcard absorbs any amount of
     # extra length for nothing, so `INZSH_GIT_RANK` (14 characters) is 0 away from `INZSH_*_RANK`
     # (12) despite a length gap this check would otherwise refuse on sight. There are only 6
-    # families against 23 names today, so paying the DP for all of them regardless costs little.
+    # families against 43 names in a loaded shell, so paying the DP for all of them costs little.
     if [[ $candidate != *'*'* ]]; then
       lendiff=$(( ${#candidate} - namelen ))
       (( lendiff < 0 )) && lendiff=$(( -lendiff ))
