@@ -303,30 +303,38 @@ _inzsh_salah_slots() {
   return 0
 }
 
-# `_inzsh_salah_cache_read <key> <entry-path>` — the entry into `_inzsh_salah_table`.
+# `_inzsh_salah_cache_parse <entry-path>` — the raw tab fields of an entry, validated for SHAPE,
+# into `_inzsh_salah_cache_raw`. Shared by the two things that read an entry off disk for two
+# different questions: `_inzsh_salah_cache_read` below, which also insists the entry is for the
+# key it was asked about, and `_inzsh_salah_cache_health`, which asks a question a strict
+# pass/fail cannot answer — not "is this usable" but "usable under what recipe, for what day".
+# One parse, two callers, so the read loop, the key filter, the version check and the slot
+# validation each exist once.
 #
 # EVERY FIELD IS VALIDATED, and this is the whole of the corrupt-cache story. The file outlives
 # the shell that wrote it, a full filesystem can truncate it mid-write, and a user can open it in
-# an editor. So the version must be the one this file writes, the key must be the one being asked
-# about, and every one of the twelve moments must be an epoch or the sentinel — a slot that is
-# missing, empty or anything else fails the whole entry rather than defaulting to a number.
+# an editor. So the version must be the one this file writes and every one of the twelve moments
+# must be an epoch or the sentinel — a slot that is missing, empty or anything else fails the
+# whole entry rather than defaulting to a number.
 #
-# A miss leaves the table EMPTY and returns 1, which the segment already reads as "nothing to
-# draw". Never an error, never a partial table, and never a diagnostic: a prompt is not a place to
-# report that a cache file was odd.
-_inzsh_salah_cache_read() {
+# Status 1 leaves `_inzsh_salah_cache_raw` EMPTY and REPLY carrying the reason, for a caller that
+# wants to say more than "no": `open` — the file cannot be opened or read; `future` — the format
+# VERSION is a number, just not this one, which in a project that has only ever shipped version 1
+# means a later InZsh wrote it; `corrupt` — anything else: no version line at all, a truncated
+# write, a hand-edited slot. REPLY is empty on success.
+_inzsh_salah_cache_parse() {
   emulate -L zsh
   setopt extended_glob
 
-  typeset -gA _inzsh_salah_table
-  _inzsh_salah_table=()
+  typeset -gA _inzsh_salah_cache_raw
+  _inzsh_salah_cache_raw=()
+  typeset -g REPLY=
 
-  local key=$1 file=$2
-  [[ -n $key && -n $file ]] || return 1
-  [[ -f $file && -r $file ]] || return 1
-
-  _inzsh_salah_slots || return 1
-  local -a slots=("${reply[@]}")
+  local file=$1
+  if [[ -z $file || ! -f $file || ! -r $file ]]; then
+    typeset -g REPLY=open
+    return 1
+  fi
 
   local -A raw
   local line k v
@@ -338,20 +346,62 @@ _inzsh_salah_cache_read() {
     raw[$k]=$v
   done < "$file" 2>/dev/null
 
-  [[ ${raw[version]-} == $_inzsh_salah_cache_version ]] || return 1
-  [[ ${raw[key]-} == $key ]]                            || return 1
+  local version=${raw[version]-}
+  if [[ $version != $_inzsh_salah_cache_version ]]; then
+    if [[ $version == <-> ]]; then
+      typeset -g REPLY=future
+    else
+      typeset -g REPLY=corrupt
+    fi
+    return 1
+  fi
+
+  _inzsh_salah_slots || { typeset -g REPLY=corrupt; return 1 }
+  local -a slots=("${reply[@]}")
 
   local absent=${_inzsh_salah_absent:-none}
-  local -A table
   local slot value
   for slot in "${slots[@]}"; do
     value=${raw[$slot]-}
-    [[ $value == (|-)<-> || $value == $absent ]] || return 1
-    table[$slot]=$value
+    [[ $value == (|-)<-> || $value == $absent ]] || { typeset -g REPLY=corrupt; return 1 }
   done
 
+  _inzsh_salah_cache_raw=("${(@kv)raw}")
+
+  return 0
+}
+
+# `_inzsh_salah_cache_read <key> <entry-path>` — the entry into `_inzsh_salah_table`.
+#
+# The key check is the second half of the corrupt-cache story `_inzsh_salah_cache_parse` starts:
+# a shape that parses cleanly can still be the wrong day, the wrong place or the wrong method, so
+# the exact key being asked about is compared before anything is trusted.
+#
+# A miss leaves the table EMPTY and returns 1, which the segment already reads as "nothing to
+# draw". Never an error, never a partial table, and never a diagnostic: a prompt is not a place to
+# report that a cache file was odd.
+_inzsh_salah_cache_read() {
+  emulate -L zsh
+
+  typeset -gA _inzsh_salah_table
+  _inzsh_salah_table=()
+
+  local key=$1 file=$2
+  [[ -n $key && -n $file ]] || return 1
+
+  _inzsh_salah_cache_parse "$file" || return 1
+  [[ ${_inzsh_salah_cache_raw[key]-} == $key ]] || return 1
+
+  _inzsh_salah_slots || return 1
+  local -a slots=("${reply[@]}")
+
+  local -A table
+  local slot
+  for slot in "${slots[@]}"; do
+    table[$slot]=${_inzsh_salah_cache_raw[$slot]-}
+  done
   table[key]=$key
-  table[day]=${raw[day]-}
+  table[day]=${_inzsh_salah_cache_raw[day]-}
 
   _inzsh_salah_table=("${(@kv)table}")
 
