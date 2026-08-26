@@ -86,6 +86,17 @@ Describe 'the near-miss matcher (issue #228)'
       The variable REPLY should eq 'INZSH_*_RANK'
     End
 
+    # `INZSH_GLYPH_*` — `lib/core/tokens.zsh`'s family, registered once the token layer is
+    # loaded, which this spec's own `Include` list already does — is the theme's other TRAILING
+    # wildcard, the same shape as `INZSH_SALAH_OFFSET_*` below. Nothing about the cap or the
+    # distance walk treats a trailing wildcard differently from a middle one, but it had no
+    # example of its own until now.
+    It 'suggests a trailing-wildcard family the same way as a middle one'
+      When call _inzsh_doctor_near_miss INZSH_GLPH_SEP_LEFT
+      The status should be success
+      The variable REPLY should eq 'INZSH_GLYPH_*'
+    End
+
     # The example the issue names directly. Measured on its own two rows up, `INZSH_*_BG` sits
     # only 2 from this name once the wildcard is credited for swallowing the middle of it — a
     # flat house threshold of 2 would have reported it. `_inzsh_doctor_cap` is what keeps a
