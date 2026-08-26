@@ -117,6 +117,112 @@ _inzsh_doctor_distance() {
   return 0
 }
 
+# How close is `$1` allowed to sit to a registered shape before `_inzsh_doctor_near_miss` will
+# say so? Two, chosen against the registry as it actually reads today (`make doctor` prints
+# `${#_inzsh_config_validators}` names and `${#_inzsh_config_family_validators}` families — low
+# forties and single digits), not against an abstract worst case:
+#
+#   INZSH_SEPARATOR_STYL   -> INZSH_SEPARATOR_STYLE   distance 1 (one letter short)
+#   INZSH_GIT_RANNK        -> INZSH_*_RANK            distance 1 (one letter too many)
+#   INZSH_DIR_MINCOL       -> INZSH_*_MINCOLS         distance 1 (one letter short)
+#   INZSH_COLOUR_DEPTH     -> INZSH_COLOR_DEPTH       distance 1 (the British spelling)
+#
+# every one of those is a single slipped key, and 2 leaves room for a transposition (two
+# substitutions in plain Levenshtein) without opening the door much wider. `INZSH_MY_OWN_THING`,
+# the example the issue asks to stay silent, sits 14 away from its nearest registered NAME — comes
+# nowhere close. A short name narrows how much distance 2 actually means in practice — two edits
+# against `INZSH_PS2`'s three meaningful letters is most of the word — and this file accepts that:
+# a wrong guess still shows the value it was made against, so it reads as a hint offered alongside
+# the truth rather than a correction standing in for it.
+typeset -g _inzsh_doctor_near_miss_threshold=2
+
+# The one case the flat threshold above gets wrong on its own: a FAMILY's discriminating text can
+# be shorter than the threshold once the wildcard is discounted. `INZSH_*_BG` is nine literal
+# characters, but six of them are `INZSH_`, which every candidate here already starts with by
+# construction — `_inzsh_doctor_near_misses` only ever calls this on names `${(I)INZSH_*}` matched
+# in the first place — so the part actually doing any discriminating is `_BG`, three characters.
+# Measured against the real registry: `INZSH_MY_OWN_THING`, the name the issue asks to stay silent
+# for, sits exactly 2 from `INZSH_*_BG` — the wildcard swallows most of it for free and the last
+# three letters happen to half-rhyme with `_BG` under substitution. A flat threshold of 2 would
+# have reported it. So a family's cap is the SHORTER of the house threshold and half its own
+# discriminating length: `INZSH_*_BG` (3 literal characters after the shared prefix) is capped at
+# 1, `INZSH_*_RANK` (5) stays at the house threshold. The RANK and MINCOLS examples above still
+# pass comfortably under their own caps; the BG one no longer passes at all.
+#
+# `$1` is a registered family PATTERN, always `INZSH_` plus exactly one more literal run plus one
+# `*` — `_inzsh_config_register_family` refuses anything else — so trimming the leading `INZSH_`
+# and the one wildcard character off its length is enough; no case analysis on where the `*` sits.
+_inzsh_doctor_family_cap() {
+  emulate -L zsh
+
+  typeset -g REPLY=${_inzsh_doctor_near_miss_threshold:-2}
+  local -i threshold=$REPLY
+  local -i literal=$(( ${#1} - 7 ))
+  local -i cap=$(( (literal - 1) / 2 ))
+
+  (( cap > threshold )) && cap=$threshold
+  (( cap < 0 )) && cap=0
+  typeset -g REPLY=$cap
+
+  return 0
+}
+
+# The registered name or family PATTERN closest to `$1`, in REPLY, when it is close enough to be
+# worth a guess; status 1 with REPLY empty otherwise. `$1` is never itself a registered knob —
+# `_inzsh_doctor_near_misses` only calls this once `_inzsh_config_spec_of` has already said no —
+# so every candidate here is a real alternative, never the name confirming itself.
+#
+# A family's suggestion is the pattern itself — `INZSH_*_RANK`, verbatim — rather than a guessed
+# concrete name such as `INZSH_GIT_RANK`. This file cannot know which segment the user meant any
+# more than the registry can: the wildcard stands for a segment, a prayer name, a glyph key,
+# whichever family it is, and `_inzsh_config_family_of` never resolved it to one because there
+# WAS no clean match. `INZSH_*_RANK` is not a downgrade from a concrete guess — it is the exact
+# vocabulary `lib/core/config.zsh`'s own comments already use to describe the family, so this file
+# adds no second name for the same shape.
+#
+# The closest candidate wins outright; ties fall to whichever sorted key the loop reaches first,
+# which is deterministic and not worth breaking further — this is a hint, not an authority.
+_inzsh_doctor_near_miss() {
+  emulate -L zsh
+
+  typeset -g REPLY=
+  local name=$1
+  [[ -n $name ]] || return 1
+  (( ${+_inzsh_config_validators} )) || return 1
+
+  local -i threshold=${_inzsh_doctor_near_miss_threshold:-2}
+  local -i best=$(( threshold + 1 )) dist cap
+  local candidate best_name=
+
+  for candidate in ${(ko)_inzsh_config_validators}; do
+    _inzsh_doctor_distance "$candidate" "$name"
+    dist=$REPLY
+    (( dist < best )) || continue
+    best=dist
+    best_name=$candidate
+  done
+
+  for candidate in ${(ko)_inzsh_config_family_validators}; do
+    _inzsh_doctor_distance "$candidate" "$name"
+    dist=$REPLY
+    _inzsh_doctor_family_cap "$candidate"
+    cap=$REPLY
+    (( dist <= cap && dist < best )) || continue
+    best=dist
+    best_name=$candidate
+  done
+
+  # `REPLY` is a shared name — `_inzsh_doctor_distance` and `_inzsh_doctor_family_cap` both write
+  # it on every call inside the loops above, so by the time the loops are done it holds whatever
+  # the LAST candidate left there, not this function's own answer. It is set explicitly here
+  # either way rather than trusted to still hold the empty string from the top of this function.
+  typeset -g REPLY=
+  (( best <= threshold )) || return 1
+  typeset -g REPLY=$best_name
+
+  return 0
+}
+
 # Every `INZSH_` variable that is SET to something the registry refuses, sorted, in `reply`.
 #
 # Issue #210. "Validate, then fall back" is the rule that stops a typo breaking the prompt: a
@@ -129,8 +235,13 @@ _inzsh_doctor_distance() {
 #
 #   an empty value        set-but-empty is UNSET at every level of this theme, so an
 #                         `INZSH_DIR_BG=` left in a zshrc is falling through by design.
-#   an unregistered name  there is no vocabulary to state, and nothing here can tell a
-#                         misspelled knob from a variable that was never ours.
+#   an unregistered name  there is no vocabulary to state FOR THIS FUNCTION - this list stays
+#                         exactly what its name says, values the registry recognises and
+#                         refuses. Issue #228 closes the harder half of that gap without
+#                         widening this one: `_inzsh_doctor_near_misses`, below, answers the
+#                         separate question of whether an unregistered name sits close enough
+#                         to a registered one to be worth a guess, and prints its own rows
+#                         immediately after this list's.
 #   a valid value         the whole section is absent when everything is valid.
 #
 # `${parameters[(I)…]}` is the same listing `_inzsh_config_absorb_all` uses, so a knob added
@@ -152,6 +263,38 @@ _inzsh_doctor_ignored() {
     spec=$REPLY
     [[ -n $spec ]] || continue
     _inzsh_config_check "$spec" "$value" && continue
+    reply+=$knob
+  done
+
+  return 0
+}
+
+# Every `INZSH_` variable that is SET, that the registry has never heard of, and that sits close
+# enough to a registered name or family to be worth a guess — sorted, in `reply`. The other half
+# of issue #228, and deliberately a SEPARATE list from `_inzsh_doctor_ignored`'s rather than a
+# widening of it: that function answers "the registry recognised this and refused it", this one
+# answers "the registry never recognised this at all, but it looks like it meant to" — two
+# different diagnoses, so two different reads over the same `INZSH_*` listing.
+#
+# An empty value is skipped for the same reason `_inzsh_doctor_ignored` skips one: set-but-empty
+# is unset at every level of this theme, and a blank left in a zshrc is not a typo to chase.
+_inzsh_doctor_near_misses() {
+  emulate -L zsh
+
+  typeset -ga reply
+  reply=()
+
+  (( ${+functions[_inzsh_config_spec_of]} )) || return 0
+  (( ${+functions[_inzsh_doctor_near_miss]} )) || return 0
+
+  local knob value spec
+  for knob in ${(ko)parameters[(I)INZSH_*]}; do
+    value=${(P)knob}
+    [[ -n $value ]] || continue
+    _inzsh_config_spec_of "$knob"
+    spec=$REPLY
+    [[ -z $spec ]] || continue
+    _inzsh_doctor_near_miss "$knob" || continue
     reply+=$knob
   done
 
@@ -282,6 +425,24 @@ _inzsh_doctor() {
     _inzsh_config_spec_of "$knob"
     _inzsh_config_accepts "$REPLY"
     _inzsh_doctor_row ignored "$knob=$value - accepts $REPLY"
+  done
+
+  # Issue #228. The other half of the same section: a name the registry has never heard of, close
+  # enough to one it has that it is almost certainly the same slipped key rather than a variable
+  # that was never ours. Printed as more `ignored` rows, straight after the ones above — same
+  # value-flattening, same clipping, same reason for both — because the reader pasting this block
+  # is asking the same question of every row here: "what did I set that is not doing anything?".
+  # The tail differs on purpose: `accepts X` names a whole vocabulary the value could have been
+  # from; `probably X` names one specific name the KNOB itself could have been, which is the more
+  # honest claim this function is actually able to make.
+  local -a misses
+  _inzsh_doctor_near_misses
+  misses=("${reply[@]}")
+  for knob in $misses; do
+    value=${${(P)knob}//[[:cntrl:]]/ }
+    (( ${#value} > 24 )) && value="${value[1,23]}…"
+    _inzsh_doctor_near_miss "$knob"
+    _inzsh_doctor_row ignored "$knob=$value - probably $REPLY"
   done
 
   # Where the prayer segment's position came from — never where it is. Omitted entirely when

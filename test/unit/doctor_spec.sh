@@ -68,6 +68,40 @@ Describe 'the near-miss matcher (issue #228)'
       The output should eq "$3"
     End
   End
+
+  Describe '_inzsh_doctor_near_miss'
+    It 'suggests the registered singleton a near-miss name is probably meant to be'
+      When call _inzsh_doctor_near_miss INZSH_SEPARATOR_STYL
+      The status should be success
+      The variable REPLY should eq 'INZSH_SEPARATOR_STYLE'
+    End
+
+    # `INZSH_<SEGMENT>_RANK` is not a name this file can complete — nothing here knows which
+    # segment `RANNK` was reaching for — so the family PATTERN itself is the suggestion, verbatim,
+    # the same vocabulary `lib/core/config.zsh`'s own comments already use for the shape.
+    It 'suggests the family pattern a near-miss segment knob is probably meant to be'
+      When call _inzsh_doctor_near_miss INZSH_GIT_RANNK
+      The status should be success
+      The variable REPLY should eq 'INZSH_*_RANK'
+    End
+
+    # The example the issue names directly. Measured on its own two rows up, `INZSH_*_BG` sits
+    # only 2 from this name once the wildcard is credited for swallowing the middle of it — a
+    # flat house threshold of 2 would have reported it. `_inzsh_doctor_family_cap` is what keeps
+    # a three-letter family suffix from being read that generously, which is why this name stays
+    # silent rather than becoming a false "probably".
+    It 'refuses a name that only looks close once a family wildcard is credited too much'
+      When call _inzsh_doctor_near_miss INZSH_MY_OWN_THING
+      The status should be failure
+      The variable REPLY should eq ''
+    End
+
+    It 'refuses an empty name'
+      When call _inzsh_doctor_near_miss ''
+      The status should be failure
+      The variable REPLY should eq ''
+    End
+  End
 End
 
 Describe 'the inzsh command'
@@ -283,8 +317,9 @@ Describe 'inzsh doctor'
 
     # Set-but-empty is UNSET at every level of this theme — an `INZSH_DIR_BG=` left in a zshrc
     # falls through to the role rather than blanking the segment — so it is not an ignored value
-    # and must not be listed as one. A name the registry has never heard of is not listed either:
-    # there is no vocabulary to state, and no way to tell a typo from a variable that is not ours.
+    # and must not be listed as one. `INZSH_NOT_A_KNOB` is quiet for a different reason since
+    # issue #228: the registry has heard of nothing close enough to it, not because nothing here
+    # can ever tell a typo from a variable that was never ours — see the near-miss examples below.
     It 'lists neither an empty value nor a name the registry never heard of'
       quiet() {
         zsh -f -c '
@@ -351,6 +386,107 @@ Describe 'inzsh doctor'
       When call hostile
       The output should eq ''
       The stderr should eq ''
+    End
+
+    # Issue #228. `_inzsh_doctor_ignored` above only ever sees a name the registry recognises;
+    # this is the other half — a name it does NOT recognise, close enough to one it does that it
+    # is almost certainly the same slipped key. Printed as the same `ignored` row shape, straight
+    # after the ones above, because a reader pasting this block is asking one question of both:
+    # "what did I set here that did nothing?"
+    Describe 'a near miss for a name the registry has never heard of'
+      It 'names the singleton it is probably a typo of'
+        singleton_typo() {
+          inzsh_spec_doctor_env
+          local INZSH_SEPARATOR_STYL=round
+          inzsh doctor
+        }
+        When call singleton_typo
+        The output should include 'ignored'
+        The output should include 'INZSH_SEPARATOR_STYL=round - probably INZSH_SEPARATOR_STYLE'
+      End
+
+      # The shape offered for a mistyped family member is the pattern itself, not a guessed
+      # segment name — nothing here knows which segment `RANNK` was reaching for.
+      It 'names the family shape a mistyped segment knob is probably one of'
+        family_typo() {
+          inzsh_spec_doctor_env
+          local INZSH_GIT_RANNK=3
+          inzsh doctor
+        }
+        When call family_typo
+        The output should include 'ignored'
+        The output should include 'INZSH_GIT_RANNK=3 - probably INZSH_*_RANK'
+      End
+
+      # The example the issue itself asks to stay silent for — a name that is not close to
+      # anything registered, however plausible it looks as a knob.
+      It 'stays silent for a name that is not close to anything registered'
+        unrelated() {
+          inzsh_spec_doctor_env
+          local INZSH_MY_OWN_THING=banana
+          inzsh doctor
+        }
+        When call unrelated
+        The output should not include 'ignored'
+      End
+
+      # The same "set-but-empty is unset" rule `_inzsh_doctor_ignored` keeps: a near miss on an
+      # empty value is still nothing set, and must not grow a row of its own.
+      It 'skips a near miss whose value is empty'
+        blank() {
+          zsh -f -c '
+            TERM=xterm-256color COLORTERM=truecolor LC_ALL=en_US.UTF-8
+            source "$1/lib/core/config.zsh"
+            source "$1/lib/core/detect.zsh"
+            source "$1/lib/core/doctor.zsh"
+            INZSH_SEPARATOR_STYL=
+            inzsh doctor
+          ' inzsh-doctor-near-miss-blank "$SHELLSPEC_PROJECT_ROOT"
+        }
+        When call blank
+        The output should not include 'ignored'
+        The stderr should eq ''
+      End
+
+      # A registered name is never a near miss, of itself or of anything else — that question is
+      # `_inzsh_doctor_ignored`'s, and the two lists are read from the same walk but never
+      # overlap: `_inzsh_config_spec_of` gates one in exactly where it gates the other out.
+      It 'never lists a registered name as a near miss'
+        registered() {
+          zsh -f -c '
+            TERM=xterm-256color COLORTERM=truecolor LC_ALL=en_US.UTF-8
+            source "$1/lib/core/config.zsh"
+            source "$1/lib/core/detect.zsh"
+            source "$1/lib/core/doctor.zsh"
+            INZSH_SEPARATOR_STYLE=round
+            _inzsh_doctor_near_misses
+            print -r -- "${reply[*]}"
+          ' inzsh-doctor-near-miss-registered "$SHELLSPEC_PROJECT_ROOT"
+        }
+        When call registered
+        The output should eq ''
+        The stderr should eq ''
+      End
+
+      # The house rule this whole file keeps: a diagnostic that can fail is one nobody can run in
+      # the broken environment it exists for.
+      It 'returns success even though nothing here is a valid knob'
+        odd() {
+          zsh -f -c '
+            TERM=xterm-256color COLORTERM=truecolor LC_ALL=en_US.UTF-8
+            source "$1/lib/core/config.zsh"
+            source "$1/lib/core/detect.zsh"
+            source "$1/lib/core/doctor.zsh"
+            INZSH_SEPARATOR_STYL=round
+            INZSH_GIT_RANNK=abc
+            _inzsh_doctor_near_misses
+            print $?
+          ' inzsh-doctor-near-miss-status "$SHELLSPEC_PROJECT_ROOT"
+        }
+        When call odd
+        The output should eq '0'
+        The stderr should eq ''
+      End
     End
   End
 
