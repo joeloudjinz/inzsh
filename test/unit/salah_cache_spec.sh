@@ -667,6 +667,188 @@ Describe 'the day cache'
   End
 
   # --------------------------------------------------------------------------------------------
+  Describe 'diagnostic health — issue #229'
+    # `inzsh doctor` reports where the position came from; this is the other half, the state of
+    # the TABLE computed from it. Read-only throughout: every example below either writes an
+    # entry by hand or leaves the cache untouched, and none of them expects
+    # `_inzsh_salah_cache_health` to compute or write anything itself.
+
+    It 'reports none when no position is known'
+      no_position() {
+        inzsh_spec_salah_env || return 1
+        typeset -g INZSH_SALAH_LAT= INZSH_SALAH_LON= INZSH_SALAH_AUTOLOCATE=0
+        _inzsh_salah_cache_health $inzsh_spec_salah_now
+        local -a bad=()
+        [[ $REPLY == none ]]                          || bad+="reply=$REPLY"
+        [[ -z $_inzsh_salah_cache_health_recipe ]]    || bad+=recipe-named-with-nothing-to-name
+        print -rl -- $bad
+        inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+      }
+      When call no_position
+      The output should eq ''
+    End
+
+    It 'reports missing when a position resolves and nothing has ever been cached for it'
+      missing() {
+        setopt local_options extended_glob
+        inzsh_spec_salah_env || return 1
+        _inzsh_salah_cache_health $inzsh_spec_salah_now
+        local -a bad=()
+        [[ $REPLY == missing ]]                                 || bad+="reply=$REPLY"
+        [[ $_inzsh_salah_cache_health_recipe == [0-9a-f](#c8) ]] || bad+="recipe=$_inzsh_salah_cache_health_recipe"
+        print -rl -- $bad
+        inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+      }
+      When call missing
+      The output should eq ''
+    End
+
+    It 'reports current when the entry matches today and matches the recipe in force'
+      current() {
+        inzsh_spec_salah_env || return 1
+        _inzsh_salah_cache_refresh $inzsh_spec_salah_now || { print -r -- refresh-failed; return }
+        _inzsh_salah_cache_health $inzsh_spec_salah_now
+        local -a bad=()
+        [[ $REPLY == current ]] || bad+="reply=$REPLY"
+        [[ -n $_inzsh_salah_cache_health_recipe ]] || bad+=no-recipe
+        print -rl -- $bad
+        inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+      }
+      When call current
+      The output should eq ''
+    End
+
+    # A written entry and a fresh probe agree on which recipe the current configuration names —
+    # the digest is a pure function of the position and method, not of whether anything is cached
+    # under it yet.
+    It 'names the same recipe whether or not anything is cached under it'
+      stable() {
+        inzsh_spec_salah_env || return 1
+        _inzsh_salah_cache_health $inzsh_spec_salah_now
+        local before=$_inzsh_salah_cache_health_recipe
+        _inzsh_salah_cache_refresh $inzsh_spec_salah_now || { print -r -- refresh-failed; return }
+        _inzsh_salah_cache_health $inzsh_spec_salah_now
+        [[ $_inzsh_salah_cache_health_recipe == $before ]] || print -r -- "changed: $before -> $_inzsh_salah_cache_health_recipe"
+        inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+      }
+      When call stable
+      The output should eq ''
+    End
+
+    It 'reports stale when the entry was computed under the same recipe for another day'
+      stale() {
+        inzsh_spec_salah_env || return 1
+        _inzsh_salah_cache_refresh $inzsh_spec_salah_now || { print -r -- refresh-failed; return }
+        inzsh_spec_salah_entry || { print -r -- no-entry; return }
+        local file=$REPLY
+        local seed=${_inzsh_salah_table[key]#*|}
+        _inzsh_salah_table[key]="2026-5-29|$seed"
+        _inzsh_salah_table[day]='2026-5-29'
+        _inzsh_salah_cache_write "$file" || { print -r -- write-failed; return }
+
+        _inzsh_salah_cache_health $inzsh_spec_salah_now
+        local -a bad=()
+        [[ $REPLY == stale ]]                      || bad+="reply=$REPLY"
+        [[ -n $_inzsh_salah_cache_health_recipe ]] || bad+=no-recipe
+        print -rl -- $bad
+        inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+      }
+      When call stale
+      The output should eq ''
+    End
+
+    It 'reports mismatch when the entry was computed under a different recipe entirely'
+      mismatch() {
+        inzsh_spec_salah_env || return 1
+        _inzsh_salah_cache_refresh $inzsh_spec_salah_now || { print -r -- refresh-failed; return }
+        inzsh_spec_salah_entry || { print -r -- no-entry; return }
+        local file=$REPLY
+        local day=${_inzsh_salah_table[key]%%|*}
+        _inzsh_salah_table[key]="$day|10.0000|20.0000|+0000|OTHER asr:1"
+        _inzsh_salah_cache_write "$file" || { print -r -- write-failed; return }
+
+        _inzsh_salah_cache_health $inzsh_spec_salah_now
+        local -a bad=()
+        [[ $REPLY == mismatch ]]                   || bad+="reply=$REPLY"
+        [[ -n $_inzsh_salah_cache_health_recipe ]] || bad+=no-recipe
+        print -rl -- $bad
+        inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+      }
+      When call mismatch
+      The output should eq ''
+    End
+
+    Describe 'an entry that cannot be trusted, reported as unreadable rather than as a failure'
+      # $1 what to do to the file; $2 the fault it stands for.
+      Parameters
+        'print -r -- junk > $file'                                   'garbage'
+        ': > $file'                                                  'an empty file'
+        'inzsh_spec_salah_edit "$file" "s/^version.*/version	9/"'  'a future format'
+        'chmod 000 $file'                                            'a file that cannot be read'
+      End
+
+      It "reports unreadable for $2"
+        damaged() {
+          inzsh_spec_salah_env || return 1
+          _inzsh_salah_cache_refresh $inzsh_spec_salah_now || { print -r -- refresh-failed; return }
+          inzsh_spec_salah_entry || { print -r -- no-entry; return }
+          local file=$REPLY
+
+          eval "$1"
+
+          _inzsh_salah_cache_health $inzsh_spec_salah_now
+          local -a bad=()
+          [[ $REPLY == unreadable ]]                 || bad+="reply=$REPLY"
+          [[ -n $_inzsh_salah_cache_health_recipe ]] || bad+=no-recipe
+          print -rl -- $bad
+          chmod 644 "$file" 2>/dev/null
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+        When call damaged "$1"
+        The output should eq ''
+      End
+    End
+
+    It 'never returns failure, whatever it finds'
+      resilient() {
+        inzsh_spec_salah_env || return 1
+        local -a bad=()
+        _inzsh_salah_cache_health $inzsh_spec_salah_now || bad+=no-position
+        typeset -g INZSH_SALAH_LAT= INZSH_SALAH_LON=
+        _inzsh_salah_cache_health $inzsh_spec_salah_now || bad+=missing
+        print -rl -- $bad
+        inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+      }
+      When call resilient
+      The output should eq ''
+      The stderr should eq ''
+    End
+
+    # The whole point. Every state above, checked in one place for the one thing that must never
+    # be true of any of them: that the printed recipe carries the position it was hashed from.
+    It 'never lets the recipe digest carry a coordinate'
+      opaque() {
+        inzsh_spec_salah_env || return 1
+        local -a bad=()
+
+        _inzsh_salah_cache_health $inzsh_spec_salah_now
+        [[ $_inzsh_salah_cache_health_recipe == *21.4225* || \
+           $_inzsh_salah_cache_health_recipe == *39.8262* ]] && bad+=missing
+
+        _inzsh_salah_cache_refresh $inzsh_spec_salah_now || { print -r -- refresh-failed; return }
+        _inzsh_salah_cache_health $inzsh_spec_salah_now
+        [[ $_inzsh_salah_cache_health_recipe == *21.4225* || \
+           $_inzsh_salah_cache_health_recipe == *39.8262* ]] && bad+=current
+
+        print -rl -- $bad
+        inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+      }
+      When call opaque
+      The output should eq ''
+    End
+  End
+
+  # --------------------------------------------------------------------------------------------
   Describe 'as a file'
     It 'parses'
       syntax() { zsh -n "$SHELLSPEC_PROJECT_ROOT/lib/salah/cache.zsh"; }
@@ -706,6 +888,24 @@ Describe 'the day cache'
       }
       When call unloaded
       The output should eq ''
+      The stderr should eq ''
+    End
+
+    # `_inzsh_salah_cache_health` is the one entry point above that is a diagnostic rather than
+    # part of the render path, and its contract is the opposite of its neighbours': it must
+    # NEVER report failure, standalone load included. `_inzsh_salah_location` missing is exactly
+    # the "no position" case it already reports for a configured shell, so the honest answer here
+    # is the same word, not a status-1 refusal.
+    It 'reports none, at status 0, when sourced alone without the location it depends on'
+      standalone() {
+        zsh -f -c '
+          source "$1/lib/salah/cache.zsh"
+          _inzsh_salah_cache_health 1780315200
+          print -r -- "status=$? reply=$REPLY recipe=$_inzsh_salah_cache_health_recipe"
+        ' inzsh-salah-cache-health-standalone "$SHELLSPEC_PROJECT_ROOT" < /dev/null
+      }
+      When call standalone
+      The output should eq 'status=0 reply=none recipe='
       The stderr should eq ''
     End
 

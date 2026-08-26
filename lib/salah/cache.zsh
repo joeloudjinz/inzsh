@@ -527,3 +527,156 @@ _inzsh_salah_cache_refresh() {
 
   return 0
 }
+
+# --------------------------------------------------------------------------------------------
+# Diagnostics
+#
+# `_inzsh_salah_cache_health [epoch]` — issue #229. `inzsh doctor` reports where the POSITION
+# came from; it says nothing about the TABLE computed from it, and a blank prayer segment gives
+# a reader nothing to act on beyond that. This answers the three questions a bug reporter
+# actually needs: is a table cached, for which recipe, and how stale.
+#
+# READ-ONLY, ON PURPOSE. `_inzsh_salah_cache_refresh` above is the function that may compute and
+# write — it is what the segment's own hook calls, and calling it from a diagnostic would make
+# running `inzsh doctor` have a side effect nobody asked for, exactly the reason `inzsh doctor`
+# calls `_inzsh_salah_location` rather than `_inzsh_salah_locate_refresh` for the position. This
+# never touches `_inzsh_salah_table`, never computes a table, and never writes a file — it looks
+# at whatever is already on disk, the same way every other row in the doctor block re-asks its
+# question at call time instead of trusting what a hook filled in earlier.
+#
+# COORDINATES NEVER LEAVE, the same rule `lib/salah/location.zsh` and `lib/core/doctor.zsh` keep,
+# and it is the reason this does not print `_inzsh_salah_key` or `_inzsh_salah_seed` — both hold
+# the latitude and longitude in plain text, because the key is built to be COMPARED, not shown.
+# What answers "for which recipe key" instead is `_inzsh_salah_cache_key` run over the seed — the
+# identical one-way hash `_inzsh_salah_cache_path` already uses to keep a coordinate out of a
+# filename. Reusing it here rather than inventing a second scheme means the digest a reader sees
+# beside `table:` is the same eight characters as the entry's own name on disk.
+#
+# REPLY is one word, cheapest fact first:
+#
+#   none         no position is resolved, so there is no recipe to look for. Not an error — the
+#                segment has nothing to draw either, and this says why.
+#   missing      a position and a recipe are both known, and no entry has ever been written for
+#                that recipe's hash — a fresh location, a fresh method, or a cleared cache.
+#   unreadable   an entry sits at that hash and cannot be trusted: the format version does not
+#                match what this file writes, or a moment in it does not parse. Covers a
+#                truncated write, a hand-edited file, and an empty one alike — none of them get a
+#                more specific word, because none of them can be told apart from a stranger's
+#                edit, and a diagnostic that guessed would be worse than one that didn't.
+#   stale        the entry parses cleanly and was computed under the SAME recipe, for a day that
+#                is not today's — the ordinary case of a shell that has not opened since.
+#   mismatch     the entry parses cleanly but was computed under a DIFFERENT recipe — a position
+#                that moved, a method or Asr school that changed, an offset that was nudged. Age
+#                alone cannot see this: an entry written five minutes ago under yesterday's method
+#                is wrong in a way an entry written five days ago under today's method is not.
+#   current      the entry matches today and matches the recipe in force. This is what the
+#                segment itself would read right now, with nothing left to compute.
+#
+# `_inzsh_salah_cache_health_recipe` carries the digest for whichever recipe the CURRENT
+# configuration would look for, set whenever a position resolves — even for `missing`, where it
+# names the recipe nothing has been cached under yet. Empty only for `none`, where there is no
+# recipe to name.
+#
+# Always returns 0. A diagnostic that could fail is a diagnostic nobody could run in the broken
+# environment it exists to describe, and every branch below ends on an honest word instead.
+_inzsh_salah_cache_health() {
+  emulate -L zsh
+  setopt extended_glob
+
+  typeset -g _inzsh_salah_cache_health_recipe=
+
+  # No default of its own: `_inzsh_salah_cache_refresh` above is the one place this file reads
+  # `EPOCHSECONDS`, and a second place would be a second clock a fixture could not pin. The one
+  # caller this has — `inzsh doctor` — already reads it for `_inzsh_salah_location` and passes
+  # the same reading on.
+  local now=$1
+
+  # `REPLY` IS SET LAST ON EVERY PATH BELOW, NEVER FIRST. `_inzsh_salah_location` and
+  # `_inzsh_salah_cache_path` both answer in REPLY themselves, so setting this function's own
+  # word before calling either of them only means the call throws the word away a moment later —
+  # every early return here waits until nothing that touches REPLY runs again before it.
+  if (( ! ${+functions[_inzsh_salah_location]} )); then
+    typeset -g REPLY=none
+    return 0
+  fi
+  if ! _inzsh_salah_location "$now"; then
+    typeset -g REPLY=none
+    return 0
+  fi
+  local -a where=(${=REPLY})
+  if (( ${#where} != 2 )); then
+    typeset -g REPLY=none
+    return 0
+  fi
+
+  if ! _inzsh_salah_cache_keys "$now" "${where[1]}" "${where[2]}"; then
+    typeset -g REPLY=none
+    return 0
+  fi
+  local key=$_inzsh_salah_key seed=$_inzsh_salah_seed
+
+  _inzsh_salah_cache_key "$seed"
+  typeset -g _inzsh_salah_cache_health_recipe=$REPLY
+
+  # `_inzsh_salah_cache_path` answers in REPLY too, so it has to run BEFORE the status word is
+  # set rather than after — setting `REPLY=missing` first and calling this second silently threw
+  # the word away with every entry that turned out to be readable.
+  local file=
+  _inzsh_salah_cache_path "$seed" && file=$REPLY
+
+  typeset -g REPLY=missing
+  [[ -n $file && -e $file ]] || return 0
+
+  if [[ ! -f $file || ! -r $file ]]; then
+    typeset -g REPLY=unreadable
+    return 0
+  fi
+
+  _inzsh_salah_slots || { typeset -g REPLY=unreadable; return 0 }
+  local -a slots=("${reply[@]}")
+
+  local -A raw
+  local line k v
+  while IFS= read -r line; do
+    [[ $line == *$'\t'* ]] || continue
+    k=${line%%$'\t'*}
+    v=${line#*$'\t'}
+    [[ $k == [a-z][a-z0-9_]# ]] || continue
+    raw[$k]=$v
+  done < "$file" 2>/dev/null
+
+  if [[ ${raw[version]-} != $_inzsh_salah_cache_version ]]; then
+    typeset -g REPLY=unreadable
+    return 0
+  fi
+
+  local absent=${_inzsh_salah_absent:-none}
+  local slot value
+  for slot in "${slots[@]}"; do
+    value=${raw[$slot]-}
+    [[ $value == (|-)<-> || $value == $absent ]] || {
+      typeset -g REPLY=unreadable
+      return 0
+    }
+  done
+
+  local stored=${raw[key]-}
+  [[ -n $stored ]] || { typeset -g REPLY=unreadable; return 0 }
+
+  if [[ $stored == $key ]]; then
+    typeset -g REPLY=current
+    return 0
+  fi
+
+  # Everything after the first `|` is the seed — position, offset and recipe — and everything
+  # before it is the day. Comparing just the seed is what tells "computed for yesterday" apart
+  # from "computed somewhere else, some other way", without ever comparing the day two entries
+  # might disagree on for reasons that have nothing to do with staleness.
+  if [[ ${stored#*|} == ${key#*|} ]]; then
+    typeset -g REPLY=stale
+  else
+    typeset -g REPLY=mismatch
+  fi
+
+  return 0
+}
