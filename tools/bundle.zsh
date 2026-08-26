@@ -18,6 +18,12 @@
 # rather than a number written here: `INZSH_BUNDLE_VERSION`, set by the release workflow's
 # `prepare` step to the exact tag semantic-release just decided (see docs/releasing.md), unset
 # everywhere else so a local `make bundle` still honestly says `source`.
+#
+# `INZSH_BUNDLE_VERSION` carries the theme's prefix without being a registered knob: it is a
+# build input read once by this script, never by anything on the render path, and nobody sets
+# it in a `.zshrc`. It is exempt from `config_registry_spec.sh`'s scan on purpose — that scan
+# covers `lib/` and the entry point, never `tools/` — and this paragraph is the reason, not an
+# oversight.
 emulate -L zsh
 setopt err_exit no_unset pipe_fail extended_glob
 
