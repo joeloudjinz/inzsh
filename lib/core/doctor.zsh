@@ -206,10 +206,25 @@ _inzsh_doctor_near_miss() {
   (( ${+_inzsh_config_validators} )) || return 1
 
   local -i threshold=${_inzsh_doctor_near_miss_threshold:-2}
-  local -i best=$(( threshold + 1 )) dist cap
+  local -i namelen=${#name}
+  local -i best=$(( threshold + 1 )) dist cap lendiff
   local candidate best_name=
 
   for candidate in ${(ko)_inzsh_config_validators} ${(ko)_inzsh_config_family_validators}; do
+    # A PLAIN name's distance can never be smaller than the gap between its length and `$1`'s —
+    # nothing closes a length gap for free — so a candidate too far off in length is skipped
+    # before the DP runs at all. This is where the cost in issue #228's review actually was: most
+    # `INZSH_*` variables anyone sets are unrelated to the registry, so the expensive path was
+    # the COMMON one. A FAMILY pattern gets no such shortcut — its wildcard absorbs any amount of
+    # extra length for nothing, so `INZSH_GIT_RANK` (14 characters) is 0 away from `INZSH_*_RANK`
+    # (12) despite a length gap this check would otherwise refuse on sight. There are only 6
+    # families against 23 names today, so paying the DP for all of them regardless costs little.
+    if [[ $candidate != *'*'* ]]; then
+      lendiff=$(( ${#candidate} - namelen ))
+      (( lendiff < 0 )) && lendiff=$(( -lendiff ))
+      (( lendiff > threshold )) && continue
+    fi
+
     _inzsh_doctor_distance "$candidate" "$name"
     dist=$REPLY
     _inzsh_doctor_cap "$candidate"
@@ -242,7 +257,7 @@ _inzsh_doctor_near_miss() {
 #
 #   an empty value        set-but-empty is UNSET at every level of this theme, so an
 #                         `INZSH_DIR_BG=` left in a zshrc is falling through by design.
-#   an unregistered name  there is no vocabulary to state FOR THIS FUNCTION - this list stays
+#   an unregistered name  there is no vocabulary to state FOR THIS FUNCTION — this list stays
 #                         exactly what its name says, values the registry recognises and
 #                         refuses. Issue #228 closes the harder half of that gap without
 #                         widening this one: `_inzsh_doctor_near_misses`, below, answers the
@@ -277,11 +292,18 @@ _inzsh_doctor_ignored() {
 }
 
 # Every `INZSH_` variable that is SET, that the registry has never heard of, and that sits close
-# enough to a registered name or family to be worth a guess — sorted, in `reply`. The other half
-# of issue #228, and deliberately a SEPARATE list from `_inzsh_doctor_ignored`'s rather than a
-# widening of it: that function answers "the registry recognised this and refused it", this one
-# answers "the registry never recognised this at all, but it looks like it meant to" — two
-# different diagnoses, so two different reads over the same `INZSH_*` listing.
+# enough to a registered name or family to be worth a guess — `knob` then `suggestion`, one pair
+# per row, in `reply`. The other half of issue #228, and deliberately a SEPARATE list from
+# `_inzsh_doctor_ignored`'s rather than a widening of it: that function answers "the registry
+# recognised this and refused it", this one answers "the registry never recognised this at all,
+# but it looks like it meant to" — two different diagnoses, so two different reads over the same
+# `INZSH_*` listing.
+#
+# The pair, not the bare name, is the point: `_inzsh_doctor_near_miss` runs a full edit-distance
+# scan of the registry per candidate, and `_inzsh_doctor`'s render loop needs the very suggestion
+# this walk already computed. Handing back only the name would make the caller run that scan a
+# second time purely to recover an answer this function already had and threw away — the same
+# cost paid twice for one result.
 #
 # An empty value is skipped for the same reason `_inzsh_doctor_ignored` skips one: set-but-empty
 # is unset at every level of this theme, and a blank left in a zshrc is not a typo to chase.
@@ -302,7 +324,7 @@ _inzsh_doctor_near_misses() {
     spec=$REPLY
     [[ -z $spec ]] || continue
     _inzsh_doctor_near_miss "$knob" || continue
-    reply+=$knob
+    reply+=("$knob" "$REPLY")
   done
 
   return 0
@@ -442,14 +464,22 @@ _inzsh_doctor() {
   # The tail differs on purpose: `accepts X` names a whole vocabulary the value could have been
   # from; `probably X` names one specific name the KNOB itself could have been, which is the more
   # honest claim this function is actually able to make.
+  #
+  # `reply` is read here as `knob` `suggestion` pairs, not re-derived — `_inzsh_doctor_near_miss`
+  # is not called again. It already ran once inside `_inzsh_doctor_near_misses`, and that walk is
+  # the expensive one; asking it a second time per row would double the cost of this section for
+  # nothing it does not already know.
   local -a misses
   _inzsh_doctor_near_misses
   misses=("${reply[@]}")
-  for knob in $misses; do
+  local suggestion
+  local -i idx
+  for (( idx = 1; idx <= ${#misses}; idx += 2 )); do
+    knob=${misses[idx]}
+    suggestion=${misses[idx+1]}
     value=${${(P)knob}//[[:cntrl:]]/ }
     (( ${#value} > 24 )) && value="${value[1,23]}…"
-    _inzsh_doctor_near_miss "$knob"
-    _inzsh_doctor_row ignored "$knob=$value - probably $REPLY"
+    _inzsh_doctor_row ignored "$knob=$value - probably $suggestion"
   done
 
   # Where the prayer segment's position came from — never where it is. Omitted entirely when
