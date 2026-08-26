@@ -34,9 +34,18 @@ ignored       INZSH_SEPARATOR_STYLE=rounded - accepts arrow · round · divider
 ```
 
 That section is absent when everything you have set is valid, so a clean shell says nothing.
-A misspelled variable *name* cannot be listed — there is no vocabulary to state, and nothing in
-a shell can tell a typo from a variable that was never ours — so `inzsh-knobs` in the
-[playground](../tools/playground.zsh) (`make play`) is where you check a name.
+
+A misspelled variable *name* has nothing to validate against, but if it sits close enough to a
+name the registry does know, `inzsh doctor` says so rather than staying silent about it:
+
+```
+ignored       INZSH_SEPARATOR_STYL=round - probably INZSH_SEPARATOR_STYLE
+```
+
+A name that is not close to anything registered stays unreported — there is still no vocabulary
+to state for one this theme has never heard of — so `inzsh-knobs` in the
+[playground](../tools/playground.zsh) (`make play`) is where you check a name the doctor stayed
+quiet about.
 
 **Read at render time.** Values are read fresh on every prompt, never cached at load. Change a
 variable at the command line and the next prompt reflects it — no re-source, no new shell. One
