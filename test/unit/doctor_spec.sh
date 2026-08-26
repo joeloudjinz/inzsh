@@ -832,6 +832,8 @@ Describe 'inzsh doctor'
     End
 
     It 'reports denied for an entry it cannot read'
+      Skip if 'root bypasses permission bits, so chmod 000 cannot provoke a refusal' \
+        inzsh_spec_is_root
       denied() {
         inzsh_spec_doctor_salah_env || return 1
         {

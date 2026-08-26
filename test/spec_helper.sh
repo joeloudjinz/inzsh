@@ -14,6 +14,18 @@ inzsh_spec_bytes_not_cells() {
   [ ${#sample} -ne 1 ]
 }
 
+# The root guard, for `Skip if`. `[[ -r $f ]]` and `[[ -x $dir ]]` read TRUE for root whatever a
+# file's mode says — root bypasses permission bits entirely — so an example that provokes a
+# mode-based refusal (`denied`, `nodir`) cannot hold under a root shell. This is the ordinary
+# case for a CI job that runs inside a container, which runs as root unless told otherwise, and
+# is why `zsh-floor` (the one job in the matrix that runs in a container) failed where the other
+# eight did not. One copy here for the same reason `inzsh_spec_bytes_not_cells` is: it is one
+# fact, asked by more than one spec file.
+inzsh_spec_is_root() {
+  emulate -L zsh
+  (( EUID == 0 ))
+}
+
 # --------------------------------------------------------------------------------------------
 # The salah fixture — a scratch cache directory, an injected clock and the neutral Mecca
 # position — shared by every spec that exercises `lib/salah/cache.zsh` from either side: the

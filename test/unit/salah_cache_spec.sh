@@ -847,6 +847,8 @@ Describe 'the day cache'
     # `unreadable` is not — a permissions fix versus an upgrade — so each keeps its own word
     # rather than folding into the parse-failure catch-all above.
     It 'reports denied for a file that exists and cannot be read'
+      Skip if 'root bypasses permission bits, so chmod 000 cannot provoke a refusal' \
+        inzsh_spec_is_root
       denied() {
         inzsh_spec_salah_env || return 1
         {
@@ -957,6 +959,8 @@ Describe 'the day cache'
       End
 
       It 'reports nodir, not the valid entry inside, when the directory cannot be searched'
+        Skip if 'root bypasses permission bits, so chmod 000 cannot provoke a refusal' \
+          inzsh_spec_is_root
         mode_000() {
           inzsh_spec_salah_env || return 1
           {
@@ -979,6 +983,8 @@ Describe 'the day cache'
       # still pass that example. `chmod 111` and `chmod 444` each hold one half up and take the
       # other away, and both must still read `nodir`.
       It 'reports nodir when the directory can be searched but not read'
+        Skip if 'root bypasses permission bits, so chmod 111 cannot provoke a refusal' \
+          inzsh_spec_is_root
         mode_111() {
           inzsh_spec_salah_env || return 1
           {
@@ -997,6 +1003,8 @@ Describe 'the day cache'
       End
 
       It 'reports nodir when the directory can be read but not searched'
+        Skip if 'root bypasses permission bits, so chmod 444 cannot provoke a refusal' \
+          inzsh_spec_is_root
         mode_444() {
           inzsh_spec_salah_env || return 1
           {

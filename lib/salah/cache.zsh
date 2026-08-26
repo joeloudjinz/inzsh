@@ -705,6 +705,14 @@ _inzsh_salah_cache_path_probe() {
 #   missing      the directory is fine and nothing has ever been written under today's recipe.
 #   denied       an entry sits at that path and this process cannot read it — a permissions
 #                problem, not a format one.
+#
+# NEITHER `nodir` NOR `denied` IS REACHABLE FOR A ROOT SHELL. `-r`, `-x` and `-w` read true for
+# root whatever a file's or directory's mode says — permission bits are advisory to root, not
+# enforced — so nothing this function can `chmod` away from itself will ever make either branch
+# fire while running as root. Worth knowing for whoever runs InZsh from a root shell: the two
+# states this diagnostic has for "I cannot get to it" simply do not exist there, and a permission
+# problem that a normal user would see as `denied` or `nodir` will read as whatever the entry
+# actually contains instead.
 #   future       an entry sits at that path with a format VERSION that is not this file's own —
 #                in a project that has only ever shipped version 1, the honest reading is that a
 #                newer InZsh wrote it, and this one should not guess at what else changed.
