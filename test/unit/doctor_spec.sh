@@ -88,8 +88,8 @@ Describe 'the near-miss matcher (issue #228)'
 
     # The example the issue names directly. Measured on its own two rows up, `INZSH_*_BG` sits
     # only 2 from this name once the wildcard is credited for swallowing the middle of it — a
-    # flat house threshold of 2 would have reported it. `_inzsh_doctor_family_cap` is what keeps
-    # a three-letter family suffix from being read that generously, which is why this name stays
+    # flat house threshold of 2 would have reported it. `_inzsh_doctor_cap` is what keeps a
+    # three-letter discriminant from being read that generously, which is why this name stays
     # silent rather than becoming a false "probably".
     It 'refuses a name that only looks close once a family wildcard is credited too much'
       When call _inzsh_doctor_near_miss INZSH_MY_OWN_THING
@@ -99,6 +99,37 @@ Describe 'the near-miss matcher (issue #228)'
 
     It 'refuses an empty name'
       When call _inzsh_doctor_near_miss ''
+      The status should be failure
+      The variable REPLY should eq ''
+    End
+
+    # The cap is not only a family concern. `INZSH_PS2` is discriminated by `PS2` alone, three
+    # characters same as `_BG` — and the theme SHIPS an `ssh` segment, so a user turning it off
+    # with `INZSH_SSH=0` is doing a wholly ordinary thing, not typing `INZSH_PS2` badly. Without
+    # `_inzsh_doctor_cap` applying to plain names too, all three of these read as "probably
+    # INZSH_PS2" at the flat threshold; capped at 1, none of them clear it.
+    Parameters
+      INZSH_SSH
+      INZSH_ZSH
+      INZSH_OS
+    End
+
+    It "does not read $1 as a near miss of a short registered name"
+      When call _inzsh_doctor_near_miss "$1"
+      The status should be failure
+      The variable REPLY should eq ''
+    End
+
+    # Pins the threshold itself. Both examples are one mutation of `2` away from flipping: at 1,
+    # the transposition below stops reporting; at 3, the truncated name below starts to.
+    It 'reports a transposition sitting exactly at the threshold'
+      When call _inzsh_doctor_near_miss INZSH_SEPARATOR_SYTLE
+      The status should be success
+      The variable REPLY should eq 'INZSH_SEPARATOR_STYLE'
+    End
+
+    It 'stays silent one edit past the threshold'
+      When call _inzsh_doctor_near_miss INZSH_SEPARATOR_ST
       The status should be failure
       The variable REPLY should eq ''
     End

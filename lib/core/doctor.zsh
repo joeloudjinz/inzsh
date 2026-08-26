@@ -121,9 +121,9 @@ _inzsh_doctor_distance() {
 }
 
 # How close is `$1` allowed to sit to a registered shape before `_inzsh_doctor_near_miss` will
-# say so? Two, chosen against the registry as it actually reads today (`make doctor` prints
-# `${#_inzsh_config_validators}` names and `${#_inzsh_config_family_validators}` families — low
-# forties and single digits), not against an abstract worst case:
+# say so? Two, chosen against the registry `make doctor` actually loads — `tools/doctor.zsh`
+# sources config, detect and the salah library, then calls `_inzsh_config_absorb_all`, which
+# today comes to 23 names and 6 families — not against an abstract worst case:
 #
 #   INZSH_SEPARATOR_STYL   -> INZSH_SEPARATOR_STYLE   distance 1 (one letter short)
 #   INZSH_GIT_RANNK        -> INZSH_*_RANK            distance 1 (one letter too many)
@@ -132,39 +132,47 @@ _inzsh_doctor_distance() {
 #
 # every one of those is a single slipped key, and 2 leaves room for a transposition (two
 # substitutions in plain Levenshtein) without opening the door much wider. `INZSH_MY_OWN_THING`,
-# the example the issue asks to stay silent, sits 14 away from its nearest registered NAME — comes
-# nowhere close. A short name narrows how much distance 2 actually means in practice — two edits
-# against `INZSH_PS2`'s three meaningful letters is most of the word — and this file accepts that:
-# a wrong guess still shows the value it was made against, so it reads as a hint offered alongside
-# the truth rather than a correction standing in for it.
+# the example the issue asks to stay silent for, sits 10 away from its nearest registered NAME
+# (`INZSH_COLOR_DEPTH`) — comes nowhere close. A flat number this small still over-reaches on a
+# SHORT name, which `_inzsh_doctor_cap`, right below, exists to bound properly rather than wave
+# off.
 typeset -g _inzsh_doctor_near_miss_threshold=2
 
-# The one case the flat threshold above gets wrong on its own: a FAMILY's discriminating text can
-# be shorter than the threshold once the wildcard is discounted. `INZSH_*_BG` is nine literal
-# characters, but six of them are `INZSH_`, which every candidate here already starts with by
-# construction — `_inzsh_doctor_near_misses` only ever calls this on names `${(I)INZSH_*}` matched
-# in the first place — so the part actually doing any discriminating is `_BG`, three characters.
-# Measured against the real registry: `INZSH_MY_OWN_THING`, the name the issue asks to stay silent
-# for, sits exactly 2 from `INZSH_*_BG` — the wildcard swallows most of it for free and the last
-# three letters happen to half-rhyme with `_BG` under substitution. A flat threshold of 2 would
-# have reported it. So a family's cap is the SHORTER of the house threshold and half its own
-# discriminating length: `INZSH_*_BG` (3 literal characters after the shared prefix) is capped at
-# 1, `INZSH_*_RANK` (5) stays at the house threshold. The RANK and MINCOLS examples above still
-# pass comfortably under their own caps; the BG one no longer passes at all.
+# The flat threshold above is too generous once a candidate's DISCRIMINATING length — what is
+# left once `INZSH_` and, for a family, its one `*` are set aside — gets short. Every candidate
+# here already starts with `INZSH_` by construction (`_inzsh_doctor_near_misses` only ever calls
+# in on names `${(I)INZSH_*}` matched first), so those six characters do no discriminating at
+# all; a family's wildcard does none either, since it is credited for swallowing whatever sits
+# there for free. `INZSH_*_BG` is left with `_BG`, three characters, to tell it apart from
+# anything else. Measured against the real registry: `INZSH_MY_OWN_THING`, the name the issue
+# asks to stay silent for, sat exactly 2 from `INZSH_*_BG` under the flat threshold — the
+# wildcard swallowed the rest of it for free, and what was left half-rhymed with `_BG` under
+# substitution. The same failure reaches PLAIN names too, not only families, once they are this
+# short: `INZSH_PS2` is discriminated by `PS2` alone, and `INZSH_SSH`, `INZSH_ZSH`, `INZSH_OS`
+# all sat within a flat 2 of it despite naming nothing this theme has ever registered — and
+# `INZSH_SSH` is the sharp case, because the theme SHIPS an `ssh` segment, so a user disabling it
+# is not a typo of anything, and being told they misspelled `INZSH_PS2` is simply wrong.
 #
-# `$1` is a registered family PATTERN, always `INZSH_` plus exactly one more literal run plus one
-# `*` — `_inzsh_config_register_family` refuses anything else — so trimming the leading `INZSH_`
-# and the one wildcard character off its length is enough; no case analysis on where the `*` sits.
-_inzsh_doctor_family_cap() {
+# So the cap is the SHORTER of the house threshold and half the discriminating length: `_BG` (3
+# characters) and `PS2` (3, once the shared prefix is set aside) both cap at 1; `_RANK` (5) and
+# most ordinary names stay at the house threshold of 2.
+#
+# The trade-off this buys is worth stating rather than hiding: a transposition costs 2 in plain
+# Levenshtein, so a cap of 1 refuses one — `INZSH_DIR_GB` for `INZSH_DIR_BG`, `INZSH_SP2` for
+# `INZSH_PS2`. Measured against the full registry, every miss this cap introduces is exactly that
+# shape — a transposed three-character discriminant — and nothing broader. The alternative was a
+# demonstrated false positive on a name the theme ships, so this is accepted on purpose: a
+# transposed three-letter tail going unreported is a narrower loss than the diagnostic getting a
+# user's own segment knob wrong.
+_inzsh_doctor_cap() {
   emulate -L zsh
 
-  typeset -g REPLY=${_inzsh_doctor_near_miss_threshold:-2}
-  local -i threshold=$REPLY
-  local -i literal=$(( ${#1} - 7 ))
+  local -i threshold=${_inzsh_doctor_near_miss_threshold:-2}
+  local -i literal=$(( ${#1} - 6 ))
+  [[ $1 == *'*'* ]] && (( literal-- ))
   local -i cap=$(( (literal - 1) / 2 ))
 
   (( cap > threshold )) && cap=$threshold
-  (( cap < 0 )) && cap=0
   typeset -g REPLY=$cap
 
   return 0
@@ -174,6 +182,10 @@ _inzsh_doctor_family_cap() {
 # worth a guess; status 1 with REPLY empty otherwise. `$1` is never itself a registered knob —
 # `_inzsh_doctor_near_misses` only calls this once `_inzsh_config_spec_of` has already said no —
 # so every candidate here is a real alternative, never the name confirming itself.
+#
+# One loop over both shapes of candidate, singleton names and family patterns together, because
+# `_inzsh_doctor_distance` and `_inzsh_doctor_cap` already read either kind without being told
+# which they were handed — a `*` in the candidate is all the branching either of them needs.
 #
 # A family's suggestion is the pattern itself — `INZSH_*_RANK`, verbatim — rather than a guessed
 # concrete name such as `INZSH_GIT_RANK`. This file cannot know which segment the user meant any
@@ -197,28 +209,20 @@ _inzsh_doctor_near_miss() {
   local -i best=$(( threshold + 1 )) dist cap
   local candidate best_name=
 
-  for candidate in ${(ko)_inzsh_config_validators}; do
+  for candidate in ${(ko)_inzsh_config_validators} ${(ko)_inzsh_config_family_validators}; do
     _inzsh_doctor_distance "$candidate" "$name"
     dist=$REPLY
-    (( dist < best )) || continue
-    best=dist
-    best_name=$candidate
-  done
-
-  for candidate in ${(ko)_inzsh_config_family_validators}; do
-    _inzsh_doctor_distance "$candidate" "$name"
-    dist=$REPLY
-    _inzsh_doctor_family_cap "$candidate"
+    _inzsh_doctor_cap "$candidate"
     cap=$REPLY
     (( dist <= cap && dist < best )) || continue
     best=dist
     best_name=$candidate
   done
 
-  # `REPLY` is a shared name — `_inzsh_doctor_distance` and `_inzsh_doctor_family_cap` both write
-  # it on every call inside the loops above, so by the time the loops are done it holds whatever
-  # the LAST candidate left there, not this function's own answer. It is set explicitly here
-  # either way rather than trusted to still hold the empty string from the top of this function.
+  # `REPLY` is a shared name — `_inzsh_doctor_distance` and `_inzsh_doctor_cap` both write it on
+  # every call inside the loop above, so by the time the loop is done it holds whatever the LAST
+  # candidate left there, not this function's own answer. It is set explicitly here either way
+  # rather than trusted to still hold the empty string from the top of this function.
   typeset -g REPLY=
   (( best <= threshold )) || return 1
   typeset -g REPLY=$best_name
