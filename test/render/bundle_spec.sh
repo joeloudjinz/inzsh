@@ -133,6 +133,27 @@ Describe 'the bundle'
       The stderr should eq ''
     End
 
+    # `entrypoint_spec.sh`'s equivalent example, held against the artifact rather than the
+    # entry point it is a drop-in for — same reason, same leaked set, `_inzsh_version` included.
+    It 'leaves the shell exactly as it found it — no functions, no roles, no PROMPT'
+      inert() {
+        zsh -f -c '
+          local before=$PROMPT
+          source "$1"
+          local -a leaked=()
+          [[ $PROMPT == $before ]]                   || leaked+=PROMPT
+          (( ${+functions[_inzsh_tokens_resolve]} )) && leaked+=functions
+          (( ${+_inzsh_role} ))                      && leaked+=roles
+          (( ${+_inzsh_color_depth} ))               && leaked+=depth
+          (( ${+_inzsh_theme_root} ))                && leaked+=root
+          (( ${+_inzsh_version} ))                   && leaked+=version
+          print -r -- "${leaked[*]}"
+        ' inzsh-bundle-inert "$(inzsh_spec_bundle)"
+      }
+      When call inert
+      The output should eq ''
+    End
+
     It 'loads the library and resolves the roles in an interactive shell'
       loaded() {
         zsh -f -i -c '
