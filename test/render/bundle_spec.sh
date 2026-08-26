@@ -11,7 +11,11 @@
 inzsh_spec_bundle() {
   local out=$SHELLSPEC_TMPBASE/inzsh-bundle.zsh-theme
   if [[ ! -s $out ]]; then
-    zsh -f "$SHELLSPEC_PROJECT_ROOT/tools/bundle.zsh" "$out" >/dev/null 2>&1 || return 1
+    # `INZSH_BUNDLE_VERSION=` overrides whatever the invoking shell happens to have set —
+    # this build is the default-case fixture, and an ambient value from the environment
+    # sourcing this suite runs in would silently stamp a version nothing here asked for.
+    INZSH_BUNDLE_VERSION= \
+      zsh -f "$SHELLSPEC_PROJECT_ROOT/tools/bundle.zsh" "$out" >/dev/null 2>&1 || return 1
   fi
   print -r -- "$out"
 }
