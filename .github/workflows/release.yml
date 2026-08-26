@@ -1,9 +1,10 @@
 name: release
 
 # main moves only when a release cuts from dev, so a push to main *is* the release
-# trigger: verify, build the bundle, then let semantic-release read the commits
-# since the last tag, pick the version, tag it, and publish the GitHub release
-# with the bundle attached. Config lives in .releaserc.yml; flow in docs/releasing.md.
+# trigger: verify, then let semantic-release read the commits since the last tag, pick
+# the version, tag it, build the bundle stamped with that exact tag (its own `prepare`
+# step, .releaserc.yml), and publish the GitHub release with the bundle attached.
+# Config lives in .releaserc.yml; flow in docs/releasing.md.
 
 on:
   push:
@@ -47,16 +48,18 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      # Needed here, not just by semantic-release's own `prepare` step below: `make
+      # bundle` runs zsh, and that step runs inside the same job, on the same runner.
       - name: Install zsh
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
-      - name: Build the single-file bundle
-        run: make bundle
       - uses: actions/setup-node@v7
         with:
           node-version: 22
       # npx with pinned versions, no package.json — the repo is zsh and this is the
       # whole node footprint. The preset package rides along because the analyzer
-      # loads it at runtime.
+      # loads it at runtime, and @semantic-release/exec the same way for its own
+      # `prepare` step (.releaserc.yml) — the bundle is built there, after the
+      # version is decided and before the GitHub release is published, never here.
       - name: semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -64,4 +67,5 @@ jobs:
           npx --yes
           --package semantic-release@25.0.8
           --package conventional-changelog-conventionalcommits@10.2.1
+          --package @semantic-release/exec@7.1.0
           semantic-release
