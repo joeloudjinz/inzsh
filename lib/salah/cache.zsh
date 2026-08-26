@@ -54,6 +54,16 @@
 
 zmodload -i zsh/datetime
 
+# `zsh/system` supplies `$sysparams[pid]`, read fresh from the kernel every time it is
+# referenced — unlike `$$`, which zsh defines as the pid of the shell that was FIRST started,
+# and which a forked subshell inherits unchanged rather than updating. Bash gives a forked
+# subshell its own `$BASHPID` for exactly this reason; zsh has no bareword equivalent, so
+# `$sysparams[pid]` is what stands in for it. `-i` because this defines a PARAMETER rather than
+# a builtin — nothing here for a second load, or an already-loaded module, to clobber, which is
+# the same reason `zsh/datetime` above is loaded the same way and `zsh/files` below is not.
+typeset -gi _inzsh_salah_zsys=0
+zmodload -i zsh/system 2>/dev/null && _inzsh_salah_zsys=1
+
 # `zsh/files` supplies `mkdir`, `mv` and `rm` as BUILTINS, under their own `zf_` names. Loaded
 # under those names and never under the bare ones: `zmodload -F zsh/files b:rm` would replace the
 # user's `rm` with a reduced implementation for the rest of the session, and a theme that draws a
@@ -445,10 +455,33 @@ _inzsh_salah_cache_read() {
 
 # `_inzsh_salah_cache_write <entry-path>` — `_inzsh_salah_table`, atomically.
 #
-# The temporary carries the shell's pid and a random suffix, so two shells computing the same
-# morning cannot pick the same name, and it is created BESIDE the target so the rename stays
-# within one filesystem and is therefore a rename. A failed write removes its own temporary: a
-# cache directory that fills with half-written entries is worse than one that is empty.
+# The temporary is created BESIDE the target so the rename stays within one filesystem and is
+# therefore a rename, and it must be named so that no two concurrent writers can ever pick the
+# same path. A failed write removes its own temporary: a cache directory that fills with
+# half-written entries is worse than one that is empty.
+#
+# THE NAME IS BUILT FROM `$sysparams[pid]` WHEN `zsh/system` LOADED, NOT FROM `$$`. Several
+# shells waking up on the same morning (the "twenty writers" spec) each background a call to
+# this function with `&`, which forks a subshell per writer from the SAME parent — and `$$`
+# names the parent in every one of those subshells, unchanged by the fork. Worse, a forked
+# subshell also inherits the parent's `$RANDOM` generator state rather than reseeding it, so the
+# FIRST `$RANDOM` draw after a fork is identical across every sibling of the same parent: `$$`
+# and `$RANDOM` together give twenty writers the same name, deterministically, not by chance.
+# `$sysparams[pid]` has neither problem — it is read from the kernel at the moment it is
+# referenced, so every fork sees its own real, distinct number, GUARANTEED unique rather than
+# merely likely to be, and alone is enough to keep two writers apart.
+#
+# Where `zsh/system` could not be loaded — some minimal build missing the module, the one case
+# `_inzsh_salah_zsys` is 0 for — there is no per-fork identifier left that a fork holds
+# distinct, so this reaches for `$EPOCHREALTIME` instead: the one thing forking does NOT leave
+# identical across siblings is the wall-clock instant each one actually runs at. `zsh/datetime`
+# is already loaded above for the segment's own use, so this costs no new dependency. Not a
+# guarantee — two forks landing in the same microsecond still collide — but a cache write that
+# occasionally races under a module that is not there is a smaller failure than one that
+# refuses to happen at all, which is the standard every fallback in this file is held to. This
+# is also the only place outside the injected default that this file reads the live clock: see
+# the "reads the clock in exactly one place" spec, which knows about this second, narrower
+# exception and why it cannot affect what any fixture asserts.
 #
 # TWO NESTED BLOCKS, and the outer one is the point. A redirection that cannot be OPENED — the
 # cache directory removed between the `mkdir` and here — is reported by the shell BEFORE the
@@ -464,7 +497,12 @@ _inzsh_salah_cache_write() {
   _inzsh_salah_slots || return 1
   local -a slots=("${reply[@]}")
 
-  local tmp=$file.$$.$RANDOM.tmp
+  local tmp
+  if (( _inzsh_salah_zsys )); then
+    tmp=$file.${sysparams[pid]}.tmp
+  else
+    tmp=$file.$$.$EPOCHREALTIME.$RANDOM.tmp
+  fi
   local tab=$'\t'
 
   {

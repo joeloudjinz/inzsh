@@ -1152,9 +1152,13 @@ Describe 'the day cache'
       The output should eq ''
     End
 
-    It 'reads the clock in exactly one place, as a default nobody has to take'
+    It 'reads the clock in exactly two places, both nobody has to fixture around'
       # `EPOCHSECONDS` anywhere else here would mean a fixture could not pin what "now" is, and
       # every example above would be checking the sun's position at the moment the suite ran.
+      # The second place is `_inzsh_salah_cache_write`'s fallback temp name, reached only when
+      # `zsh/system` could not be loaded: it reads `$EPOCHREALTIME` for entropy to keep two
+      # forked writers from picking the same temporary, never to decide what day or table is
+      # correct, so no fixture's assertion about a computed time can be affected by it.
       clockless() {
         setopt local_options extended_glob
         local line
@@ -1166,9 +1170,10 @@ Describe 'the day cache'
         print -rl -- "${#found}" "${found[@]}"
       }
       When call clockless
-      The lines of output should eq 2
-      The line 1 of output should eq '1'
-      The line 2 of output should include 'local now=${1:-${EPOCHSECONDS-}}'
+      The lines of output should eq 3
+      The line 1 of output should eq '2'
+      The line 2 of output should include 'tmp=$file.$$.$EPOCHREALTIME.$RANDOM.tmp'
+      The line 3 of output should include 'local now=${1:-${EPOCHSECONDS-}}'
     End
 
     It 'names no `.claude` path and no absolute path from this machine'
