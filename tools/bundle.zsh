@@ -41,6 +41,7 @@ typeset -ga _inzsh_bundle_manifest=(
   lib/core/tokens.zsh
   lib/core/layout.zsh
   lib/core/engine.zsh
+  lib/core/rows.zsh
   lib/core/render.zsh
   lib/core/prompts.zsh
   lib/core/transient.zsh
