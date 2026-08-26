@@ -17,7 +17,11 @@
 #   COORDINATES NEVER LEAVE. The block exists to be pasted into a public issue, and
 #   CONTRIBUTING.md asks reporters not to include their position. `lib/salah/location.zsh`
 #   writes the PROVENANCE of the resolved position down for this reader — `config`, `cache`,
-#   or nothing — and provenance is all the doctor prints. The numbers stay on the machine.
+#   or nothing — and provenance is all the doctor prints. Issue #229 extends the same rule to
+#   the prayer TABLE computed from that position: `lib/salah/cache.zsh` answers whether an
+#   entry is cached, for which recipe and how stale, entirely in words and a one-way hash of
+#   the recipe — never the latitude and longitude the recipe is built from. The numbers stay on
+#   the machine, in both halves of the row.
 #
 # `inzsh` is the one public command the theme defines; the playground's `inzsh-*` helpers are
 # dev tooling and are not sourced by the theme. Subcommands dispatch below, so a later command
@@ -488,8 +492,9 @@ _inzsh_doctor() {
     _inzsh_doctor_row ignored "$knob=$value - probably $suggestion"
   done
 
-  # Where the prayer segment's position came from — never where it is. Omitted entirely when
-  # the salah library is not loaded: a partial load has nothing honest to say here.
+  # Where the prayer segment's position came from, and the state of the table computed from
+  # it — never the numbers behind either. Omitted entirely when the salah library is not
+  # loaded: a partial load has nothing honest to say here.
   if (( ${+functions[_inzsh_salah_location]} )); then
     if _inzsh_salah_location "${EPOCHSECONDS-}"; then
       value=$_inzsh_salah_location_source
@@ -501,6 +506,24 @@ _inzsh_doctor() {
       value=none
     fi
     _inzsh_doctor_row salah "location: $value"
+
+    # Issue #229. `_inzsh_salah_cache_health` never returns an error, so this always has a word
+    # to report — the same "recompute-never-cache" habit every other row in this block keeps.
+    # `recipe` is a digest, not the seed it was hashed from: see `lib/salah/cache.zsh` for why
+    # printing the seed itself would put a coordinate in a block meant for a public issue.
+    if (( ${+functions[_inzsh_salah_cache_health]} )); then
+      _inzsh_salah_cache_health "${EPOCHSECONDS-}"
+      local recipe=$_inzsh_salah_cache_health_recipe
+      case $REPLY in
+        (missing)    value="none (not cached, recipe $recipe)" ;;
+        (unreadable) value="unreadable (recipe $recipe)" ;;
+        (stale)      value="stale, computed for a day that is not today (recipe $recipe)" ;;
+        (mismatch)   value="stale, computed under a different recipe (now $recipe)" ;;
+        (current)    value="current, covers today (recipe $recipe)" ;;
+        (*)          value='none (no position)' ;;
+      esac
+      _inzsh_doctor_row salah "table: $value"
+    fi
   fi
 
   local note
