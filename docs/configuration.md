@@ -317,6 +317,21 @@ coordinates set and nothing ever cached, the segment is simply absent.
 | `INZSH_SALAH_AUTOLOCATE_TIMEOUT` | integer, 1–60 | `5` | The hard ceiling on the request, passed to `curl --max-time` or `wget --timeout`. Chosen against a person waiting for a terminal, not against a slow network. |
 | `INZSH_SALAH_AUTOLOCATE_URL` | an `http://` or `https://` URL returning JSON with `latitude`/`longitude` (or `lat`/`lon`) | `https://ipapi.co/json/` | Where to ask. Point it at your own service and that is where the request goes; anything that is not one of those two schemes falls back to the default, since the value reaches an external command's argument list. |
 
+### Reading the table by hand — `inzsh salah`
+
+The segment only ever draws the next moment. `inzsh salah` prints the whole day, or several:
+
+```zsh
+inzsh salah                 # today
+inzsh salah --days 7        # today and the next six
+```
+
+The header names the calculation method, the Asr school and the zone the times are shown in —
+never your position, and never anything derived from it. A prayer with no time at your latitude
+today (see *When the sun will not cooperate* in `docs/prayer-times.md`) prints `none` rather than
+a blank. With no position configured it refuses, on stderr, pointing at `INZSH_SALAH_LAT`/`LON`
+or `inzsh locate`.
+
 ### What it draws
 
 | Variable | Values | Default | Effect |
