@@ -14,6 +14,15 @@ plugins:
   # No CHANGELOG.md committed back: that would need a bot commit pushed straight to
   # main, which the branch rules forbid. The generated notes live on the GitHub
   # release itself — the releases page is the changelog.
+  #
+  # Issue #244's version constant hits the same objection — a committed number drifts
+  # from the tag or needs the same forbidden commit — so it is never written to the
+  # tree at all. This `prepare` step runs after semantic-release has picked the
+  # version but before `@semantic-release/github` publishes below, and rebuilds the
+  # bundle with that exact tag stamped into `_inzsh_version`. `dist/` is gitignored:
+  # nothing here is committed, only the asset the next step attaches.
+  - - "@semantic-release/exec"
+    - prepareCmd: "INZSH_BUNDLE_VERSION=v${nextRelease.version} make bundle"
   - - "@semantic-release/github"
     - assets:
         - path: dist/inzsh.zsh-theme
