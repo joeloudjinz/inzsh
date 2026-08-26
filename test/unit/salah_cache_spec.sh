@@ -614,6 +614,88 @@ Describe 'the day cache'
   End
 
   # --------------------------------------------------------------------------------------------
+  Describe 'the parse split leaves no trace of it on the caller — review findings N-3, N-4'
+    # Before the parse extraction, `_inzsh_salah_cache_read` never touched `REPLY` at all — it is
+    # a render-path function, and the caller here (`_inzsh_salah_cache_refresh`) captures `file`
+    # from a DIFFERENT call before this one runs, so there is no live bug — but
+    # `_inzsh_salah_cache_parse` answers in REPLY, and borrowing it without giving it back is an
+    # undocumented contract change on exactly the kind of function this file's own header warns
+    # about in capitals.
+    It "restores the caller's REPLY after a successful read"
+      preserved_ok() {
+        inzsh_spec_salah_env || return 1
+        {
+          _inzsh_salah_cache_refresh $inzsh_spec_salah_now || print -r -- refresh-failed
+          inzsh_spec_salah_entry || print -r -- no-entry
+          local file=$REPLY
+          local key=${_inzsh_salah_table[key]}
+
+          REPLY=untouched-marker
+          _inzsh_salah_cache_read "$key" "$file"
+          [[ $REPLY == untouched-marker ]] || print -r -- "reply=$REPLY"
+        } always {
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+      }
+      When call preserved_ok
+      The output should eq ''
+    End
+
+    It "restores the caller's REPLY after a read that misses"
+      preserved_miss() {
+        inzsh_spec_salah_env || return 1
+        {
+          REPLY=untouched-marker
+          _inzsh_salah_cache_read 'a key nothing was written for' "$inzsh_spec_salah_cache/nothing-here"
+          [[ $REPLY == untouched-marker ]] || print -r -- "reply=$REPLY"
+        } always {
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+      }
+      When call preserved_miss
+      The output should eq ''
+    End
+
+    # `_inzsh_salah_cache_raw` is `_inzsh_salah_cache_parse`'s workspace, holding the same
+    # coordinates `_inzsh_salah_table` and `_inzsh_salah_seed` already carry for the life of the
+    # shell — not a new exposure, but a file headed COORDINATES NEVER LEAVE should not grow a
+    # fourth place they sit once the one caller that needed them has copied them out.
+    It 'clears the raw entry once a read has copied what it needs'
+      cleared() {
+        inzsh_spec_salah_env || return 1
+        {
+          _inzsh_salah_cache_refresh $inzsh_spec_salah_now || print -r -- refresh-failed
+          inzsh_spec_salah_entry || print -r -- no-entry
+          local file=$REPLY
+          local key=${_inzsh_salah_table[key]}
+
+          _inzsh_salah_cache_read "$key" "$file"
+          (( ${#_inzsh_salah_cache_raw} == 0 )) || print -r -- "left=${#_inzsh_salah_cache_raw}"
+        } always {
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+      }
+      When call cleared
+      The output should eq ''
+    End
+
+    It 'clears the raw entry once a health check has copied what it needs'
+      cleared_health() {
+        inzsh_spec_salah_env || return 1
+        {
+          _inzsh_salah_cache_refresh $inzsh_spec_salah_now || print -r -- refresh-failed
+          _inzsh_salah_cache_health $inzsh_spec_salah_now
+          (( ${#_inzsh_salah_cache_raw} == 0 )) || print -r -- "left=${#_inzsh_salah_cache_raw}"
+        } always {
+          inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+        }
+      }
+      When call cleared_health
+      The output should eq ''
+    End
+  End
+
+  # --------------------------------------------------------------------------------------------
   Describe 'diagnostic health — issue #229'
     # `inzsh doctor` reports where the position came from; this is the other half, the state of
     # the TABLE computed from it. Read-only throughout: every example below either writes an
@@ -803,6 +885,36 @@ Describe 'the day cache'
       The output should eq ''
     End
 
+    # Review finding N-6. `0` and a leading-zero `01` are both NUMBERS, so the naive `<->` range
+    # this used to check with called each of them "future" — a version this file has never
+    # written and, worse, that nothing could ever have written, since versions start at 1. Both
+    # are exactly as untrustworthy as a version field with no digits in it, and now read that way.
+    Describe 'does not call a version that could never have been written future'
+      Parameters
+        0  zero
+        01 leading-zero
+      End
+
+      It "reports unreadable, not future, for version $1"
+        low_version() {
+          inzsh_spec_salah_env || return 1
+          {
+            _inzsh_salah_cache_refresh $inzsh_spec_salah_now || print -r -- refresh-failed
+            inzsh_spec_salah_entry || print -r -- no-entry
+            local file=$REPLY
+            inzsh_spec_salah_edit "$file" "s/^version.*/version	$1/"
+
+            _inzsh_salah_cache_health $inzsh_spec_salah_now
+            [[ $REPLY == unreadable ]] || print -r -- "reply=$REPLY"
+          } always {
+            inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+          }
+        }
+        When call low_version "$1"
+        The output should eq ''
+      End
+    End
+
     # Issue #229 review, finding I2. A cache directory that is a stray file, does not exist, or
     # cannot be looked inside is not the same fact as "the directory is fine and this recipe has
     # never been cached" — the reader needs to know the segment is recomputing every shell for a
@@ -859,6 +971,46 @@ Describe 'the day cache'
           }
         }
         When call mode_000
+        The output should eq ''
+      End
+
+      # Review finding N-5. `chmod 000` fails BOTH `-r` and `-x` at once, so it cannot tell a
+      # probe that dropped one of the two conjuncts from a correct one — either half alone would
+      # still pass that example. `chmod 111` and `chmod 444` each hold one half up and take the
+      # other away, and both must still read `nodir`.
+      It 'reports nodir when the directory can be searched but not read'
+        mode_111() {
+          inzsh_spec_salah_env || return 1
+          {
+            _inzsh_salah_cache_refresh $inzsh_spec_salah_now || print -r -- refresh-failed
+            chmod 111 "$inzsh_spec_salah_cache"
+
+            _inzsh_salah_cache_health $inzsh_spec_salah_now
+            [[ $REPLY == nodir ]] || print -r -- "reply=$REPLY"
+          } always {
+            chmod 755 "$inzsh_spec_salah_cache" 2>/dev/null
+            inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+          }
+        }
+        When call mode_111
+        The output should eq ''
+      End
+
+      It 'reports nodir when the directory can be read but not searched'
+        mode_444() {
+          inzsh_spec_salah_env || return 1
+          {
+            _inzsh_salah_cache_refresh $inzsh_spec_salah_now || print -r -- refresh-failed
+            chmod 444 "$inzsh_spec_salah_cache"
+
+            _inzsh_salah_cache_health $inzsh_spec_salah_now
+            [[ $REPLY == nodir ]] || print -r -- "reply=$REPLY"
+          } always {
+            chmod 755 "$inzsh_spec_salah_cache" 2>/dev/null
+            inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+          }
+        }
+        When call mode_444
         The output should eq ''
       End
     End

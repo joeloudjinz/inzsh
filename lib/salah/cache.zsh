@@ -348,7 +348,11 @@ _inzsh_salah_cache_parse() {
 
   local version=${raw[version]-}
   if [[ $version != $_inzsh_salah_cache_version ]]; then
-    if [[ $version == <-> ]]; then
+    # `<2->` and not `<->`: this file has shipped exactly one format, version 1, so a NUMBER that
+    # is not 1 is only honestly "future" starting at 2. `<->` would have called `0` and a
+    # leading-zero `01` future too — neither is a version anything has ever written, both are as
+    # corrupt as a version field with no digits in it at all.
+    if [[ $version == <2-> ]]; then
       typeset -g REPLY=future
     else
       typeset -g REPLY=corrupt
@@ -380,19 +384,46 @@ _inzsh_salah_cache_parse() {
 # A miss leaves the table EMPTY and returns 1, which the segment already reads as "nothing to
 # draw". Never an error, never a partial table, and never a diagnostic: a prompt is not a place to
 # report that a cache file was odd.
+#
+# REPLY IS THE CALLER'S, NOT THIS FUNCTION'S, AND IT IS RESTORED ON EVERY PATH OUT. Before the
+# parse split this never touched REPLY at all; `_inzsh_salah_cache_parse` answers in it, so
+# borrowing that answer without giving REPLY back would be a silent contract change on a function
+# the render path calls. `_inzsh_salah_cache_raw`, likewise, is `_inzsh_salah_cache_parse`'s
+# workspace and not somewhere this function's coordinates belong once they are copied into
+# `_inzsh_salah_table` — cleared here for the same reason `_inzsh_salah_table` itself is emptied
+# at the top on a miss, not because holding it longer would leak anything new, but because a file
+# under COORDINATES NEVER LEAVE should not grow a fourth place they sit without a reason to.
 _inzsh_salah_cache_read() {
   emulate -L zsh
 
   typeset -gA _inzsh_salah_table
   _inzsh_salah_table=()
 
+  local saved_reply=$REPLY
+
   local key=$1 file=$2
-  [[ -n $key && -n $file ]] || return 1
+  if [[ -z $key || -z $file ]]; then
+    typeset -g REPLY=$saved_reply
+    return 1
+  fi
 
-  _inzsh_salah_cache_parse "$file" || return 1
-  [[ ${_inzsh_salah_cache_raw[key]-} == $key ]] || return 1
+  if ! _inzsh_salah_cache_parse "$file"; then
+    typeset -g REPLY=$saved_reply
+    return 1
+  fi
+  if [[ ${_inzsh_salah_cache_raw[key]-} != $key ]]; then
+    typeset -gA _inzsh_salah_cache_raw
+    _inzsh_salah_cache_raw=()
+    typeset -g REPLY=$saved_reply
+    return 1
+  fi
 
-  _inzsh_salah_slots || return 1
+  if ! _inzsh_salah_slots; then
+    typeset -gA _inzsh_salah_cache_raw
+    _inzsh_salah_cache_raw=()
+    typeset -g REPLY=$saved_reply
+    return 1
+  fi
   local -a slots=("${reply[@]}")
 
   local -A table
@@ -404,6 +435,10 @@ _inzsh_salah_cache_read() {
   table[day]=${_inzsh_salah_cache_raw[day]-}
 
   _inzsh_salah_table=("${(@kv)table}")
+
+  typeset -gA _inzsh_salah_cache_raw
+  _inzsh_salah_cache_raw=()
+  typeset -g REPLY=$saved_reply
 
   return 0
 }
@@ -742,6 +777,11 @@ _inzsh_salah_cache_health() {
   fi
 
   local stored=${_inzsh_salah_cache_raw[key]-}
+  # Copied out; `_inzsh_salah_cache_parse`'s workspace has nothing left to answer for once this
+  # function has taken the one field it needed from it.
+  typeset -gA _inzsh_salah_cache_raw
+  _inzsh_salah_cache_raw=()
+
   if [[ -z $stored ]]; then
     typeset -g REPLY=unreadable
     return 0
