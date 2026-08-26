@@ -482,6 +482,55 @@ Describe 'the day cache'
       When call raced
       The output should eq ''
     End
+
+    It 'gives every writer its own temporary name, checked directly'
+      # The spec above proves this only by INFERENCE, through whether a corrupted read ever
+      # turns up — and that is exactly as reliable as the scheduler's luck on the day the suite
+      # happens to run: two writers can share a temporary name and still never overlap in TIME
+      # closely enough to visibly corrupt each other. This asks the narrower question directly,
+      # with no timing luck involved: capture the temporary NAME each of twenty concurrently
+      # forked writers actually picks, by standing `_inzsh_salah_mv` in for the duration inside
+      # each fork (as the "renames a temporary" spec above does for one), and require all
+      # twenty to differ. `issue #265`: before the fix this failed with ONE distinct name across
+      # all twenty, every run, not merely most of them — the collision this file now avoids was
+      # never a matter of chance.
+      uniq() {
+        inzsh_spec_salah_env || return 1
+        _inzsh_salah_cache_refresh $inzsh_spec_salah_now
+        inzsh_spec_salah_entry || { print -r -- no-entry; return }
+        local file=$REPLY
+
+        local -i n
+        for (( n = 1; n <= 20; n++ )); do
+          (
+            local out="$inzsh_spec_salah_cache/name.$n"
+            _inzsh_salah_mv() {
+              print -r -- "${@[-2]}" > "$out"
+              command mv "$@" 2>/dev/null
+            }
+            _inzsh_salah_cache_write "$file"
+          ) &
+        done
+        wait
+
+        local -a bad=()
+        local -a collected=("$inzsh_spec_salah_cache"/name.<->(N))
+        (( ${#collected} == 20 )) || bad+="collected=${#collected}"
+
+        local -a names=()
+        local f
+        for f in "${collected[@]}"; do
+          names+="$(<$f)"
+        done
+        local -i distinct=${#${(u)names}}
+        (( distinct == 20 )) || bad+="distinct=$distinct"
+
+        print -rl -- $bad
+        inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+      }
+      When call uniq
+      The output should eq ''
+    End
   End
 
   # --------------------------------------------------------------------------------------------
