@@ -41,10 +41,14 @@ test-install: ## installer suite against a throwaway HOME (never yours)
 
 # Deliberately not part of `make test`: a benchmark on a laptop that is compiling something
 # else measures the something else. It is its own target and its own CI job, and the CI job is
-# where a breach is a verdict. `zsh -f` for the same reason every other harness uses it — the
-# suite must not measure somebody's zshrc.
+# where a breach is a verdict. `-f` for the same reason every other harness uses it — the suite
+# must not measure somebody's zshrc. `-i` because the headline row calls `_inzsh_render`, which
+# returns early in a shell that is not interactive: without it the row measures that early return
+# and passes having drawn nothing. The suite refuses a non-interactive shell rather than trusting
+# this line to carry the flag, and `< /dev/null` so an interactive shell never inherits a terminal
+# that something else is reading.
 perf: ## render budget benchmarks, gated against declared budgets
-	@zsh -f test/perf/bench.zsh
+	@zsh -f -i test/perf/bench.zsh < /dev/null
 
 grid: ## the theme as a terminal grid, per-cell colours (default COLS=80); needs the python venv
 	@if [[ -x $(PYTHON) ]]; then \
