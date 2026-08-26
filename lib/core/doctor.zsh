@@ -756,6 +756,182 @@ _inzsh_locate() {
   return 1
 }
 
+# `inzsh salah [--days N] [--now epoch]` — issue #230. The library that computes a prayer table
+# has never had a way to ask it by hand: `lib/segments/salah.zsh` only ever shows the ONE moment
+# next on the clock, and `inzsh doctor`'s `salah` rows only ever say whether a table is cached,
+# never what is in it — deliberately, since a doctor block is meant to be pasted into a public
+# issue. This command is the missing third reader: the whole day, or several of them, printed on
+# request by someone who typed for it.
+#
+#   inzsh salah                 today
+#   inzsh salah --days 7        today and the next six
+#   inzsh salah --now <epoch>   the injected clock the pinned suite pins
+#
+# EVERY ARGUMENT IS A FLAG, on purpose. `--days 7` and not a bare `7`: CONVENTIONS.md's Commands
+# section states the rule outright — a positional is only allowed when the value names itself,
+# and "seven what" is not recoverable from the digit alone. `--now` gets the same treatment even
+# though it exists purely for a test seam: `inzsh locate [now]` is named in that same section as
+# the one place the repo currently breaks its own rule, fixed in 2.0.0 by #251 and not by this
+# command — this one is written the way #251 will leave that one, not the way it stands today.
+#
+# THE HEADER NAMES THE METHOD, THE ASR SCHOOL AND THE ZONE — never the position, and never
+# anything derived from it. The method and school are `inzsh doctor`'s own `recipe` line, read
+# the identical way for the identical reason stated at the top of this file: a method name is
+# configuration a reader can act on, and a hash of a coordinate is not a redaction of it, merely
+# a slow encoding — issue #229 learned that the hard way, and this command reuses the fix rather
+# than re-inventing a narrower one.
+#
+# THE ZONE IS JUDGED THE SAME WAY, DELIBERATELY, RATHER THAN ASSUMED SAFE. What is printed is the
+# AMBIENT zone the numbers were actually rendered in — `%Z %z` read once, at the instant this
+# command runs — and it is never read from `INZSH_SALAH_LAT`/`LON` or from
+# `_inzsh_salah_location`'s answer. A shell can have its coordinates configured for Mecca and its
+# system clock set to `America/New_York` at the same moment — logged into a machine on the other
+# side of the planet from where the position was configured — and this header would print the
+# New York zone regardless, which is the proof the two are independent rather than one leaking
+# through the other. It is also categorically coarser than a coordinate: a zone names a country
+# or a slice of one, `Africa/Algiers` tells a reader nothing a stranger glancing at the same
+# terminal's own clock could not already see, and it sits in exactly the same bucket `inzsh
+# doctor` already prints as `locale` a few rows up — environment a reader needs to make sense of
+# the numbers, not a position anyone gave away.
+#
+# THE COORDINATES ARE READ AND NEVER PRINTED. `$lat`/`$lon` below reach exactly one place, the
+# argument list of `_inzsh_salah_times`, and nothing else in this function ever reads them again.
+#
+# DAY ITERATION NEVER ADDS 86400 SECONDS TO A WALL-CLOCK INSTANT. `lib/salah/cache.zsh` names the
+# failure this avoids: an instant late in the evening before a spring-forward, plus 24 hours,
+# lands on the day AFTER tomorrow, because the clock only advanced 23 hours where the arithmetic
+# assumed 24. This function asks `_inzsh_salah_day_origin` for "today" exactly once, against the
+# injected instant in the AMBIENT zone — the one place a civil day is allowed to depend on a zone
+# at all, and the same rule `lib/salah/calc.zsh`'s own header states. Every day after that is
+# reached by asking `_inzsh_salah_day_origin` again, in `UTC`, for an instant thirty-six hours
+# past the previous day's own origin. UTC never observes a daylight-saving transition, so that
+# second call can never skip a day or repeat one, and feeding its answer straight back to
+# `_inzsh_salah_times` with `tz=UTC` reproduces exactly the origin it was built from —
+# self-consistent by construction, and proved in the unit spec across the same United States
+# spring-forward date `lib/salah/cache.zsh`'s own comment describes.
+#
+# ABSENT PRAYERS ARE MARKED, NEVER BLANK. Where `_inzsh_salah_format` cannot draw a time — the
+# sentinel `_inzsh_salah_absent` from `lib/salah/calc.zsh`, at a latitude the sun will not
+# cooperate with — the row prints that same word, `none`, rather than leaving a gap a reader
+# could mistake for a rendering accident.
+#
+# Outcomes go to stdout; refusals go to stderr with status 1, exactly as `_inzsh_locate` above.
+_inzsh_salah_command() {
+  emulate -L zsh
+
+  if (( ! ${+functions[_inzsh_salah_location]} )); then
+    print -ru2 -- 'inzsh salah: the prayer library is not loaded'
+    return 1
+  fi
+
+  local -i days=1
+  local now=
+  while (( $# )); do
+    case $1 in
+      (--days)
+        shift
+        if [[ ${1-} != <1-366> ]]; then
+          print -ru2 -- 'inzsh salah: --days wants a whole number from 1 to 366'
+          return 1
+        fi
+        days=$1
+        shift
+        ;;
+      (--now)
+        shift
+        if [[ ${1-} != <-> ]]; then
+          print -ru2 -- 'inzsh salah: --now wants an epoch - whole seconds since 1970'
+          return 1
+        fi
+        now=$1
+        shift
+        ;;
+      (*)
+        print -ru2 -- \
+          "inzsh salah: unknown flag '$1' - usage: inzsh salah [--days N] [--now epoch]"
+        return 1
+        ;;
+    esac
+  done
+
+  [[ -n $now ]] || now=${EPOCHSECONDS-}
+  if [[ $now != <-> ]]; then
+    print -ru2 -- 'inzsh salah: no clock to compute against'
+    return 1
+  fi
+
+  if ! _inzsh_salah_location "$now"; then
+    print -ru2 -- \
+      "inzsh salah: no position configured - set INZSH_SALAH_LAT/INZSH_SALAH_LON, or 'inzsh locate' once INZSH_SALAH_AUTOLOCATE is on"
+    return 1
+  fi
+  local -a where=(${=REPLY})
+  if (( ${#where} != 2 )); then
+    print -ru2 -- \
+      "inzsh salah: no position configured - set INZSH_SALAH_LAT/INZSH_SALAH_LON, or 'inzsh locate' once INZSH_SALAH_AUTOLOCATE is on"
+    return 1
+  fi
+  local lat=${where[1]} lon=${where[2]}
+
+  if ! _inzsh_salah_day_origin "$now" ''; then
+    print -ru2 -- 'inzsh salah: could not place that clock on a calendar'
+    return 1
+  fi
+  local -i origin=$REPLY
+
+  local method=${_inzsh_salah_default_method:-MWL}
+  if (( ${+functions[_inzsh_salah_method_key]} )); then
+    _inzsh_salah_method_key "${INZSH_SALAH_METHOD-}"
+    [[ -n ${_inzsh_salah_methods[$REPLY]-} ]] && method=$REPLY
+  fi
+  local asr=standard
+  [[ ${(L)INZSH_SALAH_ASR-} == (standard|shafi|hanafi) ]] && asr=${(L)INZSH_SALAH_ASR}
+
+  local zone_disp=unknown
+  strftime -s zone_disp '%Z %z' "$now" 2>/dev/null || zone_disp=unknown
+
+  print -r -- 'InZsh prayer times'
+  _inzsh_doctor_row method "$method, asr $asr"
+  _inzsh_doctor_row zone "$zone_disp"
+
+  local -i i epoch
+  local name day_label clock
+  local -a date pairs
+  for (( i = 0; i < days; i++ )); do
+    epoch=$(( origin + 43200 ))
+
+    if ! _inzsh_salah_civil_date "$epoch" UTC; then
+      print -ru2 -- 'inzsh salah: could not place a day on the calendar'
+      return 1
+    fi
+    date=(${=REPLY})
+    printf -v day_label '%04d-%02d-%02d' "${date[1]}" "${date[2]}" "${date[3]}"
+
+    _inzsh_salah_times "$epoch" "$lat" "$lon" UTC
+
+    pairs=()
+    for name in "${_inzsh_salah_prayers[@]}"; do
+      if _inzsh_salah_format "${_inzsh_salah_reply[$name]}" '' '%H:%M'; then
+        clock=$REPLY
+      else
+        clock=$_inzsh_salah_absent
+      fi
+      pairs+="$name $clock"
+    done
+    _inzsh_doctor_row "$day_label" "${(j:  :)pairs}"
+
+    (( i + 1 < days )) || break
+
+    if ! _inzsh_salah_day_origin $(( origin + 129600 )) UTC; then
+      print -ru2 -- 'inzsh salah: could not advance to the next day'
+      return 1
+    fi
+    origin=$REPLY
+  done
+
+  return 0
+}
+
 # `inzsh preset [name]` — the register, switched in the shell you are already typing in.
 #
 # The other half of `INZSH_PRESET` (issue #211). That knob is read at SOURCE time, and correctly
@@ -851,8 +1027,13 @@ inzsh() {
       shift
       _inzsh_preset "$@"
       ;;
+    (salah)
+      shift
+      _inzsh_salah_command "$@"
+      ;;
     (*)
-      print -ru2 -- 'usage: inzsh doctor | inzsh locate [--force] | inzsh preset [name]'
+      print -ru2 -- \
+        'usage: inzsh doctor | inzsh locate [--force] | inzsh preset [name] | inzsh salah [--days N] [--now epoch]'
       return 1
       ;;
   esac
