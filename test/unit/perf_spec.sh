@@ -90,10 +90,25 @@ Describe 'perf suite'
   # entry with a missing function or a missing budget is a case that silently never ran.
   #
   # `bench.zsh` refuses a single-byte locale by design — a width measured in bytes is not a
-  # measurement — so every example that runs it is skipped there.
+  # measurement — so every example that runs it is skipped there. Every invocation below is
+  # `zsh -f -i` for the reason the next example pins.
   Skip if 'the benchmark refuses a single-byte locale' inzsh_spec_bytes_not_cells
+
+  # THE PRECONDITION THAT KEEPS THE GATE HONEST. The headline row calls `_inzsh_render`, and
+  # `_inzsh_render` returns early in a shell that is not interactive — so a suite run from a
+  # script would time that early return, read a hundredth of a millisecond, and pass every budget
+  # having drawn nothing. A green run that measured nothing is the one outcome a gate may never
+  # produce, so the suite refuses the shell rather than reporting the number. Pinned here because
+  # `make perf` passing `-i` is a line in a Makefile, and a line in a Makefile is not a promise.
+  It 'refuses to benchmark from a shell that is not interactive'
+    When run command zsh -f test/perf/bench.zsh --only render-prompt --iters 1 --reps 1
+    The status should be failure
+    The stderr should include 'interactive'
+    The stdout should equal ''
+  End
+
   It 'lists a table with at least one case in it'
-    When run command zsh -f test/perf/bench.zsh --list
+    When run command zsh -f -i test/perf/bench.zsh --list
     The status should be success
     The output should include 'render-floor'
   End
@@ -101,7 +116,7 @@ Describe 'perf suite'
   It 'gives every listed case a positive iteration count and a budget'
     inzsh_spec_table_sane() {
       # Three words a line, header included, so the whole listing is one flat word list.
-      local -a fields=(${=$(zsh -f test/perf/bench.zsh --list)})
+      local -a fields=(${=$(zsh -f -i test/perf/bench.zsh --list)})
       (( ${#fields} > 3 && ${#fields} % 3 == 0 )) || return 1
       local -i i
       for (( i = 4; i <= ${#fields}; i += 3 )); do
@@ -116,7 +131,7 @@ Describe 'perf suite'
 
   It 'has a case function behind every name in the table'
     inzsh_spec_cases_defined() {
-      zsh -f test/perf/bench.zsh --iters 1 --reps 1 --no-gate >/dev/null
+      zsh -f -i test/perf/bench.zsh --iters 1 --reps 1 --no-gate >/dev/null
     }
     When call inzsh_spec_cases_defined
     The status should be success
@@ -124,7 +139,7 @@ Describe 'perf suite'
 
   # The gate, proved rather than asserted: an impossible budget must turn a green run red.
   It 'exits non-zero when a case breaches its budget'
-    When run command zsh -f test/perf/bench.zsh --only surface-alternate --iters 20 --reps 1 \
+    When run command zsh -f -i test/perf/bench.zsh --only surface-alternate --iters 20 --reps 1 \
       --budget 0
     The status should be failure
     The stderr should include 'perf budget exceeded'
@@ -135,7 +150,7 @@ Describe 'perf suite'
   # guard greps for this exact shape, so the pattern lives in a test rather than only in YAML.
   It 'prints the summary line the CI skip-guard greps for'
     inzsh_spec_summary_guard() {
-      zsh -f test/perf/bench.zsh --only surface-alternate --iters 20 --reps 1 --no-gate |
+      zsh -f -i test/perf/bench.zsh --only surface-alternate --iters 20 --reps 1 --no-gate |
         grep -Eq '^perf: [1-9][0-9]* cases ran'
     }
     When call inzsh_spec_summary_guard
@@ -143,13 +158,13 @@ Describe 'perf suite'
   End
 
   It 'refuses a case name it does not have'
-    When run command zsh -f test/perf/bench.zsh --only no-such-case
+    When run command zsh -f -i test/perf/bench.zsh --only no-such-case
     The status should be failure
     The stderr should include 'no such case'
   End
 
   It 'refuses an argument it does not understand'
-    When run command zsh -f test/perf/bench.zsh --faster
+    When run command zsh -f -i test/perf/bench.zsh --faster
     The status should be failure
     The stderr should include 'unknown argument'
     The stderr should include 'usage:'
@@ -158,7 +173,7 @@ Describe 'perf suite'
 
   # Usage asked for is usage on stdout, and it runs nothing.
   It 'answers --help without benchmarking anything'
-    When run command zsh -f test/perf/bench.zsh --help
+    When run command zsh -f -i test/perf/bench.zsh --help
     The status should be success
     The stdout should include 'usage:'
     The stdout should not include 'cases ran'

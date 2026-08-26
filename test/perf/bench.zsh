@@ -12,10 +12,13 @@
 # regression says WHERE, not just THAT. `render-floor` chains them without the segments and is
 # kept as a control: when it moves and `render-prompt` does not, the cost is in the engine.
 #
-# The one thing left out of `render-prompt` is the interactive guard, which returns early in a
-# script. Everything a real draw does after that guard is timed.
+# `render-prompt` CALLS `_inzsh_render` — the function `lib/core/hooks.zsh` dispatches to on
+# every precmd — rather than restating what it does. It used to restate it, because that
+# function opens with `[[ -o interactive ]] || return 0` and this suite ran from a script; the
+# copy then drifted, silently, and the number stopped moving when the renderer changed. See the
+# interactive precondition below for how the guard is satisfied rather than worked around.
 #
-# Run it, never source it: `make perf`, or `zsh -f test/perf/bench.zsh`.
+# Run it, never source it: `make perf`, or `zsh -f -i test/perf/bench.zsh`.
 #
 #   --list          print the case table and exit 0
 #   --only NAME     run only this case; repeatable
@@ -51,6 +54,24 @@ _inzsh_bench_root=${${(%):-%x}:A:h:h:h}
 _inzsh_bench_locale_probe=$'é'
 if (( ${#_inzsh_bench_locale_probe} != 1 )); then
   print -ru2 -- 'bench: needs a multibyte locale — try LC_ALL=C.UTF-8 (CI pins one repo-wide)'
+  exit 2
+fi
+
+# An INTERACTIVE shell is the other precondition, and it is a sharper one. `_inzsh_render` opens
+# with `[[ -o interactive ]] || return 0` — the theme's promise to every script and every
+# `ssh host command` — so run this suite from a plain `zsh -f` and the headline row measures that
+# guard returning: about a hundredth of a millisecond, comfortably inside every budget, green.
+# A gate that passes because it drew nothing is worse than one that fails, so this is refused
+# rather than reported, up front, before a single case can produce a number nobody should read.
+#
+# The guard is SATISFIED here, never weakened: `zsh -f -i <file>` is a genuinely interactive
+# shell that happens to be reading its commands from a file, which is the same harness
+# `test/render/prompt_shape_spec.sh` and `test/render/entrypoint_spec.sh` use to drive the real
+# entry point. A file argument leaves `shinstdin` off, so no prompt is ever drawn and no tty is
+# needed — the suite still runs headless in CI, and still measures nobody's zshrc.
+if [[ ! -o interactive ]]; then
+  print -ru2 -- 'bench: needs an interactive shell — run `make perf`,' \
+    'or `zsh -f -i test/perf/bench.zsh`'
   exit 2
 fi
 
@@ -299,18 +320,33 @@ _inzsh_bench_row() {
   return 0
 }
 
-# The real prompt. Every step `_inzsh_render` takes, in its order — rank is read once per
-# registered segment and a rank of 0 is filed straight into hidden, without a build call and
-# without ever reaching the width filter; only the survivors build their own text; the width
-# filter drops whoever does not fit; the rank sort decides side and order over what is left,
-# from the ranks already in hand; both sides assemble, and the result is expanded the way a
-# precmd expands it. The one thing left out is the interactive guard, which returns early in a
-# script and would measure nothing. See `_inzsh_render` in `lib/core/render.zsh` for the same
-# steps with the WHY beside each one — issue #185 is the reason this shape exists at all, and
-# `render-prompt-hidden` below is the case that measures the reason.
+# The real prompt — `_inzsh_render` itself, the function `lib/core/hooks.zsh` dispatches to on
+# every precmd, called rather than described. Rank is read once per registered segment and a rank
+# of 0 is filed straight into hidden; only the survivors build their own text; the width filter
+# drops whoever does not fit; the rank sort decides side and order; each side is fitted to the
+# terminal; both sides assemble, the path absorbs whatever overrun is left, and the shape puts it
+# on one row or two. See `_inzsh_render` in `lib/core/render.zsh` for the WHY beside each step —
+# issue #185 is the reason that order exists at all, and `render-prompt-hidden` below is the case
+# that measures the reason.
+#
+# IT USED TO BE A TRANSCRIPTION, and issue #254 is what that cost. `_inzsh_render` returns early
+# in a script, so this row restated its steps instead of calling it — and a restatement is a copy,
+# and a copy drifts. Measured during the review of #185: reverting `lib/core/render.zsh` wholesale
+# moved this row from 3.87 ms to 3.88, while reverting the copy beside it moved it to 4.84. The
+# orchestrator could have been rewritten in any direction and every row would still have read
+# green. Calling the real function is what closes that, and the interactive precondition at the
+# top of this file is what makes the call possible without touching the guard.
+#
+# The number MOVED when the copy went, and the move is the point: 3.31 ms transcribed against
+# 5.53 ms real, on the same fixture at the same width. The two thirds this row was measuring were
+# the two thirds the transcription happened to have copied; the glyph re-resolve, the per-side fit
+# pass, the path's second assembly, the gap arithmetic and the row-fits measurement were all
+# render path and all unwatched. The budgets below are re-derived against the honest cost.
 #
 # `$COLUMNS` is pinned rather than inherited: a benchmark whose answer depends on the width of
-# the window it happened to run in is not a benchmark.
+# the window it happened to run in is not a benchmark. It stays pinned in an interactive shell
+# because this one has no tty to be resized — the assignment is the last word on it, exactly as
+# it is in the `zsh -f -i -c` harness the render specs pin their own width with.
 #
 # The roster is restored from `_inzsh_bench_roster_defaults` and its two neighbours FIRST,
 # before anything else in this prep runs, so this case always measures the seven segments it
@@ -326,38 +362,12 @@ _inzsh_bench_prep_render_prompt() {
   typeset -g INZSH_DEFAULT_USER=
   typeset -g SSH_CONNECTION='198.51.100.1 22 198.51.100.2 22'
 }
+# One whole draw, and nothing of the harness's own in it. `_inzsh_render` assigns `PROMPT` and
+# `RPROMPT` as its last act, which in this shell writes two parameters nothing will ever expand —
+# a script-reading interactive zsh never draws a prompt — so the assignment costs what it costs on
+# a real precmd and shows nobody anything.
 _inzsh_bench_case_render_prompt() {
-  local segment builder
-  local -a candidates visible
-  local -A ranks
-  local -i rank
-
-  candidates=(${(ok)_inzsh_segment_defaults})
-  for segment in "${candidates[@]}"; do
-    _inzsh_rank_of "$segment"
-    rank=$REPLY
-    (( rank == 0 )) && continue
-    ranks[$segment]=$rank
-    visible+=("$segment")
-    builder=_inzsh_segment_${(L)segment}_build
-    (( ${+functions[$builder]} )) && $builder
-  done
-
-  _inzsh_layout_filter 80 "${visible[@]}"
-
-  local -a survivors pairs
-  survivors=("${reply[@]}")
-  for segment in "${survivors[@]}"; do
-    pairs+=("${ranks[$segment]}" "$segment")
-  done
-  _inzsh_rank_split_pairs "${pairs[@]}"
-
-  _inzsh_render_build left
-  local left=${(%%)REPLY}
-  _inzsh_render_build right
-  local right=${(%%)REPLY}
-
-  return 0
+  _inzsh_render
 }
 
 _inzsh_bench_prep_render_floor() { typeset -g INZSH_SURFACE_MODE=alternate }
@@ -401,9 +411,9 @@ _inzsh_bench_case_render_floor() {
 # restores it from `_inzsh_bench_roster_defaults` at the top of its own prep, and keeps
 # measuring the seven segments it has always measured whichever case ran immediately before it.
 #
-# Budgeted the same way as every other row — best-of-5 × 6, the header's own rule — rather than
-# `render-prompt`'s tighter exception: that exception exists because `render-prompt` IS the row
-# the house budget is measured against, and this row is not. What this row is FOR is visibility
+# Budgeted at `render-prompt`'s multiple rather than the table's 6x, which it once carried: six
+# times what a whole draw costs is more than the 30 ms this theme promises, and the argument for
+# that is with the table above. What this row is FOR is visibility
 # — a number a reader compares against `render-prompt`'s directly, the same way `render-floor`
 # is read against `render-prompt` and not gated to a fraction of it — and the structural
 # guarantee, that a hidden segment's build function is never called at all, is proven exactly
@@ -413,13 +423,12 @@ _inzsh_bench_case_render_floor() {
 # is exactly the honest-extra-work class the table's own header says 6x will not catch, and this
 # row does not pretend otherwise.
 #
-# WHAT THIS ROW DOES NOT WATCH, PRECISELY: `_inzsh_bench_case_render_prompt` below TRANSCRIBES
-# `_inzsh_render`'s steps rather than calling it, the same way `render-prompt` above always has,
-# because `_inzsh_render` returns early in the non-interactive shell this suite runs under. So
-# this row is blind to a regression in `_inzsh_render` ITSELF — but not to the rest of
-# `lib/core/render.zsh`: `_inzsh_render_build` and `_inzsh_render_hues` are called directly and
-# timed like any other case here. Keeping the transcribed steps in step with `_inzsh_render`'s
-# own is this file's job, not the harness's.
+# WHAT THIS ROW WATCHES. It is `render-prompt` over a wider roster, so it inherits that row's
+# reach exactly: both call `_inzsh_render` itself, and there is no longer any part of
+# `lib/core/render.zsh` — orchestrator included — that either row can be blind to. That was not
+# true before issue #254; the two numbers quoted above were both taken through the transcription
+# that row used to be, so they are the right ratio measured on the wrong function, and they are
+# left as they were written rather than restated against a different measurement.
 _inzsh_bench_hidden_build() {
   emulate -L zsh
 
@@ -494,8 +503,8 @@ typeset -ga _inzsh_bench_table=(
   config-get-family   200   0.800
   config-resolve      150   1.450
   render-floor         40  12.000
-  render-prompt        40  12.000
-  render-prompt-hidden 40  24.500
+  render-prompt        40  24.000
+  render-prompt-hidden 40  30.000
 )
 
 # `surface-hue` first shipped at 0.500, which was about twice its measured cost rather than
@@ -532,17 +541,36 @@ typeset -ga _inzsh_bench_table=(
 # inlined). A budget raised before that work would have been an excuse; raised after it, it is
 # a measurement.
 #
-# The budget on `render-prompt` is the one number here that was chosen rather than measured
-# from a stable base: it is the same 6× headroom every other row carries, over a first
-# measurement taken the day the renderer landed. It will want revisiting once the segment set
-# stops growing — a budget set against a seven-segment prompt says nothing useful about a
-# twelve-segment one.
+# `render-prompt` and `render-prompt-hidden` are the two rows the 6x rule cannot have, and issue
+# #254 is why: both now call `_inzsh_render` rather than a transcription of it, which moved them
+# from 3.31 and 4.1 ms to 5.61 and 6.97 (worst best-of-5, several local runs, the table's usual
+# derivation). Six times either of those is 34 and 42 ms — ABOVE the 30 ms house budget these
+# rows exist to prove. A budget that permits what the promise forbids is not a budget.
 #
-# Which is also why `render-floor` and `render-prompt` now carry the SAME budget, though the
-# floor is the cheaper case and the table would normally rank them. They are not measured to the
-# same standard: the floor's 12.000 is its own cost times six, and the prompt's 12.000 is a
-# deliberately tighter multiple over an older measurement. The prompt is the row the 30 ms house
-# budget is about, so it keeps the harder gate rather than being relaxed to match the rule.
+# So both take the same chosen multiple instead, about 4.3x, rounded to 24.000 and 30.000. That
+# is the largest headroom that still leaves each row a gate of its own beneath the promise, and
+# the two are kept at one multiple for the reason the rest of the table is kept at one: a second
+# arguable number is worse than a slightly wrong first one. On the ~3.14x runner measured below
+# they project to 71% of budget each — tighter than the ~52% the 6x rows sit at, and as much room
+# as arithmetic allows when the thing being measured already costs a fifth of what it promises.
+#
+# WHICH MAKES THESE THE TWO SHARPEST ROWS IN THE TABLE WHERE IT COUNTS, and the arithmetic is
+# worth following once. A budget is a multiple of whatever the machine costs, so the same number
+# is a different gate on a laptop and on a runner: 24.000 over a 5.6 ms local render fires at
+# 4.3x, and over the same render at ~17.6 ms on CI it fires at 1.4x. The perf job is a CI job and
+# a breach is only a verdict there, so the gate that matters is the sharp one — which is also why
+# a plausible regression can move this row by half on a laptop and stay green, and the same
+# regression on CI will not. Anything that goes red here locally is an order of magnitude.
+#
+# WHICH IS THE REAL FINDING HERE, and it is worth stating plainly rather than leaving in the
+# arithmetic: the honest warm render is ~5.6 ms locally and projects to ~17.6 ms on a CI runner,
+# so the 30 ms house budget sits at roughly 59% used — not the 11% the transcription reported.
+# `v1.3.0 · Prompt rows` grows `_inzsh_render` from one segment row to N against that headroom,
+# and this is the row that will say so.
+#
+# `render-floor` keeps 12.000, which is still its own cost times six. It is no longer the cheaper
+# twin of `render-prompt` on the same standard — it is a control, and the gap between the two
+# numbers is now the honest measure of what the orchestrator costs on top of the primitives.
 
 # The row the house budget is about. `_inzsh_config_render_budget_ms` in `lib/core/config.zsh`
 # is 30 ms; this is the case measured against it, through the registered guard.
