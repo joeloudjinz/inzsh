@@ -935,6 +935,10 @@ Describe 'the house rule, kept anyway'
         bare=${line//\$\(\(/}
         [[ $bare == *'$('* || $bare == *'`'* ]] && bad+=$line
       done < "$SHELLSPEC_PROJECT_ROOT/lib/core/doctor.zsh"
+      # The offending lines themselves, not only their count — stderr, so a failing count in the
+      # assertion below still leaves the actual `$(` or backtick visible in the run's own output
+      # rather than sending whoever is chasing it back to grep the file by hand.
+      (( ${#bad} )) && print -ru2 -- "${bad[@]}"
       print -r -- "${#bad}"
     }
     When call forkless
