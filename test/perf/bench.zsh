@@ -761,10 +761,17 @@ _inzsh_bench_main() {
   # The house budget, asked the way the theme asks it: through the registered guard in
   # `lib/core/config.zsh`, over one pass of the headline case. Independent of the table above —
   # the table gates against measured budgets, this gates against the 30 ms promise.
+  #
+  # The case is DERIVED from `_inzsh_bench_headline` rather than named again here. It used to be
+  # named again, and the second name had drifted: this block ran `render-floor` while printing
+  # `render-prompt`'s number beside the promise, so the sentence on screen was about one function
+  # and the verdict under it about another. A name spelled twice is a name that will one day be
+  # spelled two ways — the same lesson issue #254 taught about the row above, in a smaller place.
   local -i house_ok=1
   if (( ${+_inzsh_bench_headline_ms} )); then
-    _inzsh_bench_prep_render_floor
-    if _inzsh_config_guard render-budget '' _inzsh_bench_case_render_floor; then
+    local house_base=${_inzsh_bench_headline//-/_}
+    (( ${+functions[_inzsh_bench_prep_$house_base]} )) && "_inzsh_bench_prep_$house_base"
+    if _inzsh_config_guard render-budget '' "_inzsh_bench_case_$house_base"; then
       printf 'perf: %s at %.5f ms, %.2f%% of the %d ms house budget\n' \
         "$_inzsh_bench_headline" "$_inzsh_bench_headline_ms" \
         "$(( _inzsh_bench_headline_ms / _inzsh_config_render_budget_ms * 100.0 ))" \
