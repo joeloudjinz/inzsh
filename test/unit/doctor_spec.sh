@@ -133,6 +133,35 @@ Describe 'the near-miss matcher (issue #228)'
       The status should be failure
       The variable REPLY should eq ''
     End
+
+    # Every example above runs against the names `config.zsh` and `tokens.zsh` register directly
+    # — this file's own `Include` list never sources `lib/salah/methods.zsh` and never calls
+    # `_inzsh_config_absorb_all`, so `INZSH_SALAH_*` and the one TRAILING-wildcard family,
+    # `INZSH_SALAH_OFFSET_*`, are otherwise untouched by any near-miss example in this suite. A
+    # `zsh -f` of its own, sourced the way `tools/doctor.zsh` — the real `make doctor` launcher —
+    # sources it, so this is the registry a reporter's near miss is actually matched against.
+    It 'matches a near miss against the salah knobs and the trailing-wildcard family'
+      salah() {
+        zsh -f -c '
+          source "$1/lib/core/config.zsh"
+          source "$1/lib/core/detect.zsh"
+          source "$1/lib/salah/calc.zsh"
+          source "$1/lib/salah/methods.zsh"
+          source "$1/lib/salah/cache.zsh"
+          source "$1/lib/salah/location.zsh"
+          source "$1/lib/core/doctor.zsh"
+          _inzsh_config_absorb_all
+          _inzsh_doctor_near_miss INZSH_SALAH_MEHTOD
+          print -r -- "singleton: $REPLY"
+          _inzsh_doctor_near_miss INZSH_SALAH_OFSET_FAJR
+          print -r -- "family: $REPLY"
+        ' inzsh-doctor-near-miss-salah "$SHELLSPEC_PROJECT_ROOT"
+      }
+      When call salah
+      The line 1 should eq 'singleton: INZSH_SALAH_METHOD'
+      The line 2 should eq 'family: INZSH_SALAH_OFFSET_*'
+      The stderr should eq ''
+    End
   End
 End
 
