@@ -16,6 +16,17 @@ inzsh_spec_bundle() {
   print -r -- "$out"
 }
 
+# Same build, but with `INZSH_BUNDLE_VERSION` set — the release workflow's own input
+# (`.releaserc.yml`'s `prepare` step, issue #244) — into a file of its own rather than the
+# cached one above, so the default-case examples never see a stamped build by accident.
+inzsh_spec_bundle_stamped() {
+  local version=$1
+  local out=$SHELLSPEC_TMPBASE/inzsh-bundle-stamped.zsh-theme
+  INZSH_BUNDLE_VERSION=$version \
+    zsh -f "$SHELLSPEC_PROJECT_ROOT/tools/bundle.zsh" "$out" >/dev/null 2>&1 || return 1
+  print -r -- "$out"
+}
+
 # The load list the entry point fixes — every `source …/lib/…` line, in order. This is the
 # contract the manifest transcribes, so it is read from the entry point rather than spelled a
 # second time here.
@@ -78,6 +89,31 @@ Describe 'the bundle'
       }
       When call first_line
       The output should eq '[[ -o interactive ]] || return 0'
+    End
+  End
+
+  # Issue #244. The single-source version constant: `source` in the tree, and the one thing
+  # `tools/bundle.zsh` is trusted to stamp a real tag over, from `INZSH_BUNDLE_VERSION` rather
+  # than a number written anywhere in this repo — see the comment at the head of that file.
+  Describe 'the version stamp'
+    It 'defaults to source when no version is given at build time'
+      default_version() {
+        zsh -f -i -c 'source "$1"; print -r -- "$_inzsh_version"' \
+          inzsh-bundle-version-default "$(inzsh_spec_bundle)"
+      }
+      When call default_version
+      The output should eq 'source'
+      The stderr should eq ''
+    End
+
+    It 'stamps the exact version handed to the build'
+      stamped_version() {
+        zsh -f -i -c 'source "$1"; print -r -- "$_inzsh_version"' \
+          inzsh-bundle-version-stamped "$(inzsh_spec_bundle_stamped v9.9.9)"
+      }
+      When call stamped_version
+      The output should eq 'v9.9.9'
+      The stderr should eq ''
     End
   End
 

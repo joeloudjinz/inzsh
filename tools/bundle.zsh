@@ -10,6 +10,14 @@
 # truth, checked, not copied on faith.
 #
 # Usage: zsh -f tools/bundle.zsh [output-file]     (default: dist/inzsh.zsh-theme)
+#
+# One more thing the head carries that is not a transcription: `_inzsh_version`. The entry
+# point's own copy of that line always reads `source` — issue #244's single-source constant, and
+# a checkout has no tag to read without a subprocess, so it says so rather than guessing. This is
+# the one place it is ever allowed to say something else, and it does so from the environment
+# rather than a number written here: `INZSH_BUNDLE_VERSION`, set by the release workflow's
+# `prepare` step to the exact tag semantic-release just decided (see docs/releasing.md), unset
+# everywhere else so a local `make bundle` still honestly says `source`.
 emulate -L zsh
 setopt err_exit no_unset pipe_fail extended_glob
 
@@ -92,6 +100,7 @@ mkdir -p -- ${_inzsh_bundle_out:h}
   print -r -- '# Source this file from .zshrc, or drop it into an oh-my-zsh themes directory.'
   print -r -- '[[ -o interactive ]] || return 0'
   print -r -- 'typeset -g _inzsh_theme_root=${${(%):-%x}:A:h}'
+  print -r -- "typeset -g _inzsh_version=${(qq)${INZSH_BUNDLE_VERSION:-source}}"
   for _inzsh_bundle_file in $_inzsh_bundle_manifest; do
     print -r -- ''
     print -r -- "# ── $_inzsh_bundle_file ──"
