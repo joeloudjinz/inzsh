@@ -57,6 +57,7 @@ Describe 'the near-miss matcher (issue #228)'
       'INZSH_*_RANK'        INZSH_GIT_RANK         0
       'INZSH_*_RANK'        INZSH_GIT_RANNK        1
       'INZSH_*_BG'          INZSH_MY_OWN_THING     2
+      '*X'                  ''                     1
     End
 
     It "measures $1 against $2 as $3"

@@ -60,17 +60,14 @@ _inzsh_doctor_overridden() {
 # `_inzsh_config_register`'s own identifier check — so `$2` is always a plain string here, and the
 # function does not need to reason about a wildcard on both sides at once.
 #
-# Textbook dynamic programming, two rows instead of a full table, because nothing here needs the
-# rows it has already finished with. `prev` holds the row above the one being built; `cur` grows
-# one cell at a time and becomes `prev` for the next row. The one departure from the textbook
-# recurrence is the wildcard row: `dp[i][j] = min(dp[i-1][j], dp[i][j-1])` rather than the usual
+# Two rows, `prev` and `cur`, rather than a full table. The one departure from textbook
+# Levenshtein is the wildcard row: `dp[i][j] = min(dp[i-1][j], dp[i][j-1])` rather than the usual
 # insert/delete/substitute triple, because finishing the wildcard here costs whatever finishing
 # everything BEFORE it already cost (`dp[i-1][j]`), or one more character of `$2` absorbed into it
 # for free (`dp[i][j-1]`) — never a real edit.
 #
-# Not on the render path, and it keeps the house rule anyway: no subprocess, `$((` arithmetic and
-# parameter expansion only. `test/unit/doctor_spec.sh` greps this file for `$(` and a backtick
-# outside a comment to hold it to that.
+# `test/unit/doctor_spec.sh` greps this file for `$(` and a backtick outside a comment, so the
+# house rule at the top of this file holds here without restating it.
 _inzsh_doctor_distance() {
   emulate -L zsh
 
@@ -96,7 +93,13 @@ _inzsh_doctor_distance() {
         cur+=$best
       done
     else
-      cur=($i)
+      # `dp[i][0]` is not always `$i`: that is only true when nothing before position `i` was a
+      # wildcard, since every literal character deleted so far costs one. A wildcard earlier in
+      # `$a` can have made `dp[i-1][0]` cheaper than `i - 1` for free, and this row must build on
+      # THAT, not on the position count — `prev[1]` is `dp[i-1][0]`, so one more deletion is
+      # `prev[1] + 1`, which is `$i` exactly when no wildcard preceded and something smaller
+      # otherwise.
+      cur=($(( prev[1] + 1 )))
       for (( j = 1; j <= lb; j++ )); do
         bj=$b[$j]
         [[ $ai == $bj ]] && cost=0 || cost=1
