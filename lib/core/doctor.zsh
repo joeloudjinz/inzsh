@@ -614,6 +614,45 @@ _inzsh_doctor() {
     _inzsh_doctor_row ignored "$knob=$value - probably $suggestion"
   done
 
+  # Issue #243. The `ignored` rows above cover a KNOB whose VALUE the registry recognised and
+  # refused; they cannot cover a row array, because `INZSH_ROW<N>_LEFT`/`_RIGHT` are registered as
+  # `any` purely so their names appear in the vocabulary, and `any` accepts whatever a segment name
+  # happens to be spelled as — the VALUE is not wrong, the NAME inside it is. `_inzsh_rows_diagnose`
+  # is where that question is actually answered — see its own header in `lib/core/rows.zsh` for
+  # why a typo here would otherwise be a segment that silently never draws.
+  #
+  # Guarded on the function existing, the same reason the `salah` rows below are: `tools/
+  # doctor.zsh` (`make doctor`) never sources `lib/core/rows.zsh`, and a partial load has nothing
+  # honest to report here either. `$COLUMNS` is read fresh, the same width the render path itself
+  # would see right now, rather than injected — this is the one caller of `_inzsh_rows_diagnose`
+  # that is not a unit test and has a real terminal to ask.
+  #
+  # Same flattening and clipping as the `ignored` rows above, and for the identical reason: an
+  # array entry is text a user typed, this block is pasted into a public issue, and a newline or
+  # an escape sequence in one must not end a row early, move a cursor, or forge a line that was
+  # never actually printed. An entry dropped for being unreadable as an identifier is exactly the
+  # kind of value most likely to hold one, so the flattening runs before it, never after.
+  if (( ${+functions[_inzsh_rows_diagnose]} )); then
+    local -a dropped
+    _inzsh_rows_diagnose "${COLUMNS:-0}"
+    dropped=("${reply[@]}")
+    local drow dside dentry dreason
+    local -i didx
+    for (( didx = 1; didx <= ${#dropped}; didx += 4 )); do
+      drow=${dropped[didx]}
+      dside=${dropped[didx + 1]}
+      dentry=${dropped[didx + 2]}
+      dreason=${dropped[didx + 3]}
+      value=${dentry//[[:cntrl:]]/ }
+      (( ${#value} > 24 )) && value="${value[1,23]}…"
+      if [[ -z $dentry ]]; then
+        _inzsh_doctor_row 'row entry' "INZSH_ROW${drow}_${(U)dside} - $dreason"
+      else
+        _inzsh_doctor_row 'row entry' "INZSH_ROW${drow}_${(U)dside}=$value - $dreason"
+      fi
+    done
+  fi
+
   # Where the prayer segment's position came from, and the state of the table computed from
   # it — never the numbers behind either. Omitted entirely when the salah library is not
   # loaded: a partial load has nothing honest to say here.
