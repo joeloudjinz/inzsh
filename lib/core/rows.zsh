@@ -15,10 +15,11 @@
 # `lib/salah/calc.zsh` has with its injected clock. Nothing here fetches segment text, reads the
 # terminal or assigns a prompt parameter; it only decides where a name goes.
 #
-# NOTHING CONSUMES THIS YET. `render.zsh` still builds one row from `_inzsh_left` /
-# `_inzsh_right` exactly as it always has — wiring the renderer to draw N rows is later work.
-# Landing the resolution layer on its own, before anything reads it, is what makes it reviewable
-# by itself and keeps this change byte-identical in every prompt anyone sees.
+# `render.zsh` NOW CONSUMES THIS — `v1.3.0 · Prompt rows` wired `_inzsh_render` to call
+# `_inzsh_rows_resolve` and draw every row it answers. This file stayed the pure resolution layer
+# it was landed as, byte-identical in what it decides; only the caller changed. The paragraph
+# below is kept for what it still explains — why this file unit-tests with no prompt at all — not
+# because nothing reads its answer any more.
 #
 # ---------------------------------------------------------------------------------------------
 # The row knobs — read outside the config registry, on purpose
@@ -56,7 +57,15 @@ fi
 # The published answer. Declared here so a caller that asks before the first resolve gets empty
 # arrays rather than an unset-parameter error — the same courtesy `lib/core/engine.zsh` extends
 # `_inzsh_left` / `_inzsh_right` / `_inzsh_hidden`.
+#
+# `_inzsh_rows_hidden` is the candidates step 2 below drops for being rank 0 and unclaimed by
+# anything — the same set `render.zsh` used to compute for itself before rows existed. Published
+# rather than recomputed: `render.zsh` needs it for `_inzsh_hidden`'s bookkeeping, and asking
+# `_inzsh_rank_of` a second time for a segment this file already asked would be exactly the
+# re-read `lib/core/engine.zsh`'s own comment on `_inzsh_rank_split_pairs` exists to rule out.
 typeset -gi _inzsh_row_count=0
+typeset -ga _inzsh_rows_hidden
+_inzsh_rows_hidden=()
 typeset -ga _inzsh_row1_left  _inzsh_row1_right
 typeset -ga _inzsh_row2_left  _inzsh_row2_right
 typeset -ga _inzsh_row3_left  _inzsh_row3_right
@@ -188,8 +197,12 @@ _inzsh_marker_row_resolved() {
 #   3. WIDTH      MINCOLS over everything still standing, claimed segments included — a
 #                 placement rule never overrules a width rule (§2.4), so a claimed segment that
 #                 does not survive comes back out of whatever row it was claimed onto.
-#   4. DERIVE     the unclaimed remainder that survived width goes to `_inzsh_rank_split`,
-#                 untouched.
+#   4. DERIVE     the unclaimed remainder that survived width is split by rank, reusing the rank
+#                 step 2 already read for it rather than asking `_inzsh_rank_of` a second time —
+#                 `_inzsh_rank_split_pairs` is `_inzsh_rank_split`'s own answer to a caller that
+#                 has already read the ranks (see `lib/core/engine.zsh`), and a caller that reads
+#                 ranks once per candidate and then calls `_inzsh_rank_split` anyway is precisely
+#                 the second read that function exists to avoid.
 #   5. FILL       each side takes its explicit array if one was SET — even explicitly empty —
 #                 and otherwise nothing, except row 1, whose UNSET side takes the derived
 #                 answer, because rank has no row axis and can only ever describe row 1.
@@ -234,15 +247,27 @@ _inzsh_rows_resolve() {
     done
   done
 
-  # Step 2 — drop the switched-off. Only a candidate nobody claimed is even asked its rank.
-  local -a unclaimed=()
+  # Step 2 — drop the switched-off. Only a candidate nobody claimed is even asked its rank, and
+  # its rank is KEPT rather than thrown away once read — `unclaimed_ranks` is what lets step 4
+  # split by rank without asking `_inzsh_rank_of` again for the same candidate. `dropped` is the
+  # rank-0, unclaimed set: published below as `_inzsh_rows_hidden` for `render.zsh`'s own hidden
+  # bookkeeping, for the same reason — a second read here would answer a question step 2 already
+  # answered.
+  local -a unclaimed=() dropped=()
+  local -A unclaimed_ranks=()
   local seg
   for seg in "${candidates[@]}"; do
     (( ${+claimed[$seg]} )) && continue
     _inzsh_rank_of "$seg"
-    (( REPLY == 0 )) && continue
+    if (( REPLY == 0 )); then
+      dropped+=("$seg")
+      continue
+    fi
+    unclaimed_ranks[$seg]=$REPLY
     unclaimed+=("$seg")
   done
+  typeset -ga _inzsh_rows_hidden
+  _inzsh_rows_hidden=("${dropped[@]}")
 
   # Step 3 — width filter. Claimed and unclaimed stand together so a claim cannot outrun MINCOLS.
   local -a standing=("${(k)claimed[@]}" "${unclaimed[@]}")
@@ -252,13 +277,17 @@ _inzsh_rows_resolve() {
     survives[$seg]=1
   done
 
-  # Step 4 — derive. `_inzsh_rank_split` is untouched; only its inputs and what happens to its
-  # answer afterward are new.
+  # Step 4 — derive. The pairs are built from `unclaimed_ranks`, step 2's own reading, rather
+  # than from `_inzsh_rank_split`, which would read every one of them again.
   local -a derive_pool=()
   for seg in "${unclaimed[@]}"; do
     (( ${+survives[$seg]} )) && derive_pool+=("$seg")
   done
-  _inzsh_rank_split "${derive_pool[@]}"
+  local -a derive_pairs=()
+  for seg in "${derive_pool[@]}"; do
+    derive_pairs+=("${unclaimed_ranks[$seg]}" "$seg")
+  done
+  _inzsh_rank_split_pairs "${derive_pairs[@]}"
   local -a derived_left=("${_inzsh_left[@]}") derived_right=("${_inzsh_right[@]}")
 
   # Step 5 — fill, and compact. Rows with nothing on either side are not drawn at all, and what

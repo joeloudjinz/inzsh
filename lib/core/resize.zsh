@@ -1,13 +1,22 @@
 # InZsh — the resize redraw. What happens to the prompt already on screen when the window
 # stops being the width it was drawn for.
 #
-# THE PROBLEM. A prompt is measured once, at the moment it is built, against `$COLUMNS`. In the
-# two-line shape the right-hand side is not `RPROMPT` at all — `lib/core/render.zsh` pads it into
-# the segment row with LITERAL SPACES, because zsh draws a real `RPROMPT` on the LAST row of a
-# multi-line prompt, beside the marker, where a long command line writes over it. Literal padding
-# is the price of keeping the clock on the segment row, and the price is that the row is a fixed
-# string: narrow the window and a row built for 160 columns is still 159 wide, wraps, and is
-# redrawn as two rows of the same ribbon. Narrow it far enough and it is four.
+# THE PROBLEM. A prompt is measured once, at the moment it is built, against `$COLUMNS`. Under
+# `own` (still this file's whole model — see the note below) the right-hand side is not `RPROMPT`
+# at all — `lib/core/render.zsh` pads it into the segment row with LITERAL SPACES, because zsh
+# draws a real `RPROMPT` on the LAST row of a multi-line prompt, which under `own` is the bare
+# marker row, not a segment row, and a long command line would write over anything drawn there.
+# Literal padding is the price of keeping the clock on the segment row, and the price is that the
+# row is a fixed string: narrow the window and a row built for 160 columns is still 159 wide,
+# wraps, and is redrawn as two rows of the same ribbon. Narrow it far enough and it is four.
+#
+# THIS FILE STILL THINKS IN ONE SEGMENT ROW, deliberately incompletely: `v1.3.0 · Prompt rows`
+# (`lib/core/rows.zsh`, `lib/core/render.zsh`) made `own` and `inline` draw anywhere from zero
+# rows to eight, and this file's climb below still reads `_inzsh_prompt_lines_resolved` — 1 or 2,
+# the OLD one-row-or-two-rows question — as a stand-in for it. That is honest for the default
+# shape every existing user has (one drawn row) and wrong for a configured multi-row one, where
+# the real row count and `_inzsh_render_width`'s single slot both need to become per-row before
+# the climb can be right. Issue #223 owns that; see `docs/limitations.md`.
 #
 # So the row has to be rebuilt when the width changes, and there is exactly one moment the shell
 # is told that it did: SIGWINCH.

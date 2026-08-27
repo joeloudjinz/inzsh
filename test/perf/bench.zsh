@@ -77,12 +77,16 @@ fi
 
 # Dependency order, the same one `inzsh.zsh-theme` uses, plus the three files the entry point
 # does not source yet (engine, layout, config) because the renderer that will need them is the
-# thing this suite is waiting for.
+# thing this suite is waiting for. `rows.zsh` joined the list in `v1.3.0 · Prompt rows`: without
+# it `_inzsh_render` degrades to its own single-row fallback, and `render-prompt` would be
+# measuring code no real load order ever runs — the entry point and the bundle manifest both
+# source it, unconditionally, between `engine` and `render`.
 source $_inzsh_bench_root/lib/core/detect.zsh
 source $_inzsh_bench_root/lib/core/tokens-256.zsh
 source $_inzsh_bench_root/lib/core/tokens.zsh
 source $_inzsh_bench_root/lib/core/render.zsh
 source $_inzsh_bench_root/lib/core/engine.zsh
+source $_inzsh_bench_root/lib/core/rows.zsh
 source $_inzsh_bench_root/lib/core/layout.zsh
 source $_inzsh_bench_root/lib/core/config.zsh
 source $_inzsh_bench_root/tools/perf.zsh
@@ -351,11 +355,23 @@ _inzsh_bench_row() {
 # The roster is restored from `_inzsh_bench_roster_defaults` and its two neighbours FIRST,
 # before anything else in this prep runs, so this case always measures the seven segments it
 # has always measured — whichever case in the table ran immediately before it.
+#
+# `unset -m 'INZSH_ROW*_LEFT' 'INZSH_ROW*_RIGHT'` belongs here for the same reason: every case
+# in this table runs in ONE process (`_inzsh_bench_run`), and `_inzsh_bench_prep_render_prompt_
+# 3row` below sets those with `typeset -g` and never unsets them. Without this line they leak
+# into every case that runs after it — `render-prompt-hidden` among them — silently placing its
+# segments onto rows the fixture never asked for and drawing something other than what its own
+# name says it measures. `_inzsh_last_status` gets the same treatment for the same reason: the
+# 3-row case below forces it nonzero so `RETVAL` has something to draw.
 _inzsh_bench_prep_render_prompt() {
   typeset -gA _inzsh_segment_defaults _inzsh_segment_fg_role _inzsh_segment_importance
   _inzsh_segment_defaults=("${(@kv)_inzsh_bench_roster_defaults}")
   _inzsh_segment_fg_role=("${(@kv)_inzsh_bench_roster_fg_role}")
   _inzsh_segment_importance=("${(@kv)_inzsh_bench_roster_importance}")
+
+  unset -m 'INZSH_ROW*_LEFT' 'INZSH_ROW*_RIGHT'
+  typeset -g INZSH_MARKER_ROW=own
+  typeset -g _inzsh_last_status=0
 
   typeset -g INZSH_SURFACE_MODE=alternate
   typeset -g COLUMNS=80
@@ -367,6 +383,51 @@ _inzsh_bench_prep_render_prompt() {
 # a script-reading interactive zsh never draws a prompt — so the assignment costs what it costs on
 # a real precmd and shows nobody anything.
 _inzsh_bench_case_render_prompt() {
+  _inzsh_render
+}
+
+# --- three rows, against the same house budget ----------------------------------------------
+# `v1.3.0 · Prompt rows` grows `_inzsh_render` from one segment row to N, and the fit pass —
+# `_inzsh_layout_fit` per side, `_inzsh_render_gap`, `_inzsh_render_row_fits` — is exactly the
+# part of the work issue #254 made this table watch honestly: it now runs 2x per row instead of
+# twice in total.
+#
+# THE NAMES HAVE TO BE ONES THIS BENCH ACTUALLY REGISTERS. `_inzsh_bench_segments` (`dir git
+# venv status clock salah`) is `render-floor`'s own fixture — six labels in `_inzsh_bench_label`,
+# built by hand in `_inzsh_bench_row` rather than by a real segment. `render-prompt` and this
+# case call `_inzsh_render` for real, which only knows the seven files sourced above: `root user
+# host dir venv retval time`. `GIT` and `SALAH` are never sourced here at all, `STATUS` and
+# `CLOCK` are not segment names anywhere in the repo, so all four are dropped by `rows.zsh`'s own
+# claim step (`_inzsh_rows_entries` refuses a name `_inzsh_segment_defaults` does not hold) —
+# they were never real load in the first place.
+#
+# What is real, and what draws TEXT rather than an empty string in this shell: `DIR` (its rank
+# is overridden below the same as `render-prompt`'s own), `USER` (`INZSH_DEFAULT_USER=` above
+# forces it to show the real one), `HOST` (the fake `SSH_CONNECTION` above is what makes it show
+# at all — `lib/segments/host.zsh` hides it otherwise) and `TIME` (always draws the real clock).
+# `ROOT` needs `EUID == 0`, which this process is not, and `VENV` needs `$VIRTUAL_ENV`, which is
+# not set — both would draw empty and cost nothing, proving nothing about the fit path they were
+# meant to exercise, so neither is used here. `RETVAL` draws only on a nonzero exit
+# (`lib/segments/retval.zsh`), which the prep forces via `_inzsh_last_status` — the same
+# injection seam the segment documents — so five real, drawing segments are what this case
+# spreads across three rows.
+#
+# `DIR` GETS A ROW TO ITSELF, deliberately. It draws the real, unbounded `$PWD` this process
+# happens to run in — long from a deep checkout, short from a shallow one — and pairing it with
+# anything else would make that row's fit depend on where `make perf` was invoked from rather
+# than on the mechanism this case exists to measure. `USER`, `HOST`, `TIME` and `RETVAL` are all
+# short and fixed in shape regardless of environment, so they carry the two-per-row pairing.
+_inzsh_bench_prep_render_prompt_3row() {
+  _inzsh_bench_prep_render_prompt
+
+  typeset -g INZSH_DIR_RANK=1
+  typeset -g _inzsh_last_status=1
+
+  typeset -g INZSH_ROW1_LEFT=(DIR)
+  typeset -g INZSH_ROW2_LEFT=(USER) INZSH_ROW2_RIGHT=(RETVAL)
+  typeset -g INZSH_ROW3_LEFT=(HOST) INZSH_ROW3_RIGHT=(TIME)
+}
+_inzsh_bench_case_render_prompt_3row() {
   _inzsh_render
 }
 
@@ -504,6 +565,7 @@ typeset -ga _inzsh_bench_table=(
   config-resolve      150   1.450
   render-floor         40  12.000
   render-prompt        40  24.000
+  render-prompt-3row   40  30.000
   render-prompt-hidden 40  30.000
 )
 
@@ -571,6 +633,35 @@ typeset -ga _inzsh_bench_table=(
 # `render-floor` keeps 12.000, which is still its own cost times six. It is no longer the cheaper
 # twin of `render-prompt` on the same standard — it is a control, and the gap between the two
 # numbers is now the honest measure of what the orchestrator costs on top of the primitives.
+#
+# `render-prompt-3row` gets the reduced multiple `render-prompt` and `render-prompt-hidden` are
+# stuck with, for the same reason: its worst best-of-5 across several local runs was 7.23 ms, and
+# six times that is 43 ms — above the 30 ms house budget this row exists to stay under. 30.000
+# (~4.15x) is the same treatment `render-prompt-hidden` gets, and for the same reason: both are
+# now the heaviest tier in this table, and a budget that permits what the promise forbids is not
+# a budget.
+#
+# FIVE REAL SEGMENTS — `DIR`, `USER`, `HOST`, `TIME`, `RETVAL` (forced to draw via
+# `_inzsh_last_status`) — spread one row for `DIR` alone and two rows of two, not the six-segment
+# fixture `render-floor` uses. `_inzsh_bench_segments` (`dir git venv status clock salah`) is that
+# fixture's own synthetic labels; `GIT` and `SALAH` are never sourced as real segments in this
+# file, and `STATUS`/`CLOCK` are not segment names anywhere in the repo, so naming any of them in
+# a row array is a silent no-op — `rows.zsh`'s claim step drops a name `_inzsh_segment_defaults`
+# does not hold. An earlier version of this case did exactly that and measured one segment on one
+# row while believing it measured six on three; the numbers here are from the corrected fixture.
+#
+# THIS CASE IS SLOWER THAN `render-prompt`, NOT CHEAPER — 7.1–7.2 ms against 5.7–5.8 ms, both
+# measured back to back on the same machine, a consistent ~1.25x across repeated runs regardless
+# of the absolute noise on either side. Three separate `_inzsh_render_row` calls, each running
+# `_inzsh_layout_fit` twice, computing its own gap and measuring its own `_inzsh_render_row_fits`,
+# cost more than doing that work once — three rows of real content is genuinely three times
+# most of the per-row work, not a smaller multiple of it. `v1.3.0 · Prompt rows` DID narrow the
+# render budget's headroom: CI measured `render-prompt` itself moving from 8.514 ms to 10.305 ms
+# (28.38% to 34.35% of the house budget) between the commit before this milestone's rows were
+# wired in and the one after — a real ~1.79 ms cost from the N-row orchestrator, not noise
+# (`render-floor` moved only +4.8% over the same two runs, so the runner itself was about 5%
+# slower and the rest is genuine). Still comfortably inside the 30 ms budget, but not free, and
+# this row is what will say so if a future change makes it worse.
 
 # The row the house budget is about. `_inzsh_config_render_budget_ms` in `lib/core/config.zsh`
 # is 30 ms; this is the case measured against it, through the registered guard.

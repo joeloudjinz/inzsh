@@ -15,8 +15,9 @@ The claims, in the order they matter:
 * the same resize WITHOUT the redraw installed leaves a row too wide for its window, so it
   wraps and a two-row prompt becomes four. That is issue #190, reproduced;
 * a half-typed command line survives the redraw with its text intact;
-* the right side falls back beside the marker when the gap will no longer fit, which is
-  the agreed degradation and not a second bug;
+* the right side drops rather than relocates when the gap will no longer fit — `v1.3.0 ·
+  Prompt rows` removed the old fallback beside the marker, so a resize that narrows the
+  window past the gap loses that block rather than moving it;
 * the mechanism: a resize fires `TRAPWINCH` and does NOT fire `zle-line-pre-redraw`, which
   is why this is a trap and not a widget;
 * a window that changed only its height redraws nothing;
@@ -40,7 +41,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CORE = REPO_ROOT / "lib" / "core"
 
 # One block on each side. Short enough that both fit at 40 columns and neither fits at 20,
-# so the same fixture reaches the padded row and its fallback.
+# so the same fixture reaches both the padded row and the width where the right one drops.
 LEFT = "LEFTBLOCK"
 RIGHT = "RIGHT9"
 
@@ -209,16 +210,17 @@ class ShapeTest(unittest.TestCase):
         self.assertEqual(rows_with(grid, RIGHT), [0], msg=excerpt(grid))
         self.assertLessEqual(widest(grid), 49, msg=excerpt(grid))
 
-    def test_the_right_side_falls_back_beside_the_marker_when_the_gap_will_not_fit(self):
-        """The agreed degradation: row one while the gap fits, row two beside the marker
-        when it does not. A right prompt in the wrong place beats one that vanished."""
+    def test_the_right_side_drops_rather_than_relocates_when_the_gap_will_not_fit(self):
+        """`v1.3.0 · Prompt rows` removed the old fallback beside the marker: nothing
+        relocates between rows any more, so a block that will not fit its row drops by
+        priority instead. The marker row stays bare — RIGHT9 is nowhere on the grid."""
         with ResizeSession() as session:
             session.resize(20)
             grid = session.grid()
 
         self.assertEqual(grid.rows_occupied(), 2, msg=excerpt(grid))
         self.assertEqual(rows_with(grid, LEFT), [0], msg=excerpt(grid))
-        self.assertEqual(rows_with(grid, RIGHT), [1], msg=excerpt(grid))
+        self.assertEqual(rows_with(grid, RIGHT), [], msg=excerpt(grid))
         self.assertLessEqual(widest(grid), 19, msg=excerpt(grid))
 
     def test_a_half_typed_command_line_survives_the_resize(self):
