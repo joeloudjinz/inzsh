@@ -1264,10 +1264,10 @@ Describe 'inzsh doctor'
     End
 
     # Review finding N-2. `inzsh doctor` has no argument of its own in the usage string — the
-    # clock is an undocumented seam for the suite, the same way `[now]` is for `inzsh locate` —
-    # but `inzsh()` forwards `"$@"`, so a second word typed by a person reaches it too, and a
-    # value that is not an epoch must not turn into a false `no position` beside a `location:
-    # config` that is telling the truth.
+    # clock is an undocumented seam for the suite, unlike `inzsh locate`'s own `--now`, which is
+    # named on purpose (#251) — but `inzsh()` forwards `"$@"`, so a second word typed by a person
+    # reaches it too, and a value that is not an epoch must not turn into a false `no position`
+    # beside a `location: config` that is telling the truth.
     It 'falls back to the wall clock rather than lying about the position for a bad argument'
       bad_clock() {
         inzsh_spec_doctor_salah_env || return 1
@@ -1500,7 +1500,7 @@ Describe 'inzsh locate'
     off() {
       inzsh_spec_locate_env
       local INZSH_SALAH_AUTOLOCATE=0
-      inzsh locate $inzsh_spec_locate_now
+      inzsh locate --now $inzsh_spec_locate_now
       local -i rc=$?
       inzsh_spec_locate_clean
       return $rc
@@ -1515,7 +1515,7 @@ Describe 'inzsh locate'
     typo() {
       inzsh_spec_locate_env
       local INZSH_SALAH_AUTOLOCATE=banana
-      inzsh locate $inzsh_spec_locate_now
+      inzsh locate --now $inzsh_spec_locate_now
       local -i rc=$?
       inzsh_spec_locate_clean
       return $rc
@@ -1529,7 +1529,7 @@ Describe 'inzsh locate'
     current() {
       inzsh_spec_locate_env
       _inzsh_salah_location_write 21.4225 39.8262 $(( inzsh_spec_locate_now - 300 )) || return 1
-      inzsh locate $inzsh_spec_locate_now
+      inzsh locate --now $inzsh_spec_locate_now
       local -i rc=$?
       inzsh_spec_locate_clean
       return $rc
@@ -1545,7 +1545,7 @@ Describe 'inzsh locate'
       inzsh_spec_locate_env
       local INZSH_SALAH_AUTOLOCATE_TTL=300
       _inzsh_salah_location_write 21.4225 39.8262 $(( inzsh_spec_locate_now - 86400 )) || return 1
-      inzsh locate $inzsh_spec_locate_now
+      inzsh locate --now $inzsh_spec_locate_now
       local -i rc=$?
       inzsh_spec_locate_clean
       return $rc
@@ -1558,7 +1558,7 @@ Describe 'inzsh locate'
   It 'says so when the lookup fails and nothing was ever stored'
     nothing() {
       inzsh_spec_locate_env
-      inzsh locate $inzsh_spec_locate_now
+      inzsh locate --now $inzsh_spec_locate_now
       local -i rc=$?
       inzsh_spec_locate_clean
       return $rc
@@ -1572,7 +1572,7 @@ Describe 'inzsh locate'
     forced() {
       inzsh_spec_locate_env
       _inzsh_salah_location_write 21.4225 39.8262 $(( inzsh_spec_locate_now - 300 )) || return 1
-      inzsh locate --force $inzsh_spec_locate_now
+      inzsh locate --force --now $inzsh_spec_locate_now
       local -i rc=$?
       inzsh_spec_locate_clean
       return $rc
@@ -1580,6 +1580,63 @@ Describe 'inzsh locate'
     When call forced
     The status should be failure
     The stderr should include 'kept'
+  End
+
+  # Issue #251: the flag works with `--force` given afterward too — an order a reader could
+  # just as reasonably type, and the parser must not care which comes first.
+  It 'accepts --now before --force, the same as --force before --now'
+    forced_reordered() {
+      inzsh_spec_locate_env
+      _inzsh_salah_location_write 21.4225 39.8262 $(( inzsh_spec_locate_now - 300 )) || return 1
+      inzsh locate --now $inzsh_spec_locate_now --force
+      local -i rc=$?
+      inzsh_spec_locate_clean
+      return $rc
+    }
+    When call forced_reordered
+    The status should be failure
+    The stderr should include 'kept'
+  End
+
+  # #251 moved the clock off the positional slot entirely — a bare digit is now an unrecognised
+  # argument, not a silently-accepted clock, so nobody depends on a form CONVENTIONS.md rules out.
+  It 'rejects the old bare positional clock rather than accepting it silently'
+    positional() {
+      inzsh_spec_locate_env
+      inzsh locate $inzsh_spec_locate_now
+      local -i rc=$?
+      inzsh_spec_locate_clean
+      return $rc
+    }
+    When call positional
+    The status should be failure
+    The stderr should include 'unknown argument'
+  End
+
+  It 'refuses --now given junk rather than an epoch'
+    junk() {
+      inzsh_spec_locate_env
+      inzsh locate --now banana
+      local -i rc=$?
+      inzsh_spec_locate_clean
+      return $rc
+    }
+    When call junk
+    The status should be failure
+    The stderr should include '--now wants an epoch'
+  End
+
+  It 'refuses --now given no value at all'
+    empty() {
+      inzsh_spec_locate_env
+      inzsh locate --now
+      local -i rc=$?
+      inzsh_spec_locate_clean
+      return $rc
+    }
+    When call empty
+    The status should be failure
+    The stderr should include '--now wants an epoch'
   End
 End
 
