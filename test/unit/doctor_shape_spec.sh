@@ -102,22 +102,24 @@ Describe '_inzsh_doctor_shape'
     The output should not include 'would be'
   End
 
-  # `INZSH_PROMPT_LINES` is the deprecated alias — the marker row resolves THROUGH it rather than
-  # only ever answering the newer knob's own default.
-  It 'resolves the marker row through the deprecated INZSH_PROMPT_LINES alias'
-    alias_marker() {
+  # `INZSH_PROMPT_LINES` was the deprecated alias through v1.x. `v2.0.0` retired it, so the
+  # marker row is now always just the resolved value, with no attribution note — reporting a
+  # still-set `INZSH_PROMPT_LINES` as retired is issue #242, not `_inzsh_doctor_shape`'s job.
+  It 'reports the marker row with no alias note, even with a stale INZSH_PROMPT_LINES set'
+    stale_marker() {
       local COLUMNS=80
       local INZSH_PROMPT_LINES=1
       inzsh doctor
     }
-    When call alias_marker
-    The output should include 'shape         marker: inline (via the deprecated INZSH_PROMPT_LINES)'
+    When call stale_marker
+    The output should include 'shape         marker: own'
+    The output should not include 'deprecated'
   End
 
-  It 'does not credit the alias when INZSH_MARKER_ROW answers directly'
+  It 'resolves an explicit INZSH_MARKER_ROW with no alias note'
     explicit_marker() {
       local COLUMNS=80
-      local INZSH_MARKER_ROW=inline INZSH_PROMPT_LINES=2
+      local INZSH_MARKER_ROW=inline
       inzsh doctor
     }
     When call explicit_marker

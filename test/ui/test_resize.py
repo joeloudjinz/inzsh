@@ -415,10 +415,10 @@ class ShapeTest(unittest.TestCase):
         self.assertGreater(widest(grid), narrow, msg=excerpt(grid))
 
     def test_the_one_line_shape_redraws_too(self):
-        """At `INZSH_PROMPT_LINES=1` the right side is a real `RPROMPT`, which zsh places
+        """At `INZSH_MARKER_ROW=inline` the right side is a real `RPROMPT`, which zsh places
         itself — so this is the shape the bug was mildest in, and it still has to be
         rebuilt: the LEFT side is measured against `$COLUMNS` like everything else."""
-        with ResizeSession(prelude="INZSH_PROMPT_LINES=1\n") as session:
+        with ResizeSession(prelude="INZSH_MARKER_ROW=inline\n") as session:
             session.resize(50)
             grid = session.grid()
 

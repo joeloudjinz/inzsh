@@ -264,7 +264,7 @@ Type a setting, press return, and the next prompt uses it.
 
     INZSH_SURFACE_MODE=hue        block colours: alternate · ramp · flat · hue
     INZSH_SEPARATOR_STYLE=round   the shape between blocks: arrow · round · divider
-    INZSH_PROMPT_LINES=1          type on the same line as the blocks, not below
+    INZSH_MARKER_ROW=inline       type on the same line as the blocks, not below
     inzsh preset warm             the light palette instead of the dark one — the same
                                   command your own shell has. In .zshrc it is
                                   INZSH_PRESET=warm, read as the theme loads

@@ -447,9 +447,10 @@ Describe '_inzsh_rows_diagnose'
 End
 
 Describe '_inzsh_marker_row_resolved'
-  # `INZSH_PROMPT_LINES` is the knob every existing `.zshrc` already carries, and it keeps
-  # working, mapped onto `INZSH_MARKER_ROW` — §3.1. The removal is v2.0.0 and is not this file's
-  # concern; this is only the alias.
+  # `INZSH_PROMPT_LINES` was a deprecated alias for this knob through v1.x, mapped onto
+  # `INZSH_MARKER_ROW` — §3.1. `v2.0.0` retires it: this function no longer reads it at any
+  # precedence, so the last example below is the proof that a stale `.zshrc` setting is now
+  # exactly as inert as any other name the theme has never heard of.
   inzsh_spec_marker() {
     _inzsh_marker_row_resolved
     print -r -- "$REPLY"
@@ -460,39 +461,33 @@ Describe '_inzsh_marker_row_resolved'
     The output should eq 'own'
   End
 
-  It 'resolves PROMPT_LINES=1 to inline'
-    lines_one() { INZSH_PROMPT_LINES=1; inzsh_spec_marker }
-    When call lines_one
+  It 'resolves an explicit MARKER_ROW=inline'
+    marker_inline() { INZSH_MARKER_ROW=inline; inzsh_spec_marker }
+    When call marker_inline
     The output should eq 'inline'
   End
 
-  It 'resolves PROMPT_LINES=2 to own'
-    lines_two() { INZSH_PROMPT_LINES=2; inzsh_spec_marker }
-    When call lines_two
+  It 'resolves an explicit MARKER_ROW=own'
+    marker_own() { INZSH_MARKER_ROW=own; inzsh_spec_marker }
+    When call marker_own
     The output should eq 'own'
   End
 
-  It 'ignores an unreadable PROMPT_LINES and falls back to own'
-    lines_bad() { INZSH_PROMPT_LINES=three; inzsh_spec_marker }
-    When call lines_bad
-    The output should eq 'own'
-  End
-
-  It 'lets an explicit MARKER_ROW win outright over PROMPT_LINES'
-    marker_wins() { INZSH_MARKER_ROW=inline; INZSH_PROMPT_LINES=2; inzsh_spec_marker }
-    When call marker_wins
-    The output should eq 'inline'
-  End
-
-  It 'falls through PROMPT_LINES when MARKER_ROW is unreadable'
-    marker_bad() { INZSH_MARKER_ROW=sideways; INZSH_PROMPT_LINES=1; inzsh_spec_marker }
+  It 'falls back to own when MARKER_ROW is unreadable'
+    marker_bad() { INZSH_MARKER_ROW=sideways; inzsh_spec_marker }
     When call marker_bad
-    The output should eq 'inline'
+    The output should eq 'own'
   End
 
   It 'treats a set-but-empty MARKER_ROW as unset'
-    marker_empty() { INZSH_MARKER_ROW=; INZSH_PROMPT_LINES=1; inzsh_spec_marker }
+    marker_empty() { INZSH_MARKER_ROW=; inzsh_spec_marker }
     When call marker_empty
-    The output should eq 'inline'
+    The output should eq 'own'
+  End
+
+  It 'ignores a stale INZSH_PROMPT_LINES entirely, the knob v2.0.0 retired'
+    stale() { INZSH_PROMPT_LINES=1; inzsh_spec_marker }
+    When call stale
+    The output should eq 'own'
   End
 End

@@ -46,8 +46,9 @@
 # through `_inzsh_rows_entries`'s status rather than half-working.
 #
 # `INZSH_MARKER_ROW` is the one scalar knob this feature adds: `enum:inline|own`, `own` is
-# today's shape — a bare marker line below every drawn row. `INZSH_PROMPT_LINES` keeps working
-# as a deprecated alias for it — see `_inzsh_marker_row_resolved` below.
+# today's shape — a bare marker line below every drawn row. `INZSH_PROMPT_LINES` was a
+# deprecated alias for it through v1.x and is retired in v2.0.0 — see `_inzsh_marker_row_resolved`
+# below, which no longer reads it at all.
 if (( ${+functions[_inzsh_config_register]} )); then
   _inzsh_config_register        INZSH_MARKER_ROW  'enum:inline|own' own
   _inzsh_config_register_family 'INZSH_ROW*_LEFT'  any               ''
@@ -126,49 +127,46 @@ _inzsh_rows_entries() {
 
 # `_inzsh_marker_row_resolved` → REPLY: `inline` or `own`.
 #
-# `INZSH_PROMPT_LINES` is the knob every existing `.zshrc` already carries, and it keeps working
-# — this is the alias precedence §3.1 describes, not the removal:
+# `INZSH_PROMPT_LINES` was the alias §3.1 describes — `1` mapped onto `inline`, `2` onto `own` —
+# and it is gone as of `v2.0.0`. This function no longer reads it in any form, at any precedence:
+# a `.zshrc` that still sets it is unregistered data sitting in the environment, exactly as
+# harmless as any other name this theme never heard of. The whole of the precedence left is:
 #
 #   1. an explicit, valid `INZSH_MARKER_ROW` wins outright
-#   2. otherwise an explicit, valid `INZSH_PROMPT_LINES` resolves to the marker row it names
-#      (`1` is `inline`, `2` is `own`)
-#   3. otherwise the default, `own`
+#   2. otherwise the default, `own`
 #
-# "Explicit" is load-bearing: `_inzsh_config_get` would hand back the registered default the
-# moment nothing is set, and that default must not shortcut past step 2 the way it would if this
-# read `INZSH_MARKER_ROW`'s resolved value instead of its raw one. So the raw variable is read
-# and validated by hand at both levels, set-but-empty counting as unset the same way it does
-# everywhere else in this tree.
+# "Explicit" is still load-bearing even with one source left: `_inzsh_config_get` would hand back
+# the registered default the moment nothing is set, and reading that instead of the raw variable
+# would make step 1 indistinguishable from step 2 by construction. So the raw variable is read
+# and validated by hand, set-but-empty counting as unset the same way it does everywhere else in
+# this tree.
 #
-# `INZSH_PROMPT_LINES` is registered in `lib/core/render.zsh`, which loads AFTER this file — this
-# file depends on nothing below it, so its grammar is restated here as the literal `1`/`2` it has
-# always been, rather than asked of a registry entry that may not exist yet when THIS file is
-# sourced. `INZSH_MARKER_ROW`, registered a few lines up in this same file, is instead checked
-# through `_inzsh_config_validate` where the config layer is loaded, and by the literal enum
-# otherwise — config.zsh loads BEFORE this file, so leaning on it here is the ordinary direction.
+# THE DEFAULT IS ASSIGNED LAST, NOT FIRST, and that ordering is load-bearing rather than
+# stylistic. `_inzsh_config_validate` answers through the SAME global `REPLY` this function does
+# — `_inzsh_config_spec_of`, which it calls first, clobbers `REPLY` with the raw spec string as
+# its own return channel, by contract ("REPLY is clobbered — read it before validating", see
+# `lib/core/config.zsh`) — so a validation FAILURE leaves `REPLY` holding something like
+# `enum:inline|own` rather than untouched. Setting the default up front and trusting it to survive
+# an intervening call that documents clobbering it is exactly the bug that shape invites; setting
+# it only once every other path has had its chance to `return` first is what a fallback assignment
+# actually means.
 _inzsh_marker_row_resolved() {
   emulate -L zsh
-
-  typeset -g REPLY=own
 
   local raw=${INZSH_MARKER_ROW-}
   if [[ -n $raw ]]; then
     if (( ${+functions[_inzsh_config_validate]} )); then
       if _inzsh_config_validate INZSH_MARKER_ROW "$raw"; then
-        REPLY=$raw
+        typeset -g REPLY=$raw
         return 0
       fi
     elif [[ $raw == inline || $raw == own ]]; then
-      REPLY=$raw
+      typeset -g REPLY=$raw
       return 0
     fi
   fi
 
-  local lines=${INZSH_PROMPT_LINES-}
-  case $lines in
-    (1) REPLY=inline; return 0 ;;
-    (2) REPLY=own;    return 0 ;;
-  esac
+  typeset -g REPLY=own
 
   return 0
 }
