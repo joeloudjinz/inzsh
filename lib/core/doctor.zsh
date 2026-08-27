@@ -444,6 +444,67 @@ _inzsh_doctor_age() {
   return 0
 }
 
+# The resolved SHAPE of the prompt — never the knob, the render's own answer to it. Issue #227:
+# `INZSH_SEPARATOR_STYLE=arrow` with no Nerd Font draws `divider`, and a row that printed `arrow`
+# because that is what the variable says would be describing a prompt nobody is looking at. Every
+# fact below is read the same way the render core reads it, at the moment doctor asks —
+# recompute-never-cache, the same rule every row above already keeps.
+#
+# Omitted whole when `lib/core/rows.zsh` and `lib/core/render.zsh` are not both loaded: a partial
+# load has nothing honest to compute a row count or a fit from.
+_inzsh_doctor_shape() {
+  emulate -L zsh
+  setopt extended_glob
+
+  (( ${+functions[_inzsh_rows_resolve]} && ${+functions[_inzsh_render_row]} )) || return 0
+
+  local -i cols=${COLUMNS:-0}
+  local value
+
+  # The separator. `sep_intended` is resolved through the identical case-match `_inzsh_sep_style`
+  # itself applies, BEFORE its own Nerd Font check — so the two can only ever disagree for the one
+  # reason that check exists, and the note below is never wrong about why.
+  local sep_raw=${INZSH_SEPARATOR_STYLE-}
+  (( ${+functions[_inzsh_config_get]} )) && { _inzsh_config_get INZSH_SEPARATOR_STYLE; sep_raw=$REPLY }
+  local sep_intended=arrow
+  case $sep_raw in (arrow|round|divider) sep_intended=$sep_raw ;; esac
+  _inzsh_sep_style
+  value=$_inzsh_sep_style_resolved
+  [[ $value != $sep_intended ]] && value+=" (would be $sep_intended with a Nerd Font)"
+  _inzsh_doctor_row shape "separator: $value"
+
+  # The surface mode. Nothing transforms it further the way the separator is, so the resolved
+  # value is the whole answer — an invalid `INZSH_SURFACE_MODE` already has its own row in the
+  # `ignored` section below, and repeating that note here would be the same fact said twice.
+  _inzsh_surface_mode
+  _inzsh_doctor_row shape "surface: $_inzsh_surface_mode_resolved"
+
+  # The marker row. `INZSH_PROMPT_LINES` is the deprecated alias — see `lib/core/rows.zsh` for
+  # the precedence — and a reader who only ever set the old knob deserves to know that is where
+  # the answer came from, not just what the answer is.
+  if (( ${+functions[_inzsh_marker_row_resolved]} )); then
+    _inzsh_marker_row_resolved
+    value=$REPLY
+    if [[ ${INZSH_MARKER_ROW-} != (inline|own) && ${INZSH_PROMPT_LINES-} == (1|2) ]]; then
+      value+=' (via the deprecated INZSH_PROMPT_LINES)'
+    fi
+    _inzsh_doctor_row shape "marker: $value"
+  fi
+
+  # The padding. Bounded by its own validator, so an out-of-range value already has an `ignored`
+  # row of its own — this is only ever the number actually spent on either side of a block.
+  _inzsh_render_pad
+  _inzsh_doctor_row shape "padding: $_inzsh_render_pad_resolved"
+
+  # The row count, resolved fresh against every registered segment and the terminal width right
+  # now — the same call `_inzsh_render` itself makes on every precmd, not a second opinion of it.
+  local -a shape_candidates=(${(ok)_inzsh_segment_defaults})
+  _inzsh_rows_resolve "$cols" "${shape_candidates[@]}"
+  _inzsh_doctor_row shape "rows: $_inzsh_row_count"
+
+  return 0
+}
+
 # The block itself. Always status 0: a diagnostic that can fail is a diagnostic nobody can run
 # in the broken environment it exists for, so every line degrades to an honest word — `unknown`,
 # `none` — rather than to an error.
@@ -563,6 +624,10 @@ _inzsh_doctor() {
     _inzsh_config_guard_names
     (( ${#reply} )) && _inzsh_doctor_row invariants "${(j:, :)reply}"
   fi
+
+  # The resolved prompt shape — issue #227. Omitted whole when `lib/core/rows.zsh` and
+  # `lib/core/render.zsh` are not loaded; see `_inzsh_doctor_shape`'s own header for why.
+  _inzsh_doctor_shape
 
   # What the user set and the theme is not using — one row per value, with the vocabulary it
   # should have used, rendered from the registered spec by `_inzsh_config_accepts` so the words

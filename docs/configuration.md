@@ -226,6 +226,29 @@ Earlier versions had four named steps — `full`, `wide`, `narrow`, `minimal` �
 `INZSH_LADDER_*_COLS` variables. Nothing ever read the step, and fitting from real measurements
 turned out to be both simpler and exact, so they were removed rather than tuned.
 
+### Diagnosing the shape — `inzsh doctor`
+
+Once the prompt can be several rows, `inzsh doctor` reports the RESOLVED shape — what the render
+actually drew, never what a knob asked for:
+
+```
+shape         rows: 2
+shape         separator: divider (would be arrow with a Nerd Font)
+shape         surface: alternate
+shape         marker: inline (via the deprecated INZSH_PROMPT_LINES)
+shape         padding: 1
+```
+
+`separator` prints the style that actually draws — `INZSH_SEPARATOR_STYLE=arrow` with
+`INZSH_NERD_FONT=0` prints `divider`, with a note naming what was asked for and why it did not
+draw. `surface` and `padding` are the plain resolved value: an invalid `INZSH_SURFACE_MODE` or
+`INZSH_SEGMENT_PAD` already has its own row in the *ignored* section above, so this is not said
+twice. `marker` names the deprecated `INZSH_PROMPT_LINES` when that is where the answer actually
+came from — see its row above. `rows` is the row count `_inzsh_rows_resolve` gives the render
+right now, against the terminal you are looking at.
+
+Omitted whole when `lib/core/rows.zsh` and `lib/core/render.zsh` are not both loaded.
+
 ## Secondary prompts and the title
 
 The parts of a theme nobody notices until they are missing: the continuation prompt you meet
