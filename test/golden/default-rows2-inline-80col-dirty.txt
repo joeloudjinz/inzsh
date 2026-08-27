@@ -1,4 +1,4 @@
-inzsh golden — preset=default lines=2 cols=80 state=dirty epoch=978352440 user=spec host=spec-host
+inzsh golden — preset=default marker=inline cols=80 state=dirty epoch=978352440 user=spec host=spec-host
 row 0 | 12:34  ~/work                                                       ! main|
 row 1 | spec  →|
 row 2 | spec-host|

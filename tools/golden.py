@@ -69,25 +69,29 @@ UPDATE_HINT = "run `make golden-update` and commit the result in the same PR"
 class Case(NamedTuple):
     """One golden file: a preset, a shape, a width, a repository state.
 
+    `marker` is what every case is named and driven by — `INZSH_MARKER_ROW`, set directly.
+    Through `v1.3.0` this field was `lines: int` (`INZSH_PROMPT_LINES`, `1`/`2`), kept that way
+    on purpose while the alias still existed: a case that set `rows` also carried a `lines`
+    value, harmlessly overridden by the explicit `INZSH_MARKER_ROW` its own `rows` tuple set.
+    `v2.0.0` retired the alias (`.claude/docs/DESIGN-prompt-rows.md` §3.1), so there is nothing
+    left for a numeric `lines` field to mean; renaming it to the knob's own vocabulary forces the
+    whole golden set to regenerate, which is why the rename and the regeneration are one commit.
+
     `rows` and `variant` are additive — the `v1.3.0 · Prompt rows` cases below are the only
-    ones that set them. `lines` stays what every other case is named and driven by; a case
-    that sets `rows` still carries a `lines` value (harmlessly overridden — an explicit
-    `INZSH_MARKER_ROW` wins outright over `INZSH_PROMPT_LINES`, see `lib/core/rows.zsh`), so
-    the field is not renamed here. That rename, and the whole-set regeneration it forces, is
-    `v2.0.0`'s own commit (`.claude/docs/DESIGN-prompt-rows.md` §3.1) — not this one.
+    ones that set them.
     """
 
     preset: str | None  # None = base tokens; else a file in presets/
-    lines: int  # INZSH_PROMPT_LINES
+    marker: str  # INZSH_MARKER_ROW — "own" or "inline"
     cols: int
     state: str  # a fixture-repo.zsh state name
     rows: tuple[tuple[str, str], ...] = ()  # extra INZSH_ROW*/INZSH_MARKER_ROW assignments
-    variant: str = ""  # replaces the "<n>line" name component when `rows` is used
+    variant: str = ""  # replaces the marker name component when `rows` is used
 
     @property
     def name(self):
         preset = self.preset or "default"
-        shape = self.variant or f"{self.lines}line"
+        shape = self.variant or self.marker
         return f"{preset}-{shape}-{self.cols}col-{self.state}"
 
 
@@ -100,12 +104,12 @@ class Case(NamedTuple):
 # segment here needs a rank set by hand, because naming one in a row array places it and
 # shows it regardless of the rank it shipped with (design §2.3).
 CASES = (
-    Case(None, 2, 80, "dirty"),
-    Case(None, 1, 80, "dirty"),
-    Case(None, 2, 60, "dirty"),
-    Case(None, 2, 80, "diverged"),
-    Case("sharp", 2, 80, "dirty"),
-    Case("warm", 2, 80, "dirty"),
+    Case(None, "own", 80, "dirty"),
+    Case(None, "inline", 80, "dirty"),
+    Case(None, "own", 60, "dirty"),
+    Case(None, "own", 80, "diverged"),
+    Case("sharp", "own", 80, "dirty"),
+    Case("warm", "own", 80, "dirty"),
     # `ROW2_RIGHT` carries HOST here specifically so the two marker modes are visibly
     # different, not just structurally: under `own` it is a third block padded onto row two
     # exactly like GIT is on row one; under `inline` it is the segment on the LAST drawn row,
@@ -113,7 +117,7 @@ CASES = (
     # a golden file can show that a render-layer assertion states more precisely but a reader
     # of this file cannot see.
     Case(
-        None, 2, 80, "dirty",
+        None, "own", 80, "dirty",
         rows=(
             ("INZSH_MARKER_ROW", "own"),
             ("INZSH_ROW1_LEFT", "(TIME DIR)"),
@@ -124,7 +128,7 @@ CASES = (
         variant="rows2-own",
     ),
     Case(
-        None, 2, 80, "dirty",
+        None, "inline", 80, "dirty",
         rows=(
             ("INZSH_MARKER_ROW", "inline"),
             ("INZSH_ROW1_LEFT", "(TIME DIR)"),
@@ -135,7 +139,7 @@ CASES = (
         variant="rows2-inline",
     ),
     Case(
-        None, 2, 80, "dirty",
+        None, "own", 80, "dirty",
         rows=(
             ("INZSH_MARKER_ROW", "own"),
             ("INZSH_ROW1_LEFT", "(TIME DIR)"),
@@ -146,7 +150,7 @@ CASES = (
         variant="rows3-own",
     ),
     Case(
-        None, 2, 80, "dirty",
+        None, "inline", 80, "dirty",
         rows=(
             ("INZSH_MARKER_ROW", "inline"),
             ("INZSH_ROW1_LEFT", "(TIME DIR)"),
@@ -269,14 +273,15 @@ def snippet(case, work):
         f"cd -- {shlex.quote(str(work))} || exit 9",
         'unset -m "INZSH_*"',
         "unset SSH_CONNECTION SSH_TTY SSH_CLIENT VIRTUAL_ENV",
-        f"INZSH_PROMPT_LINES={case.lines}",
+        f"INZSH_MARKER_ROW={case.marker}",
         "INZSH_HOST_ALWAYS=1",
     ]
-    # `case.rows` — the row arrays and (usually) an explicit `INZSH_MARKER_ROW` — are set
-    # BEFORE the theme is sourced, same as every other knob above: the registry reads whatever
-    # is already in the shell the moment `_inzsh_precmd` first runs, not what was true at
-    # `source` time. An explicit `INZSH_MARKER_ROW` wins outright over `INZSH_PROMPT_LINES`
-    # regardless of which line came first, so the ordering here is for readability only.
+    # `case.rows` — the row arrays and (for the row cases) another, identical `INZSH_MARKER_ROW`
+    # assignment — are set BEFORE the theme is sourced, same as every other knob above: the
+    # registry reads whatever is already in the shell the moment `_inzsh_precmd` first runs, not
+    # what was true at `source` time. Setting the same knob twice for those cases is harmless —
+    # both lines agree — and keeps `case.marker` meaning the same thing for every case rather
+    # than only the ones with no `rows`.
     for knob, value in case.rows:
         lines.append(f"{knob}={value}")
     lines.append(f"source {shlex.quote(str(THEME))}")
@@ -322,7 +327,7 @@ def render_case(case, work, grid_runner):
     """One case rendered to golden text, or a raised error — never a quiet blank."""
     root = work.parent
     header = (
-        f"inzsh golden — preset={case.preset or 'default'} lines={case.lines} "
+        f"inzsh golden — preset={case.preset or 'default'} marker={case.marker} "
         f"cols={case.cols} state={case.state} epoch={EPOCH} user={USER} host={HOST}"
     )
     grid = grid_runner.render(
