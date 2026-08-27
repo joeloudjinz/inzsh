@@ -60,12 +60,32 @@ jobs:
       # loads it at runtime, and @semantic-release/exec the same way for its own
       # `prepare` step (.releaserc.yml) — the bundle is built there, after the
       # version is decided and before the GitHub release is published, never here.
+      #
+      # THE PRESET IS HELD AT 9, NOT LATEST, AND BUMPING IT SILENTLY BREAKS THE NOTES.
+      # Issue #289. `conventional-changelog-conventionalcommits@10` is incompatible with
+      # the `@semantic-release/release-notes-generator@14` that semantic-release@25
+      # resolves, and it does not fail — it emits a body consisting of the compare-link
+      # header and nothing else. Every automated release from v1.0.1 to v2.0.0 shipped
+      # 87 bytes of notes that way, which for this project means no changelog at all:
+      # `docs/releasing.md` commits no CHANGELOG.md precisely because "the releases page
+      # is the changelog".
+      #
+      # It went unnoticed for five releases because @semantic-release/commit-analyzer is
+      # NOT affected — versions were always correct while the notes were always empty, so
+      # neither half of the pipeline ever reported a problem. Driving the generator over
+      # v2.0.0's own commits: 9.3.1 emits 601 bytes with the breaking changes and features
+      # grouped; 10.2.1 emits 86.
+      #
+      # Falling back to the default angular preset is NOT a substitute. Its header pattern
+      # does not match the `!` breaking marker, so `feat(config)!: …` is dropped from the
+      # notes entirely — and one line, no body, `!` for breaking IS our commit convention
+      # (CONVENTIONS.md), so the conventionalcommits preset is load-bearing here.
       - name: semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >
           npx --yes
           --package semantic-release@25.0.8
-          --package conventional-changelog-conventionalcommits@10.2.1
+          --package conventional-changelog-conventionalcommits@9.3.1
           --package @semantic-release/exec@7.1.0
           semantic-release
