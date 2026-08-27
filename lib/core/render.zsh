@@ -233,6 +233,18 @@ typeset -g _inzsh_render_width=0
 # first resize after a load always redraws.
 typeset -g _inzsh_render_cols=0
 
+# The drawn width of every row `_inzsh_render` kept, one entry per row, in the order the rows
+# are drawn. `_inzsh_render_width` above is `_inzsh_render_build`'s own contract — one side, one
+# build — and stays exactly that; it is not a meaningful answer for the whole prompt the moment
+# there is more than one row, because it is left holding whichever build happened to run last.
+# This array is what `lib/core/resize.zsh` sums a reflow height over instead (issue #223,
+# `.claude/docs/DESIGN-prompt-rows.md` §5.3.1). Each entry is the width of the ASSEMBLED row —
+# including its gap, where one was drawn — because that is the string that can wrap on screen,
+# not one side of it. Declared here, empty, so a reader before the first render has nothing to
+# sum rather than an unset-parameter error.
+typeset -ga _inzsh_render_row_widths
+_inzsh_render_row_widths=()
+
 # ---------------------------------------------------------------------------------------------
 # Separators
 #
@@ -760,11 +772,14 @@ _inzsh_render_build() {
 typeset -g _inzsh_prompt_lines_resolved=2
 
 # Resolve the marker's placement into `_inzsh_prompt_lines_resolved` — kept in this shape, and
-# under this name, because `lib/core/resize.zsh` still reads it as a single number describing the
-# WHOLE prompt rather than the per-row picture `lib/core/rows.zsh` now has (issue #223 gives it
-# that). The mapping is exact and loses nothing `resize.zsh` currently uses: `inline` is the old
-# one-row shape, `own` the old two-row one, and `_inzsh_marker_row_resolved` already carries the
-# full precedence between `INZSH_MARKER_ROW` and the deprecated `INZSH_PROMPT_LINES` — see
+# under this name, because `lib/core/resize.zsh` still reads it, but only for the one fact it was
+# always narrow enough to state correctly: whether the marker spends a bare physical line of its
+# own (`own`) or terminates the last drawn row (`inline`). The ROW COUNT that used to ride along
+# with it — "1 or 2 segment rows" — is `_inzsh_render_row_widths`'s job now (issue #223), and
+# resize.zsh sums that separately rather than inferring it from this number. The mapping here is
+# exact and loses nothing `resize.zsh` still uses this value for: `inline` is the old one-row
+# shape, `own` the old two-row one, and `_inzsh_marker_row_resolved` already carries the full
+# precedence between `INZSH_MARKER_ROW` and the deprecated `INZSH_PROMPT_LINES` — see
 # `lib/core/rows.zsh`. This file restates only the fallback for the render core sourced without
 # it, the same courtesy every guarded call in this file gives the layer under it.
 _inzsh_render_lines() {
@@ -1266,8 +1281,9 @@ _inzsh_render() {
   # `RPROMPT` rather than a pad. Every other row, and every row under `own`, is padded in here,
   # proposed then measured exactly as the single-row renderer always did it.
   local -i eff_count=${#eff_left} i pad
-  local -a physical_rows=()
+  local -a physical_rows=() row_widths=()
   local last_left='' last_right='' row_str padded
+  local -i row_width
   for (( i = 1; i <= eff_count; i++ )); do
     if (( inline_marker && i == eff_count )); then
       last_left=${eff_left[i]}
@@ -1302,7 +1318,21 @@ _inzsh_render() {
     # nothing on it. `${(f)PROMPT}` will not show you this bug: zsh drops an empty field from a
     # `(f)` split, so a consecutive `$'\n\n'` in the raw string reads back as one fewer line than
     # it draws. Count newline BYTES in the raw string, or read it on a real grid, to catch this.
-    [[ -n $row_str ]] && physical_rows+=("$row_str")
+    #
+    # `row_widths` still gets an entry when the row was dropped: 0 is exactly the reflow height
+    # a row with nothing on screen contributes, which is what `lib/core/resize.zsh` needs it to
+    # be. Measured off the finished string rather than summed from `eff_left_w` / `eff_right_w`
+    # — the same reason `_inzsh_render_row_fits` measures rather than trusts the gap's own
+    # arithmetic: those two can under-report, and this number is the one the climb depends on.
+    row_width=0
+    if [[ -n $row_str ]]; then
+      physical_rows+=("$row_str")
+      if (( ${+functions[_inzsh_width]} )); then
+        _inzsh_width "$row_str"
+        row_width=$REPLY
+      fi
+    fi
+    row_widths+=("$row_width")
   done
 
   # The marker. Under `own` it always gets a bare line of its own, below every drawn row — the
@@ -1315,18 +1345,35 @@ _inzsh_render() {
   # legitimate — the marker is the whole prompt, under both settings; `physical_rows` is empty in
   # that case and this is the only row either branch below adds.
   if (( inline_marker )); then
-    if [[ -n $last_left ]]; then
-      physical_rows+=("${last_left} ${marker} ")
-    else
-      physical_rows+=("${marker} ")
-    fi
+    local marker_row="${marker} "
+    [[ -n $last_left ]] && marker_row="${last_left} ${marker} "
+    physical_rows+=("$marker_row")
     typeset -g RPROMPT=$last_right
+
+    # The row held back above is still a drawn row — the last configured segment row, only
+    # carrying the marker instead of a bare line of its own — so `row_widths` gets an entry for
+    # it here that the loop's `continue` skipped. `RPROMPT` is not measured into it: zsh
+    # right-aligns it itself and drops it rather than wrapping it, so unlike the literal padding
+    # every other row's right side is drawn with, it is not text of ours that can push this line
+    # past the terminal's edge. `eff_count` guards the case where nothing was drawn at all —
+    # the loop never ran, so there is no row here to record either.
+    if (( eff_count > 0 )); then
+      row_width=0
+      if (( ${+functions[_inzsh_width]} )); then
+        _inzsh_width "$marker_row"
+        row_width=$REPLY
+      fi
+      row_widths+=("$row_width")
+    fi
   else
     physical_rows+=("$marker ")
     typeset -g RPROMPT=
   fi
 
   typeset -g PROMPT="${(F)physical_rows}"
+
+  typeset -ga _inzsh_render_row_widths
+  _inzsh_render_row_widths=("${row_widths[@]}")
 
   return 0
 }
