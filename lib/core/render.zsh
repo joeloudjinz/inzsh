@@ -1277,15 +1277,32 @@ _inzsh_render() {
 
     row_str=${eff_left[i]}
     if [[ -n ${eff_right[i]} ]]; then
-      _inzsh_render_gap "$cols" "${eff_left_w[i]}" "${eff_right_w[i]}"
-      pad=$REPLY
-      if (( pad >= 1 )); then
-        padded=${eff_left[i]}${(l:pad:):-}${eff_right[i]}
-        _inzsh_render_row_fits "$padded" "$cols" && row_str=$padded
+      if [[ -z ${eff_left[i]} ]]; then
+        # A right-only row — legitimate under "override is per side" (§2.3) — has nothing to
+        # pad AWAY FROM. `_inzsh_render_gap` demands a gap of at least 1 because with content on
+        # BOTH sides a gap of 0 would run them together; with no left at all there is no
+        # collision to avoid, and `_inzsh_render_row`'s own per-side fit already bounded this
+        # string to `cols - 1` before handing it back, so it is measured and used bare rather
+        # than dropped for a margin nothing needed.
+        _inzsh_render_row_fits "${eff_right[i]}" "$cols" && row_str=${eff_right[i]}
+      else
+        _inzsh_render_gap "$cols" "${eff_left_w[i]}" "${eff_right_w[i]}"
+        pad=$REPLY
+        if (( pad >= 1 )); then
+          padded=${eff_left[i]}${(l:pad:):-}${eff_right[i]}
+          _inzsh_render_row_fits "$padded" "$cols" && row_str=$padded
+        fi
       fi
     fi
 
-    physical_rows+=("$row_str")
+    # A row that could not be safely assembled — the arithmetic above refusing to vouch for it,
+    # a case `test/render/prompt_shape_spec.sh`'s "accounting under-reports" example exercises
+    # directly — is not appended EMPTY. `physical_rows` is the newline-joined shape of the whole
+    # prompt, and an empty entry in it is a blank line between two others, not a row with
+    # nothing on it. `${(f)PROMPT}` will not show you this bug: zsh drops an empty field from a
+    # `(f)` split, so a consecutive `$'\n\n'` in the raw string reads back as one fewer line than
+    # it draws. Count newline BYTES in the raw string, or read it on a real grid, to catch this.
+    [[ -n $row_str ]] && physical_rows+=("$row_str")
   done
 
   # The marker. Under `own` it always gets a bare line of its own, below every drawn row — the

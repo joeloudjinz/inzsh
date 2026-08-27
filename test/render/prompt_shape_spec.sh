@@ -191,6 +191,7 @@ Describe 'the prompt shape'
           local -a wrong=()
           (( ${#rows} == 2 ))      || wrong+=rows:${#rows}
           [[ $REPLY != *charlie* ]] || wrong+=drawn-anyway
+          [[ $PROMPT != *charlie* ]] || wrong+=carried-somewhere-in-prompt
           [[ -z $RPROMPT ]]         || wrong+=rprompt-carried-something
           print -r -- "${wrong[*]}"
         '
@@ -625,6 +626,36 @@ Describe 'the prompt shape'
         '
       }
       When call empty_middle_row
+      The output should eq ''
+      The stderr should eq ''
+    End
+
+    # A RIGHT-ONLY row — legitimate under "override is per side" (§2.3) — has no left content
+    # to pad away from. `_inzsh_render_gap` demands a gap of at least one column because with
+    # content on BOTH sides a gap of zero would run them together; with nothing on the left
+    # there is no collision to avoid, and the width below (11, with `charlie` filling all but
+    # one column) is exactly the case where the gap comes out to precisely zero rather than
+    # negative — the one width previously joined as an EMPTY STRING instead of the row's own
+    # content, leaving a blank physical line.
+    #
+    # `${(f)PROMPT}` is deliberately NOT used to count rows here: zsh drops an empty field from
+    # a `(f)` split, so a genuine `$'\n\n'` in the raw string reads back as one fewer line than
+    # it draws — which is exactly how this bug passed the newline-count style of every other
+    # example in this file. Newline BYTES in the raw string are counted instead.
+    It "draws a right-only row bare rather than as a blank line, at the width its gap is exactly zero"
+      right_only_row() {
+        inzsh_spec_shape '
+          typeset -g COLUMNS=11
+          INZSH_ROW1_LEFT=(ALFA) INZSH_ROW2_RIGHT=(CHARLIE)
+          INZSH_MARKER_ROW=own
+          _inzsh_render
+          local -a wrong=()
+          [[ $PROMPT == *$'"'"'\n'"'"'$'"'"'\n'"'"'* ]] && wrong+=blank-line-present
+          [[ $PROMPT == *charlie* ]]                    || wrong+=charlie-missing
+          print -r -- "${wrong[*]}"
+        '
+      }
+      When call right_only_row
       The output should eq ''
       The stderr should eq ''
     End
