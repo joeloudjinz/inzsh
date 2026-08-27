@@ -34,12 +34,12 @@ Show
 Wait+Screen /→/
 Sleep 600ms
 
-Type "INZSH_PROMPT_LINES=1; echo lines-$((1))"
+Type "INZSH_MARKER_ROW=inline; echo lines-$((1))"
 Enter
 Wait+Screen /lines-1/
 Sleep 1.4s
 
-Type "INZSH_PROMPT_LINES=2; echo lines-$((2))"
+Type "INZSH_MARKER_ROW=own; echo lines-$((2))"
 Enter
 Wait+Screen /lines-2/
 Sleep 1.4s

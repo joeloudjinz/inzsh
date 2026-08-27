@@ -42,6 +42,16 @@ name the registry does know, `inzsh doctor` says so rather than staying silent a
 ignored       INZSH_SEPARATOR_STYL=round - probably INZSH_SEPARATOR_STYLE
 ```
 
+A name a past release *removed* is neither of those, and it is the case both rules above are
+structurally unable to catch: there is no spec left to refuse the value, and a deliberate old
+name looks nothing like the one that replaced it. The doctor keeps its own short list of them, so
+a retired knob names its replacement — and the value that means the same thing, where the old one
+had one:
+
+```
+ignored       INZSH_PROMPT_LINES=2 - retired, use INZSH_MARKER_ROW=own
+```
+
 A name that is not close to anything registered stays unreported — there is still no vocabulary
 to state for one this theme has never heard of — so `inzsh-knobs` in the
 [playground](../tools/playground.zsh) (`make play`) is where you check a name the doctor stayed
@@ -129,8 +139,7 @@ theme falls back to a safe value rather than drawing the broken result:
 | `INZSH_NERD_FONT` | `1` · `0` | detected | **Read when the theme loads, not at each prompt** — the font answer is resolved once, so set it in `.zshrc` above the source line. Whether the private-use glyphs will draw. Nothing inside a shell can prove a font is installed, so detection answers `1` only for terminals that bundle the symbol range and `unknown` otherwise — it never infers a `0`. Setting `0` is you reporting your own screen, and it resolves any separator style to `divider`. Invalid values are ignored. |
 | `INZSH_GLYPH_<MARK>` | a short string; a value carrying `%` or a control character is refused | the theme's own mark | Replaces one mark, for every place that draws it at once. `<MARK>` names an entry of the token layer's glyph table, uppercased with `-` as `_`: the separators `SEP_LEFT`, `SEP_RIGHT`, `SEP_LEFT_ROUND`, `SEP_RIGHT_ROUND` and `DIVIDER`; the truncation `ELLIPSIS`; the input `PROMPT` marker; and the state set `OK`, `INFO`, `ERROR`, `WARN`, `DOT`, `DASH`, `AHEAD`, `BEHIND`. So `INZSH_GLYPH_ERROR=✗` restyles the failure mark in the exit-status segment and everywhere else it appears. An override outranks the ASCII degradation — like `INZSH_NERD_FONT=0` it is you reporting your own screen. A `%` would open a prompt escape and a control character would break the row the theme just measured, so either is refused whole and the theme's own mark stands; a wider mark is fine and is measured as drawn. Set-but-empty falls through — a state may never lose its mark, because colour is never the only signal. |
 | `INZSH_SEGMENT_PAD` | integer, 0–4 | `1` | How many columns of air sit either side of every block's text. `0` packs the ribbon tight against its separators, higher values spread it. Bounded above because padding is literal spaces — the one thing in a prompt that could push a row past the terminal's edge — so a value outside the bound, or anything unreadable, falls back to `1` rather than being obeyed. The width machinery books the resolved value everywhere it measures a block, so no padding can wrap the row. |
-| `INZSH_PROMPT_LINES` | `1` · `2` | `2` | **Deprecated — use `INZSH_MARKER_ROW` instead.** How many rows the prompt takes. `2` gives the segments a row of their own and puts what you type on the next one behind a short marker, so a long path never crowds the command; the right-hand side is padded onto the segment row so the clock stays where you look for it. `1` puts everything on one row, with the marker now terminating it — see `INZSH_MARKER_ROW`'s `inline` below, which is exactly what `1` resolves to; with nothing at all to draw, the fallback is the theme's own marker rather than zsh's bare `%#`, at both settings. Invalid values fall back to `2`. Still works: an unset `INZSH_MARKER_ROW` resolves from this knob when it is set and valid — `1` is `inline`, `2` is `own` — before the default takes over. It is removed in `v2.0.0`. |
-| `INZSH_MARKER_ROW` | `inline` · `own` | `own` | Where the input marker sits relative to the rows above it. `own` gives it a bare line of its own, below every drawn row — today's shape. `inline` terminates the last drawn row instead, after that row's left-hand blocks, and you type on that row. Supersedes `INZSH_PROMPT_LINES`, which keeps working as a deprecated alias — see its row above. Invalid values fall back to `own`. |
+| `INZSH_MARKER_ROW` | `inline` · `own` | `own` | Where the input marker sits relative to the rows above it. `own` gives it a bare line of its own, below every drawn row — today's shape. `inline` terminates the last drawn row instead, after that row's left-hand blocks, and you type on that row; with nothing at all to draw, the fallback is the theme's own marker rather than zsh's bare `%#`, at both settings. Invalid values fall back to `own`. |
 | `INZSH_ROW<N>_LEFT` | an array of segment names, uppercase, in draw order — e.g. `INZSH_ROW2_LEFT=(USER VENV)` | unset | Which row a segment's LEFT side draws on, in place of its own rank. `<N>` is `1` to `8`; row numbers are sort keys rather than slots, so declaring rows `1` and `7` draws two rows, adjacent — a row with nothing on either side is not drawn. Naming a segment here places it and shows it, overriding `INZSH_<SEGMENT>_RANK` entirely, including a registered `0` — the rank `DATE`, `DURATION`, `JOBS` and `SSH` all ship hidden at. `INZSH_<SEGMENT>_MINCOLS` still hides the segment below its width: a row array places a segment, it does not resurrect one the terminal has no room for. Override is per side: setting one row's left leaves its right to derive from rank as usual, and it leaves everything else that would have landed on that left off — it does not slide onto the right or onto another row. **Arrays only** — a scalar assignment here is refused rather than split on whitespace, so `INZSH_ROW1_LEFT="TIME DIR"` behaves as if unset rather than as two segments. Read and validated outside the config registry, since every other validator here describes one value rather than a list; an entry naming no segment this build has, or that could not be a variable name, is dropped rather than shown at the prompt — but never silently, see `inzsh doctor` below. |
 | `INZSH_ROW<N>_RIGHT` | the same shape as `INZSH_ROW<N>_LEFT` | unset | The same, for a row's RIGHT side. |
 | `INZSH_PROMPT_MARKER` | any prompt string | `→` | What sits in front of your input, verbatim: a bare line of its own under `own` (the `(N+1)`th line, below every drawn row), or terminating the last drawn row under `inline`. Outside a multibyte locale the default degrades to `>`. Set-but-empty falls through rather than blanking the line you type on. Whatever it holds is coloured by whether the last command succeeded. |
@@ -138,6 +147,13 @@ theme falls back to a safe value rather than drawing the broken result:
 | `INZSH_TRANSIENT_FORMAT` | `marker` · `dir` | `marker` | What a collapsed prompt shows. `marker` is the marker alone; `dir` puts the directory, muted, in front of it — worth it if you move between trees mid-session and want scrollback to say where each command ran. Invalid values fall back to `marker`. |
 | `INZSH_RESIZE` | `1` · `0` · `true` · `false` · `yes` · `no` · `on` · `off`, in any case | `1` | Whether the prompt is rebuilt and redrawn when the terminal changes size. A prompt is measured once against the width it was drawn at, and in the two-row shape the right-hand side is padded onto the segment row with real spaces — so without this a narrowed window leaves a row that is too wide, wraps, and is redrawn as several rows of the same ribbon until you press Enter. The redraw keeps whatever you were part-way through typing. Off if you have your own `TRAPWINCH`, or would rather the prompt only changed when you asked it to. |
 | `INZSH_RESIZE_REFLOW` | `1` · `0` · `true` · `false` · `yes` · `no` · `on` · `off`, in any case | unset — the shorter climb | Whether this terminal RE-WRAPS the rows already on screen when the window changes size. It decides how far the resize redraw climbs before it erases: a terminal that reflows has turned the old segment row into several, and one that does not still has it as one. There is no capability string to ask, and the honest probe — reading the cursor position — would race the keys you are typing, so it is declared rather than detected: **nothing is assumed, and nothing set means the shorter climb**, which is what every terminal measured so far wants. Set `1` if your terminal re-wraps its rows and a drag leaves stale prompts behind — VS Code and Hyper do, and the taller climb is unverified there, which is why it is opt-in. See [known limitations](limitations.md). |
+
+`INZSH_PROMPT_LINES` was `INZSH_MARKER_ROW`'s deprecated alias through v1.x — `1` was
+`inline`, `2` was `own`. `v2.0.0` removed it outright rather than carrying two names for one
+fact indefinitely: it is no longer registered or read, so a `.zshrc` that still sets it draws
+exactly as if that line were not there at all, never an error or a wrong shape. Set
+`INZSH_MARKER_ROW` instead — and `inzsh doctor` names it and the value to use, so a line left
+behind is a row in the block rather than a setting that quietly stopped counting.
 
 ### Switching preset in a running shell — `inzsh preset`
 
@@ -235,17 +251,16 @@ actually drew, never what a knob asked for:
 shape         rows: 2
 shape         separator: divider (would be arrow with a Nerd Font)
 shape         surface: alternate
-shape         marker: inline (via the deprecated INZSH_PROMPT_LINES)
+shape         marker: inline
 shape         padding: 1
 ```
 
 `separator` prints the style that actually draws — `INZSH_SEPARATOR_STYLE=arrow` with
 `INZSH_NERD_FONT=0` prints `divider`, with a note naming what was asked for and why it did not
-draw. `surface` and `padding` are the plain resolved value: an invalid `INZSH_SURFACE_MODE` or
-`INZSH_SEGMENT_PAD` already has its own row in the *ignored* section above, so this is not said
-twice. `marker` names the deprecated `INZSH_PROMPT_LINES` when that is where the answer actually
-came from — see its row above. `rows` is the row count `_inzsh_rows_resolve` gives the render
-right now, against the terminal you are looking at.
+draw. `surface`, `marker` and `padding` are the plain resolved value: an invalid
+`INZSH_SURFACE_MODE`, `INZSH_MARKER_ROW` or `INZSH_SEGMENT_PAD` already has its own row in the
+*ignored* section above, so this is not said twice. `rows` is the row count
+`_inzsh_rows_resolve` gives the render right now, against the terminal you are looking at.
 
 ```
 segment       DIR row=1 side=left rank=40 priority=20 mincols=0

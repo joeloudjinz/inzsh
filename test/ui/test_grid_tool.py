@@ -3,7 +3,7 @@
 `tools/grid.py` is a developer tool and asserts nothing itself; what this file pins is the
 one property the tool is trusted for — the snippet it drives through the L3 harness sources
 the actual engine, so a column number read off `make grid` is a fact about the theme. The
-knob probe is the distinguishing test: a fixed demonstration ignores `INZSH_PROMPT_LINES`,
+knob probe is the distinguishing test: a fixed demonstration ignores `INZSH_SEPARATOR_STYLE`,
 the engine honours it.
 """
 
