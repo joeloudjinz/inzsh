@@ -83,6 +83,16 @@ _inzsh_rank_of() {
     configured=$REPLY
   fi
 
+  # Issue #282, the same defect this file's neighbour carried in `_inzsh_priority_of`. `REPLY` is
+  # shared and `_inzsh_config_get` writes it, so the `0` set at the top of this function is gone
+  # by here — and rung 4 of the ladder in the header, "0 — hidden. The safe landing place", is
+  # reached by FALLING OFF the loop below without assigning anything. With the config layer
+  # loaded a segment that matched no rung therefore came back with the family's empty default
+  # rather than 0, quietly breaking the "REPLY is always set" promise two lines above the
+  # function. Harmless where a caller does arithmetic, since empty coerces to 0 and 0 is the
+  # intended answer — and not harmless at all for one that tests the string.
+  typeset -g REPLY=0
+
   # The ladder, quoted so that it is always exactly three candidates long: an unset variable or
   # an unregistered default arrives as the empty string and is rejected by the grammar like any
   # other non-rank, rather than vanishing from the list. Quoting also keeps a value with a
