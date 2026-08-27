@@ -18,6 +18,7 @@ Type "s=${TMPDIR:-/tmp}; s=${s%/}/inzsh-tape; HOME=$s ZDOTDIR=$s HOST=joeinz-pc 
 Enter
 Wait+Screen /Maghrib/
 Show
-# No marker to wait on: the one-line shape draws the segments and nothing else, so the
-# prayer block being on screen IS the prompt being drawn.
+# Waits on the prayer block rather than the marker at the end of the row: the marker is
+# always there under `inline` (`INZSH_PROMPT_LINES=1`), drawn or not, so it says nothing about
+# whether the segments have actually rendered yet — the prayer block appearing does.
 Sleep 1.5s
