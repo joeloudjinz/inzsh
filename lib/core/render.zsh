@@ -772,11 +772,14 @@ _inzsh_render_build() {
 typeset -g _inzsh_prompt_lines_resolved=2
 
 # Resolve the marker's placement into `_inzsh_prompt_lines_resolved` — kept in this shape, and
-# under this name, because `lib/core/resize.zsh` still reads it as a single number describing the
-# WHOLE prompt rather than the per-row picture `lib/core/rows.zsh` now has (issue #223 gives it
-# that). The mapping is exact and loses nothing `resize.zsh` currently uses: `inline` is the old
-# one-row shape, `own` the old two-row one, and `_inzsh_marker_row_resolved` already carries the
-# full precedence between `INZSH_MARKER_ROW` and the deprecated `INZSH_PROMPT_LINES` — see
+# under this name, because `lib/core/resize.zsh` still reads it, but only for the one fact it was
+# always narrow enough to state correctly: whether the marker spends a bare physical line of its
+# own (`own`) or terminates the last drawn row (`inline`). The ROW COUNT that used to ride along
+# with it — "1 or 2 segment rows" — is `_inzsh_render_row_widths`'s job now (issue #223), and
+# resize.zsh sums that separately rather than inferring it from this number. The mapping here is
+# exact and loses nothing `resize.zsh` still uses this value for: `inline` is the old one-row
+# shape, `own` the old two-row one, and `_inzsh_marker_row_resolved` already carries the full
+# precedence between `INZSH_MARKER_ROW` and the deprecated `INZSH_PROMPT_LINES` — see
 # `lib/core/rows.zsh`. This file restates only the fallback for the render core sourced without
 # it, the same courtesy every guarded call in this file gives the layer under it.
 _inzsh_render_lines() {
