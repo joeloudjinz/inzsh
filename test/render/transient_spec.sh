@@ -376,7 +376,7 @@ none=0'
           typeset -gA _inzsh_segment_defaults _inzsh_segment_text
           _inzsh_segment_defaults=(ALFA 1 CHARLIE -1)
           _inzsh_segment_text=(ALFA alfa CHARLIE charlie)
-          typeset -g COLUMNS=80 INZSH_PROMPT_LINES=1
+          typeset -g COLUMNS=80 INZSH_MARKER_ROW=inline
           _inzsh_render
           _inzsh_transient_collapse
           inzsh_transient_text_of "$PROMPT"

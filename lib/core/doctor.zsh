@@ -480,16 +480,12 @@ _inzsh_doctor_shape() {
   _inzsh_surface_mode
   _inzsh_doctor_row shape "surface: $_inzsh_surface_mode_resolved"
 
-  # The marker row. `INZSH_PROMPT_LINES` is the deprecated alias — see `lib/core/rows.zsh` for
-  # the precedence — and a reader who only ever set the old knob deserves to know that is where
-  # the answer came from, not just what the answer is.
+  # The marker row. `INZSH_PROMPT_LINES` was the deprecated alias through v1.x; `v2.0.0` retired
+  # it, so the resolved value is the whole answer now — there is nothing left to attribute it to.
+  # Reporting a still-set `INZSH_PROMPT_LINES` as retired is issue #242, not this function's job.
   if (( ${+functions[_inzsh_marker_row_resolved]} )); then
     _inzsh_marker_row_resolved
-    value=$REPLY
-    if [[ ${INZSH_MARKER_ROW-} != (inline|own) && ${INZSH_PROMPT_LINES-} == (1|2) ]]; then
-      value+=' (via the deprecated INZSH_PROMPT_LINES)'
-    fi
-    _inzsh_doctor_row shape "marker: $value"
+    _inzsh_doctor_row shape "marker: $REPLY"
   fi
 
   # The padding. Bounded by its own validator, so an out-of-range value already has an `ignored`

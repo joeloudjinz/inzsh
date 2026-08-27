@@ -64,7 +64,7 @@ def last_drawn_col(grid, row):
     return -1
 
 
-def render(*, cols=80, lines=2, status=0, extra=""):
+def render(*, cols=80, marker="own", status=0, extra=""):
     """Render the real `_inzsh_render` on a `cols`-wide terminal and return the `Grid`.
 
     The segments are a fixture — three names, fixed ranks, fixed text — so this file
@@ -75,7 +75,7 @@ def render(*, cols=80, lines=2, status=0, extra=""):
     inner = "\n".join(
         [
             'unset -m "INZSH_*"',
-            f"INZSH_PROMPT_LINES={lines}",
+            f"INZSH_MARKER_ROW={marker}",
             extra,
             *(
                 f"source {shlex.quote(str(CORE / (name + '.zsh')))}"
@@ -100,14 +100,14 @@ class ShapeTest(unittest.TestCase):
     def test_two_line_prompt_occupies_exactly_two_rows(self):
         for cols in WIDTHS:
             with self.subTest(cols=cols):
-                grid = render(cols=cols, lines=2)
+                grid = render(cols=cols, marker="own")
                 self.assertEqual(grid.exit_status, 0, msg=excerpt(grid))
                 assert_row_occupancy(grid, 2)
 
     def test_one_line_prompt_occupies_exactly_one_row(self):
         for cols in WIDTHS:
             with self.subTest(cols=cols):
-                grid = render(cols=cols, lines=1)
+                grid = render(cols=cols, marker="inline")
                 self.assertEqual(grid.exit_status, 0, msg=excerpt(grid))
                 assert_row_occupancy(grid, 1)
 

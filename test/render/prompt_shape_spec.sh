@@ -662,11 +662,11 @@ Describe 'the prompt shape'
   End
 
   # -------------------------------------------------------------------------------------------
-  Describe 'INZSH_PROMPT_LINES'
-    It 'puts the whole prompt back on one row when it is 1'
+  Describe 'INZSH_MARKER_ROW=inline'
+    It 'puts the whole prompt back on one row'
       one_line() {
         inzsh_spec_shape '
-          INZSH_PROMPT_LINES=1
+          INZSH_MARKER_ROW=inline
           _inzsh_render
           local -a rows=("${(f)PROMPT}")
           inzsh_shape_text "$RPROMPT"
@@ -684,14 +684,14 @@ Describe 'the prompt shape'
 
     # A prompt may never come back empty, under either marker setting — with nothing drawn at
     # all, the marker itself is the whole prompt. This used to fall back to zsh's own `%#`
-    # instead: that was a property of `PROMPT_LINES=1` never drawing this theme's own marker at
-    # all when there was content on the row, and inline is no longer that shape — it draws the
+    # instead: that was a property of the old one-row shape never drawing this theme's own marker
+    # at all when there was content on the row, and inline is no longer that shape — it draws the
     # same marker `own` does, just on the row rather than below it, and a row with nothing on it
     # is exactly the case with nothing to append it to.
     It 'still falls back to the marker alone on one row when there is nothing to draw'
       one_line_bare() {
         inzsh_spec_shape '
-          INZSH_PROMPT_LINES=1
+          INZSH_MARKER_ROW=inline
           _inzsh_segment_text=()
           _inzsh_render
           inzsh_shape_text "$PROMPT"
@@ -710,7 +710,7 @@ Describe 'the prompt shape'
         inzsh_spec_shape '
           _inzsh_render
           local -a before=("${(f)PROMPT}")
-          INZSH_PROMPT_LINES=1
+          INZSH_MARKER_ROW=inline
           _inzsh_render
           local -a after=("${(f)PROMPT}")
           print -r -- "${#before} then ${#after}"
@@ -722,10 +722,16 @@ Describe 'the prompt shape'
     End
   End
 
-  # Config may never break the prompt. Every value below is a plausible typo, and every one of
-  # them draws the default shape rather than an error, a blank prompt or a third row.
-  Describe 'an INZSH_PROMPT_LINES the theme cannot read'
+  # `v2.0.0` retired `INZSH_PROMPT_LINES` outright — see `.claude/docs/DESIGN-prompt-rows.md`
+  # §3.1. It is no longer registered, no longer read, and no longer resolved through at any
+  # precedence, so every value below — the two that used to be valid and every typo of them —
+  # is now equally inert: the prompt draws the plain default, `own`, two rows, whatever a stale
+  # `.zshrc` still says. That is the whole of the promise: no error, no blank prompt, no third
+  # row, not even a different one from before.
+  Describe 'a stale INZSH_PROMPT_LINES'
     Parameters
+      '1'
+      '2'
       '3'
       '0'
       '-1'
@@ -737,8 +743,8 @@ Describe 'the prompt shape'
       ''
     End
 
-    It "falls back to two rows for '$1'"
-      invalid() {
+    It "is ignored entirely for '$1'"
+      stale() {
         inzsh_spec_shape '
           INZSH_PROMPT_LINES=$1
           _inzsh_render
@@ -746,7 +752,7 @@ Describe 'the prompt shape'
           print -r -- "rows=${#rows} resolved=$_inzsh_prompt_lines_resolved"
         ' "$1"
       }
-      When call invalid "$1"
+      When call stale "$1"
       The output should eq 'rows=2 resolved=2'
       The stderr should eq ''
     End

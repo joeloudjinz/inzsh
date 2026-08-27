@@ -585,7 +585,7 @@ after=[alien|alien]'
       # TWO THINGS ABOUT THE HARNESS, and both of them have already cost a debugging session.
       #
       # WHICH PARAMETER. The claim is about THE PROMPT, and which of `PROMPT` and `RPROMPT`
-      # carries the right-hand side is `INZSH_PROMPT_LINES`'s business rather than this
+      # carries the right-hand side is `INZSH_MARKER_ROW`'s business rather than this
       # segment's: at one line the right side stays in `RPROMPT`, and at two — the default —
       # `_inzsh_render` pads it into `PROMPT` and leaves `RPROMPT` empty. So `holds` reads the
       # two TOGETHER. An example that named one of them was asserting the shape by accident, and

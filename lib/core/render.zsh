@@ -752,9 +752,8 @@ _inzsh_render_build() {
 # how many rows there are and what sits on each one. The segment row is a ribbon of blocks and it
 # grows with the repository, the virtualenv and the branch name; the line the marker sits on
 # should not move with it, which is what `own` (the default) buys: input always starts at the
-# same column. `INZSH_MARKER_ROW=inline` — `INZSH_PROMPT_LINES=1` is the deprecated spelling of
-# the same fact — spends that row instead: the marker terminates the LAST drawn row and typing
-# continues on it.
+# same column. `INZSH_MARKER_ROW=inline` spends that row instead: the marker terminates the LAST
+# drawn row and typing continues on it.
 #
 # WHERE THE RIGHT PROMPT GOES, and where it does not. zsh draws `RPROMPT` on the LAST line of a
 # multi-line prompt — verified on a real terminal in `test/ui/test_prompt_shape.py` — so a real
@@ -778,10 +777,10 @@ typeset -g _inzsh_prompt_lines_resolved=2
 # with it — "1 or 2 segment rows" — is `_inzsh_render_row_widths`'s job now (issue #223), and
 # resize.zsh sums that separately rather than inferring it from this number. The mapping here is
 # exact and loses nothing `resize.zsh` still uses this value for: `inline` is the old one-row
-# shape, `own` the old two-row one, and `_inzsh_marker_row_resolved` already carries the full
-# precedence between `INZSH_MARKER_ROW` and the deprecated `INZSH_PROMPT_LINES` — see
-# `lib/core/rows.zsh`. This file restates only the fallback for the render core sourced without
-# it, the same courtesy every guarded call in this file gives the layer under it.
+# shape, `own` the old two-row one, and `_inzsh_marker_row_resolved` already carries the whole of
+# what is left to resolve, now that `INZSH_PROMPT_LINES` is gone — see `lib/core/rows.zsh`. This
+# file restates only the fallback for the render core sourced without it, the same courtesy every
+# guarded call in this file gives the layer under it.
 _inzsh_render_lines() {
   emulate -L zsh
 
@@ -793,12 +792,12 @@ _inzsh_render_lines() {
     return 0
   fi
 
-  local want=${INZSH_PROMPT_LINES-}
+  local want=${INZSH_MARKER_ROW-}
   if (( ${+functions[_inzsh_config_get]} )); then
-    _inzsh_config_get INZSH_PROMPT_LINES
+    _inzsh_config_get INZSH_MARKER_ROW
     want=$REPLY
   fi
-  [[ $want == 1 ]] && _inzsh_prompt_lines_resolved=1
+  [[ $want == inline ]] && _inzsh_prompt_lines_resolved=1
 
   return 0
 }
@@ -958,8 +957,12 @@ _inzsh_render_marker() {
 #
 # `INZSH_PROMPT_MARKER` registers an EMPTY default for the reason `INZSH_PS2` does: there is no
 # value that means "the theme's own", there is only not setting it.
+#
+# `INZSH_PROMPT_LINES` was registered here through v1.x, as the deprecated alias for
+# `INZSH_MARKER_ROW` — `enum:1|2`, default `2`. `v2.0.0` retires it outright: the registration is
+# gone, so a `.zshrc` that still sets it is no longer read by anything, exactly like any other
+# name the registry has never heard of.
 if (( ${+functions[_inzsh_config_register]} )); then
-  _inzsh_config_register INZSH_PROMPT_LINES  'enum:1|2'  2
   _inzsh_config_register INZSH_PROMPT_MARKER any         ''
   _inzsh_config_register INZSH_SEGMENT_PAD   'int:0:4'   1
 fi
@@ -1245,9 +1248,8 @@ _inzsh_render() {
     (( ${+functions[$builder]} )) && $builder
   done
 
-  # The shape, resolved per draw so that `INZSH_MARKER_ROW` — or the deprecated
-  # `INZSH_PROMPT_LINES` — typed at a prompt takes effect at the next one, with no re-source, the
-  # rule every other knob in this tree follows.
+  # The shape, resolved per draw so that `INZSH_MARKER_ROW` typed at a prompt takes effect at the
+  # next one, with no re-source, the rule every other knob in this tree follows.
   _inzsh_render_lines
   local -i inline_marker=$(( _inzsh_prompt_lines_resolved == 1 ))
 
