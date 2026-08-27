@@ -356,6 +356,92 @@ _inzsh_doctor_near_misses() {
   return 0
 }
 
+# The knobs a past release removed outright, and what replaced each one.
+#
+# Issue #242. A retired knob is the one case the two walks above are structurally unable to
+# reach. `_inzsh_doctor_ignored` reports a name the registry RECOGNISES and refuses, and
+# `_inzsh_doctor_near_misses` reports one it has never heard of that LOOKS like one it has —
+# but a retired name is neither. Removing the registration is exactly what makes the first
+# walk blind to it, and a deliberate old name is not a typo, so the second walk finds nothing
+# close enough to guess at either. Measured, not assumed: `INZSH_PROMPT_LINES` is 8 edits from
+# the nearest registered name, well past the threshold, so a `.zshrc` that still sets it draws
+# correctly and says nothing at all about why. A silent no-op is the one outcome a retired
+# knob must not have — the shape is right, the line is dead, and nothing on screen connects
+# the two.
+#
+# This is a table here rather than a `retired` spec in `lib/core/config.zsh` on purpose. The
+# registry is the theme's VOCABULARY — `inzsh-knobs` prints it, `_inzsh_config_absorb_all`
+# walks it, `_inzsh_doctor_near_miss` suggests from it — and re-registering a name the release
+# removed would put it back in all three, which is the opposite of retiring it. The diagnostic
+# layer is where a name that no longer exists belongs: known to the thing that explains the
+# theme, unknown to the thing that reads it.
+#
+# NOT NAMED `_inzsh_doctor_retired_knobs`, and the near miss is the point. `_inzsh_config_
+# absorb_all` walks `${(ko)parameters[(I)_inzsh_*_knobs]}` and treats every parameter it finds
+# as a REGISTRATION TABLE — that suffix is a reserved convention, not a description — so a
+# table of retired names spelled that way would be handed straight back to the registry that
+# just dropped them. It is refused today only because `INZSH_MARKER_ROW` is not a valid spec
+# string; a retired knob whose replacement happened to read as one would be silently
+# re-registered by the very table written to declare it dead. `test/unit/config_registry_spec.sh`
+# holds the namespace rather than this comment.
+typeset -gA _inzsh_doctor_retired_replacement=(
+  INZSH_PROMPT_LINES INZSH_MARKER_ROW
+)
+
+# `<retired knob> <its old value>` -> the replacement's value meaning the same thing. Only the
+# values the retired knob actually accepted appear; anything else was already falling through
+# before the removal, so there is no old behaviour to name a new spelling for.
+typeset -gA _inzsh_doctor_retired_values=(
+  'INZSH_PROMPT_LINES 1' inline
+  'INZSH_PROMPT_LINES 2' own
+)
+
+# Every retired `INZSH_` variable that is still SET — `knob` then the replacement to use, one
+# pair per row, in `reply`. Same pair shape as `_inzsh_doctor_near_misses`, and for the same
+# reason: the caller wants the advice this walk already worked out, not a second lookup.
+#
+# The advice carries a VALUE when the old one maps — `INZSH_MARKER_ROW=own` — and only the
+# name when it does not. The distinction is not cosmetic. `INZSH_PROMPT_LINES=2` was a working
+# setting whose shape has an exact new spelling, and printing it is the difference between
+# "look this up" and "paste this". `INZSH_PROMPT_LINES=9` never did anything even while the
+# knob existed, so naming a replacement value would be inventing an intent the user never
+# expressed; the replacement NAME is the whole of what this file honestly knows there.
+#
+# A name the registry has somehow taken back is skipped. That cannot happen in a release as
+# shipped, but a table of names deleted from the registry and a registry are two facts that
+# could drift, and of the two the registry is the one that decides what the theme actually
+# reads. If both claim a name, the live one wins and this walk stays quiet rather than
+# telling a user to stop setting a knob that is working.
+#
+# Set-but-empty is skipped for the third time in this file and for the third identical reason:
+# set-but-empty is unset at every level of this theme, so a bare `INZSH_PROMPT_LINES=` left in
+# a zshrc is not a setting anybody is waiting on.
+_inzsh_doctor_retired() {
+  emulate -L zsh
+
+  typeset -ga reply
+  reply=()
+
+  local knob value spec advice mapped
+  for knob in ${(ko)_inzsh_doctor_retired_replacement}; do
+    value=${(P)knob}
+    [[ -n $value ]] || continue
+
+    if (( ${+functions[_inzsh_config_spec_of]} )); then
+      _inzsh_config_spec_of "$knob"
+      spec=$REPLY
+      [[ -z $spec ]] || continue
+    fi
+
+    advice=${_inzsh_doctor_retired_replacement[$knob]}
+    mapped=${_inzsh_doctor_retired_values[$knob $value]-}
+    [[ -n $mapped ]] && advice+="=$mapped"
+    reply+=("$knob" "$advice")
+  done
+
+  return 0
+}
+
 # The install method — `clone`, `bundle`, `manual`, `oh-my-zsh`, or a combination of the last
 # with one of the first three — in REPLY. Issue #245. No subprocess: every signal below is a
 # filesystem test or a parameter read, because this is reachable from the exact broken
@@ -830,7 +916,32 @@ _inzsh_doctor() {
   # cursor, and a format string long enough to be a config file in its own right would push the
   # block off the screen. Where it came from is the diagnostic; reading the whole value back is
   # what the variable itself is for.
+  # Issue #242. A knob a past release removed, still set. These lead the section rather than
+  # follow it, because of the three tails printed under `ignored` this is the only one that is
+  # a FACT: `accepts X` infers what a refused value was reaching for and `probably X` guesses
+  # which name a stray one slipped from, while `retired, use X` is the release note, and the
+  # theme is not speculating about it. The certain row goes first so the reader who has one
+  # never has to scan past two guesses to reach it.
+  #
+  # Filed under `ignored` alongside them all the same. The label answers the question the
+  # reader is asking of every row in this section — "what did I set that is not doing
+  # anything?" — and a retired knob is the purest example of it. The tail is where the three
+  # diagnoses part company, which is the same split `probably X` already made against
+  # `accepts X`.
   local knob
+  local -a retired
+  _inzsh_doctor_retired
+  retired=("${reply[@]}")
+  local advice
+  local -i ridx
+  for (( ridx = 1; ridx <= ${#retired}; ridx += 2 )); do
+    knob=${retired[ridx]}
+    advice=${retired[ridx + 1]}
+    value=${${(P)knob}//[[:cntrl:]]/ }
+    (( ${#value} > 24 )) && value="${value[1,23]}…"
+    _inzsh_doctor_row ignored "$knob=$value - retired, use $advice"
+  done
+
   local -a ignored
   _inzsh_doctor_ignored
   ignored=("${reply[@]}")
