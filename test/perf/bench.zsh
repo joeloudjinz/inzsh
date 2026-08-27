@@ -77,12 +77,16 @@ fi
 
 # Dependency order, the same one `inzsh.zsh-theme` uses, plus the three files the entry point
 # does not source yet (engine, layout, config) because the renderer that will need them is the
-# thing this suite is waiting for.
+# thing this suite is waiting for. `rows.zsh` joined the list in `v1.3.0 · Prompt rows`: without
+# it `_inzsh_render` degrades to its own single-row fallback, and `render-prompt` would be
+# measuring code no real load order ever runs — the entry point and the bundle manifest both
+# source it, unconditionally, between `engine` and `render`.
 source $_inzsh_bench_root/lib/core/detect.zsh
 source $_inzsh_bench_root/lib/core/tokens-256.zsh
 source $_inzsh_bench_root/lib/core/tokens.zsh
 source $_inzsh_bench_root/lib/core/render.zsh
 source $_inzsh_bench_root/lib/core/engine.zsh
+source $_inzsh_bench_root/lib/core/rows.zsh
 source $_inzsh_bench_root/lib/core/layout.zsh
 source $_inzsh_bench_root/lib/core/config.zsh
 source $_inzsh_bench_root/tools/perf.zsh
@@ -370,6 +374,31 @@ _inzsh_bench_case_render_prompt() {
   _inzsh_render
 }
 
+# --- three rows, against the same house budget ----------------------------------------------
+# `v1.3.0 · Prompt rows` grows `_inzsh_render` from one segment row to N, and the fit pass —
+# `_inzsh_layout_fit` per side, `_inzsh_render_gap`, `_inzsh_render_row_fits` — is exactly the
+# part of the work issue #254 made this table watch honestly: it now runs 2x per row instead of
+# twice in total. This case is the worst shape that ships a mechanism rather than a preset: the
+# SAME six segments `render-prompt` already measures, spread one left and one right per row
+# instead of stacked three-and-three on one, so the comparison between the two rows is about the
+# rows themselves and not about a heavier fixture.
+#
+# Naming a segment in a row array places it regardless of the rank `_inzsh_bench_fixture`
+# registered for it (design §2.3), so the ranks that fixture sets are irrelevant to this case —
+# only `INZSH_VENV_MINCOLS=100` still applies, since width beats placement (§2.4) and this case
+# runs at the same 80 columns `render-prompt` does. `venv`'s row is therefore one-sided in this
+# case, which is itself a real shape and not a fixture artefact: a row need not fill both sides.
+_inzsh_bench_prep_render_prompt_3row() {
+  _inzsh_bench_prep_render_prompt
+
+  typeset -g INZSH_ROW1_LEFT=(DIR)  INZSH_ROW1_RIGHT=(STATUS)
+  typeset -g INZSH_ROW2_LEFT=(GIT)  INZSH_ROW2_RIGHT=(CLOCK)
+  typeset -g INZSH_ROW3_LEFT=(VENV) INZSH_ROW3_RIGHT=(SALAH)
+}
+_inzsh_bench_case_render_prompt_3row() {
+  _inzsh_render
+}
+
 _inzsh_bench_prep_render_floor() { typeset -g INZSH_SURFACE_MODE=alternate }
 _inzsh_bench_case_render_floor() {
   local -i cols=80
@@ -504,6 +533,7 @@ typeset -ga _inzsh_bench_table=(
   config-resolve      150   1.450
   render-floor         40  12.000
   render-prompt        40  24.000
+  render-prompt-3row   40  25.000
   render-prompt-hidden 40  30.000
 )
 
@@ -571,6 +601,20 @@ typeset -ga _inzsh_bench_table=(
 # `render-floor` keeps 12.000, which is still its own cost times six. It is no longer the cheaper
 # twin of `render-prompt` on the same standard — it is a control, and the gap between the two
 # numbers is now the honest measure of what the orchestrator costs on top of the primitives.
+#
+# `render-prompt-3row` gets the table's ordinary 6x, not the reduced multiple `render-prompt`
+# and `render-prompt-hidden` are stuck with: its worst best-of-5 across several local runs was
+# 4.15 ms, and six times that is comfortably under the 30 ms house budget rather than above it.
+# It is the SAME six segments `render-prompt` measures, spread one left and one right per row
+# instead of stacked three-and-three on one row — and it is not slower for it. Splitting the
+# `_inzsh_layout_fit` walk into three one-item calls instead of one three-item call costs about
+# what running it three times costs, which is to say noticeably LESS than `render-prompt` itself
+# (4.0–4.2 ms against 5.9–6.4 ms, both measured back to back on the same loaded machine): a
+# three-item priority sort is not three times a one-item one, so N rows of one block each is
+# cheaper than one row of N blocks, not more expensive. `v1.3.0 · Prompt rows` therefore did NOT
+# narrow the render budget's headroom for a layout shaped this way — see the report in the PR
+# this case shipped with for the `render-prompt` number before and after `rows.zsh` was wired
+# into this suite, which is the actual regression risk this milestone carried.
 
 # The row the house budget is about. `_inzsh_config_render_budget_ms` in `lib/core/config.zsh`
 # is 30 ms; this is the case measured against it, through the registered guard.
