@@ -313,6 +313,19 @@ _inzsh_priority_of() {
     value=$REPLY
   fi
 
+  # Issue #282. THE SENTINEL IS SET TWICE ON PURPOSE. `REPLY` is a shared name, and
+  # `_inzsh_config_get` writes it on every call — so the assignment at the top of this function
+  # is already gone by the time the ladder below runs, replaced by the family's registered
+  # default, which for `INZSH_*_PRIORITY` is empty. Nothing downstream noticed, because the
+  # empty string coerces to 0 in `_inzsh_layout_fit`'s arithmetic sort key: a stranger sorted
+  # exactly where priority 0 does — kept longest, dropped last — which is the precise inversion
+  # of what the sentinel above exists to guarantee.
+  #
+  # It reads as belt-and-braces and it is not: the top assignment covers the early return two
+  # lines up, where no config read has happened, and this one covers the fall-through below.
+  # The sentinel IS the last rung of that ladder, so it has to survive the read that precedes it.
+  typeset -g REPLY=$_inzsh_priority_unknown
+
   # The knob first, then the segment's own registration, then the stranger's place. Negative is
   # allowed and means what it says — kept longer than anything at zero — because a user who wants
   # one block to outlive every default should not have to renumber the defaults to say so.

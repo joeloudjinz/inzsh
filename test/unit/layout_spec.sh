@@ -1096,6 +1096,68 @@ Describe 'priority'
       When call hostile
       The output should eq "$_inzsh_priority_unknown"
     End
+
+    # Issue #282. THE TWO EXAMPLES ABOVE PASS EITHER WAY, and that is the whole point of these.
+    # This file loads `lib/core/layout.zsh` over `lib/core/tokens.zsh` and nothing else, so
+    # `_inzsh_config_get` is not defined and the config branch inside `_inzsh_priority_of` never
+    # runs. In a real shell it always does — and it answers in `REPLY`, the same shared name the
+    # sentinel is written to, so the stranger's place was overwritten by the family's registered
+    # default, which is empty. `_inzsh_layout_fit` then read that empty string arithmetically,
+    # where it coerces to 0, and a segment nobody had ever heard of sorted exactly where priority
+    # 0 does: kept longest, given up last. The precise inversion of the guarantee.
+    #
+    # So these run in a `zsh -f` that sources the config layer FIRST, which is the only
+    # arrangement that can see the bug. Sourced rather than `Include`d on purpose: adding
+    # `lib/core/config.zsh` to this file's includes would silently change the environment every
+    # other example here runs in, and those examples are about the layout layer standing alone.
+    Describe 'with the config layer loaded, as a real shell has it'
+      inzsh_spec_priority_configured() {
+        zsh -f -c '
+          source "$1/lib/core/config.zsh"
+          source "$1/lib/core/tokens.zsh"
+          source "$1/lib/core/layout.zsh"
+          typeset -gA _inzsh_segment_priority
+          _inzsh_segment_priority=(DIR 20 GIT 40)
+          eval "$2"
+        ' inzsh-priority-configured "$SHELLSPEC_PROJECT_ROOT" "$1"
+      }
+
+      It 'still puts a segment it has never heard of last'
+        stranger_configured() {
+          inzsh_spec_priority_configured '_inzsh_priority_of NOSUCH; print -r -- "[$REPLY]"'
+        }
+        When call stranger_configured
+        The output should eq '[99999]'
+      End
+
+      # The consequence, asserted where it actually bit rather than only at the resolver. A
+      # stranger and a registered segment compete for a row too narrow for both: the stranger
+      # must be the one given up, whatever order they are handed in.
+      It 'gives up the stranger before a registered segment'
+        order_configured() {
+          inzsh_spec_priority_configured '
+            _inzsh_layout_fit 8 1 NOSUCH 6 GIT 6
+            print -r -- "${reply[*]}"
+          '
+        }
+        When call order_configured
+        The output should eq 'GIT'
+      End
+
+      # And a registered segment is untouched by the repair — the ladder answered before the
+      # sentinel was ever reached, both before this fix and after it.
+      It 'leaves a registered priority exactly as it was'
+        registered_configured() {
+          inzsh_spec_priority_configured '
+            _inzsh_priority_of GIT; print -r -- "[$REPLY]"
+            INZSH_DIR_PRIORITY=-5 _inzsh_priority_of DIR; print -r -- "[$REPLY]"
+          '
+        }
+        When call registered_configured
+        The line 1 of output should eq '[40]'
+        The line 2 of output should eq '[-5]'
+      End
+    End
   End
 
   Describe 'fitting a row'
