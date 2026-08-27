@@ -291,6 +291,66 @@ Describe 'rank parsing'
       The output should eq 'association 0'
     End
   End
+
+  # Issue #282, found alongside the same defect in `_inzsh_priority_of`. Rung 4 of the ladder in
+  # this function's header — "0 — hidden. The safe landing place" — is reached by falling off the
+  # end of the loop without assigning anything, so it relies entirely on the `REPLY=0` written at
+  # the top. `_inzsh_config_get` answers in `REPLY` too, and it runs BETWEEN the two: with the
+  # config layer loaded, a segment matching no rung came back with the `INZSH_*_RANK` family's
+  # registered default, which is empty, rather than 0.
+  #
+  # Milder than the priority half — every caller on the render path reads a rank arithmetically,
+  # where empty coerces to the 0 that was intended anyway — but the header two lines above the
+  # function promises "REPLY is always set", and it was not. A caller testing the string would
+  # have been the one to find out.
+  #
+  # This file includes only `lib/core/engine.zsh`, so `_inzsh_config_get` is undefined here and
+  # the branch never runs; the example is worthless unless it arranges the shell a real theme
+  # actually has. Hence the `zsh -f` with the config layer sourced first, rather than adding it to
+  # this file's includes and changing what every other example runs against.
+  Describe 'with the config layer loaded, as a real shell has it'
+    inzsh_spec_rank_configured() {
+      zsh -f -c '
+        source "$1/lib/core/config.zsh"
+        source "$1/lib/core/engine.zsh"
+        typeset -gA _inzsh_segment_defaults
+        _inzsh_segment_defaults=(DIR 40)
+        eval "$2"
+      ' inzsh-rank-configured "$SHELLSPEC_PROJECT_ROOT" "$1"
+    }
+
+    It 'lands an unknown segment on 0 rather than on nothing'
+      stranger_configured() {
+        inzsh_spec_rank_configured '_inzsh_rank_of NOSUCH; print -r -- "[$REPLY]"'
+      }
+      When call stranger_configured
+      The output should eq '[0]'
+    End
+
+    # The same landing place for a knob the grammar refuses on a segment with no registration to
+    # fall back to — the other way onto rung 4.
+    It 'lands an unreadable knob on 0 with nothing registered behind it'
+      rubbish_configured() {
+        inzsh_spec_rank_configured 'INZSH_NOSUCH_RANK=soon _inzsh_rank_of NOSUCH; print -r -- "[$REPLY]"'
+      }
+      When call rubbish_configured
+      The output should eq '[0]'
+    End
+
+    # And a registered segment is untouched: the ladder answered before rung 4 was reached, both
+    # before the repair and after it.
+    It 'leaves a registered rank exactly as it was'
+      registered_configured() {
+        inzsh_spec_rank_configured '
+          _inzsh_rank_of DIR; print -r -- "[$REPLY]"
+          INZSH_DIR_RANK=-3 _inzsh_rank_of DIR; print -r -- "[$REPLY]"
+        '
+      }
+      When call registered_configured
+      The line 1 of output should eq '[40]'
+      The line 2 of output should eq '[-3]'
+    End
+  End
 End
 
 # ------------------------------------------------------------------------------------------
