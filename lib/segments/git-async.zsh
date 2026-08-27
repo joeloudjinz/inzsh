@@ -61,6 +61,14 @@ zmodload -i zsh/datetime 2>/dev/null
 typeset -gi _inzsh_git_zf=0
 zmodload -F zsh/files b:zf_mkdir b:zf_mv b:zf_rm 2>/dev/null && _inzsh_git_zf=1
 
+# `zsh/system`, for `$sysparams[pid]` — the real pid of whichever fork is asking, where `$$` is
+# the pid of the shell that was FIRST started and stays that way through every fork. The job
+# below already reached for it inline to publish its own pid; issue #266 moved the load up here
+# so the JOB TOKEN can use it too, and so the cost is paid once at source time rather than per
+# job. `lib/salah/cache.zsh` carries the long-form reasoning for the whole class.
+typeset -gi _inzsh_git_zsys=0
+zmodload -i zsh/system 2>/dev/null && _inzsh_git_zsys=1
+
 # The three file operations, builtin where the module loaded and external where it did not. The
 # choice is made ONCE, at load, and read as a flag: asking `whence` per call would be a lookup
 # per prompt, and trying the builtin and falling through on failure would fork on every genuine
@@ -645,7 +653,25 @@ _inzsh_git_async_start() {
 
   # Unique per job and per shell: two shells starting a job for the same directory in the same
   # second must not share a temporary.
-  local token=${EPOCHSECONDS-0}.$$.$RANDOM
+  #
+  # Issue #266. `${EPOCHSECONDS-0}.$$.$RANDOM` did not separate FORKS: `$$` is the pid of the
+  # shell that was FIRST started, so every subshell forked from one parent reports it unchanged,
+  # and a fork inherits the parent's `$RANDOM` state rather than reseeding — so the draw that
+  # would otherwise have broken the tie matches across siblings too. Twenty forks, one token,
+  # deterministically. `$sysparams[pid]` is read from the kernel per reference and fixes it.
+  #
+  # `$EPOCHREALTIME` IS NOT DECORATION, and swapping in the pid alone would trade one collision
+  # for another. `$RANDOM` was doing real work that a pid cannot do: separating two jobs started
+  # by the SAME process, where the pid is by definition constant. That case is ordinary here —
+  # `precmd` fires on every accepted line, an empty one included — so dropping to a bare pid
+  # would make sequential jobs in one shell collide where they never used to. Microseconds
+  # restore it, and the spec pins both halves separately so a half-fix cannot pass.
+  local token
+  if (( _inzsh_git_zsys )); then
+    token=${EPOCHREALTIME-0}.${sysparams[pid]}
+  else
+    token=${EPOCHREALTIME-0}.$$.$RANDOM
+  fi
   local pids=$file.$token.pid
 
   local -i fd=0
