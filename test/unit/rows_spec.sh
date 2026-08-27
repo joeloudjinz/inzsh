@@ -278,6 +278,174 @@ Describe '_inzsh_rows_resolve'
   End
 End
 
+# Issue #243. `_inzsh_rows_entries` and `_inzsh_rows_resolve` both drop a bad row-array entry on
+# purpose and stay silent about it — the design `inzsh doctor` cannot leave unanswered, since
+# `_inzsh_doctor_ignored` never sees an entry naming no segment: the family resolves and `any`
+# accepts whatever the entry is. `_inzsh_rows_diagnose` is the detector that answers it; the
+# formatter that turns this into a printed row lives in `doctor_spec.sh`, not here.
+Describe '_inzsh_rows_diagnose'
+  # One line per quadruple, `row:side:entry:reason`, so an assertion can pin the exact tuple
+  # without reaching into `reply` by hand in every example.
+  inzsh_spec_rows_diagnose_lines() {
+    _inzsh_rows_diagnose "$@"
+    local -a out=()
+    local -i i
+    for (( i = 1; i <= ${#reply}; i += 4 )); do
+      out+="${reply[i]}:${reply[i + 1]}:${reply[i + 2]}:${reply[i + 3]}"
+    done
+    print -rl -- "${out[@]}"
+  }
+
+  It 'reports nothing when no row array is set'
+    clean() { inzsh_spec_rows_diagnose_lines 200 }
+    When call clean
+    The output should eq ''
+  End
+
+  It 'reports nothing for a row array that resolved cleanly'
+    resolved() {
+      INZSH_ROW1_LEFT=(DIR)
+      inzsh_spec_rows_diagnose_lines 200
+    }
+    When call resolved
+    The output should eq ''
+  End
+
+  It 'names an entry that resolves to no segment this build has'
+    unknown_segment() {
+      INZSH_ROW2_LEFT=(GTI)
+      inzsh_spec_rows_diagnose_lines 200
+    }
+    When call unknown_segment
+    The output should eq '2:left:GTI:unknown segment'
+  End
+
+  It 'names an entry that cannot be a variable at all'
+    not_identifier() {
+      INZSH_ROW1_LEFT=('a b')
+      inzsh_spec_rows_diagnose_lines 200
+    }
+    When call not_identifier
+    The output should eq '1:left:a b:not an identifier'
+  End
+
+  It 'treats an empty entry as not an identifier rather than skipping it silently'
+    empty_entry() {
+      INZSH_ROW1_LEFT=('')
+      inzsh_spec_rows_diagnose_lines 200
+    }
+    When call empty_entry
+    The output should eq '1:left::not an identifier'
+  End
+
+  It 'attributes a duplicate to the later row, and only the later one'
+    claimed_by_earlier_row() {
+      INZSH_ROW1_LEFT=(DIR)
+      INZSH_ROW2_LEFT=(DIR)
+      inzsh_spec_rows_diagnose_lines 200
+    }
+    When call claimed_by_earlier_row
+    The output should eq '2:left:DIR:claimed elsewhere'
+  End
+
+  It 'attributes a duplicate inside one array to its second mention'
+    claimed_within_array() {
+      INZSH_ROW1_LEFT=(DIR DIR)
+      inzsh_spec_rows_diagnose_lines 200
+    }
+    When call claimed_within_array
+    The output should eq '1:left:DIR:claimed elsewhere'
+  End
+
+  It 'attributes a duplicate across sides to the later side'
+    claimed_across_sides() {
+      INZSH_ROW1_LEFT=(DIR)
+      INZSH_ROW1_RIGHT=(DIR)
+      inzsh_spec_rows_diagnose_lines 200
+    }
+    When call claimed_across_sides
+    The output should eq '1:right:DIR:claimed elsewhere'
+  End
+
+  It 'names a claimed entry the terminal has no room for'
+    mincols() {
+      INZSH_ROW1_LEFT=(SALAH)
+      INZSH_SALAH_MINCOLS=999
+      inzsh_spec_rows_diagnose_lines 200
+    }
+    When call mincols
+    The output should eq '1:left:SALAH:hidden by MINCOLS'
+  End
+
+  It 'never reports MINCOLS against an entry that never claimed anything'
+    mincols_unclaimed() {
+      INZSH_ROW1_LEFT=(GTI)
+      INZSH_SALAH_MINCOLS=999
+      inzsh_spec_rows_diagnose_lines 200
+    }
+    When call mincols_unclaimed
+    The output should eq '1:left:GTI:unknown segment'
+  End
+
+  # Refused whole, never split — the same rule `_inzsh_rows_entries` states — and reported once
+  # for the side, with no entry to name.
+  It 'reports a scalar row knob as refused rather than examining it entry by entry'
+    scalar() {
+      INZSH_ROW1_LEFT='TIME DIR'
+      inzsh_spec_rows_diagnose_lines 200
+    }
+    When call scalar
+    The output should eq '1:left::not an array'
+  End
+
+  # An unset row array is the ordinary case — every existing `.zshrc` leaves all eight unset —
+  # and must not grow a diagnostic of its own, unlike a scalar, which is a real refusal.
+  It 'says nothing about a row array that was never set at all'
+    unset_side() {
+      INZSH_ROW1_RIGHT=(SALAH)
+      inzsh_spec_rows_diagnose_lines 200
+    }
+    When call unset_side
+    The output should eq ''
+  End
+
+  # The block this feeds is pasted into a public issue. A newline or an escape sequence inside an
+  # entry must come back as the raw quadruple `_inzsh_rows_diagnose` promises — sanitising is
+  # `inzsh doctor`'s job, covered in `doctor_spec.sh` — but it must not, on its own, forge a second
+  # quadruple or otherwise corrupt `reply`'s shape.
+  It 'keeps a hostile entry to exactly one quadruple, unsanitised'
+    hostile() {
+      local forged=$'evil\nrow entry     INZSH_ROW9_LEFT=FORGED - unknown segment'
+      INZSH_ROW1_LEFT=("$forged")
+      _inzsh_rows_diagnose 200
+      print -r -- "count=${#reply}"
+      print -r -- "row=${reply[1]} side=${reply[2]} reason=${reply[4]}"
+      [[ ${reply[3]} == "$forged" ]] && print -r -- 'entry: preserved verbatim'
+    }
+    When call hostile
+    The line 1 should eq 'count=4'
+    The line 2 should eq 'row=1 side=left reason=not an identifier'
+    The line 3 should eq 'entry: preserved verbatim'
+  End
+
+  It 'never fails, whatever combination of bad entries it is given'
+    everything_at_once() {
+      INZSH_ROW1_LEFT=(GTI 'a b' DIR)
+      INZSH_ROW2_RIGHT=(DIR)
+      INZSH_SALAH_MINCOLS=999
+      INZSH_ROW3_LEFT=(SALAH)
+      inzsh_spec_rows_diagnose_lines 200
+      print $?
+    }
+    When call everything_at_once
+    The line 1 should eq '1:left:GTI:unknown segment'
+    The line 2 should eq '1:left:a b:not an identifier'
+    The line 3 should eq '2:right:DIR:claimed elsewhere'
+    The line 4 should eq '3:left:SALAH:hidden by MINCOLS'
+    The line 5 should eq '0'
+  End
+End
+
 Describe '_inzsh_marker_row_resolved'
   # `INZSH_PROMPT_LINES` is the knob every existing `.zshrc` already carries, and it keeps
   # working, mapped onto `INZSH_MARKER_ROW` — §3.1. The removal is v2.0.0 and is not this file's
