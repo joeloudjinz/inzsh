@@ -828,9 +828,16 @@ _inzsh_render_lines() {
 # with the one spare column kept" — a real, drawable answer, not a refusal — and it is what
 # `_inzsh_render`'s join step falls through to bare when the LEFT side is empty (nothing to
 # separate the right side FROM). Where the left side is not empty, 0 IS treated as "do not pad"
-# there, because running two blocks together with no gap at all would look like one broken block:
-# `_inzsh_render_row`'s own fit runs before this ever executes and drops right-hand content by
-# priority so that case does not arise. Always status 0.
+# there, because running two blocks together with no gap at all would look like one broken block.
+#
+# THE MINIMUM IS THE CALLER'S, NOT THIS FUNCTION'S — issue #279. `_inzsh_render_row` decides how
+# much gap a row owes from whether its left side is empty, books that column in the drop-walk's
+# budget, and holds `_inzsh_render_row_fits` over the result as the measured guard. So a
+# non-empty left really does get its column, and a right-only row is not charged for one it never
+# draws. This header previously said the case "does not arise" and left it there, which was a
+# shade stronger than the code guaranteed: the walk's budget did not reserve the gap, so there
+# was a one-column-wide window of widths where the walk kept a block the join then refused to
+# pad. Reserving it is what closed the window. Always status 0.
 _inzsh_render_gap() {
   emulate -L zsh
 
@@ -1051,21 +1058,49 @@ _inzsh_render_row() {
   local -a left_list=("${(@P)left_name}")
   local -a right_list=("${(@P)right_name}")
 
-  local -i budget=$(( cols - 1 ))
-  local -i sep_width=0
+  # Issue #279. WHAT A SIDE ACTUALLY COSTS: the blocks, one separator BETWEEN each adjacent pair,
+  # and one cap glyph at the outer edge — `sum + sep*(n-1) + cap`. `_inzsh_layout_total` books the
+  # first two and says in so many words that the cap is the caller's own arithmetic, because it is
+  # drawn once whatever `n` is and folding it in would be wrong for every caller that draws none.
+  # This is that caller, and it was not doing it.
+  #
+  # What stood in for it was a separator width inflated by one — `REPLY + 1` — which spreads a
+  # single fixed cost across `n-1` boundaries and therefore only lands for `n == 2`. Measured, at
+  # pad 0 with a one-column glyph: booked `sum + 2(n-1)` against a drawn `sum + n`, so the error
+  # is `2 - n`. One column UNDER at `n == 1`, exact at `n == 2`, and one column further OVER for
+  # every block after that. Both directions are real defects and they are not symmetric: the
+  # under-book let a left-only row eat the spare column `test/ui/` pins, while the over-book
+  # dropped blocks from a wide row that had room for them all along.
+  #
+  # Booked separately here, and MEASURED PER SIDE rather than assumed equal. `INZSH_GLYPH_SEP_LEFT`
+  # and `INZSH_GLYPH_SEP_RIGHT` are independent knobs and the reference promises a wider mark is
+  # measured as drawn, so a row whose two edges carry different glyphs has to book two different
+  # numbers. Each side's cap is the same glyph as that side's separators, which is why one
+  # measurement per side answers both.
+  local -i sep_left_width=0 sep_right_width=0
   if (( ${+functions[_inzsh_width]} )); then
     _inzsh_separators
     _inzsh_width "$_inzsh_sep_left"
-    (( sep_width = REPLY + 1 ))
+    (( sep_left_width = REPLY ))
+    _inzsh_width "$_inzsh_sep_right"
+    (( sep_right_width = REPLY ))
   fi
+
+  # `cols - 1` is the spare column zsh needs to the right of the row; the cap comes off on top of
+  # it. A side that ends up empty draws no cap, and having reserved one for it costs nothing —
+  # there is no block left for the room to have saved.
+  local -i left_fit_budget=$(( cols - 1 - sep_left_width ))
+  local -i right_fit_budget=$(( cols - 1 - sep_right_width ))
+  (( left_fit_budget < 0 )) && left_fit_budget=0
+  (( right_fit_budget < 0 )) && right_fit_budget=0
 
   if (( ${+functions[_inzsh_layout_fit]} )); then
     _inzsh_render_fit_args "${left_list[@]}"
-    _inzsh_layout_fit "$budget" "$sep_width" "${reply[@]}"
+    _inzsh_layout_fit "$left_fit_budget" "$sep_left_width" "${reply[@]}"
     left_list=("${reply[@]}")
 
     _inzsh_render_fit_args "${right_list[@]}"
-    _inzsh_layout_fit "$budget" "$sep_width" "${reply[@]}"
+    _inzsh_layout_fit "$right_fit_budget" "$sep_right_width" "${reply[@]}"
     right_list=("${reply[@]}")
   fi
 
@@ -1079,18 +1114,38 @@ _inzsh_render_row() {
 
   # The row's own fit. `_inzsh_render_row_fits` — the measured guard, not the gap's own arithmetic
   # — is what actually stops the walk, because the arithmetic can only ever vouch for itself.
+  # HOW MUCH GAP THIS ROW OWES, which is not always one. `_inzsh_render_gap`'s own header says a
+  # gap of 0 is a real drawable answer where the LEFT side is empty — there is nothing for the
+  # right side to be separated FROM — and only a refusal where it is not. Reading it as "at least
+  # one, always" made a right-only row demand a column it never draws, and then paid for that
+  # column by dropping a block that fitted.
+  #
+  # Issue #279 is what exposed it. The old arithmetic under-booked the right side by exactly one
+  # cap glyph, which cancelled this extra column and left the two errors invisible in each other's
+  # shadow. Booking the cap correctly uncovered it immediately: the right-only row at the width
+  # `test/render/` pins lost its only block.
+  local -i min_gap=1
+  (( left_width == 0 )) && min_gap=0
+
   while (( ${#right_list} )); do
     _inzsh_render_gap "$cols" "$left_width" "$right_width"
-    if (( REPLY >= 1 )); then
+    if (( REPLY >= min_gap )); then
       local candidate_row=$left_str${(l:REPLY:):-}$right_str
       _inzsh_render_row_fits "$candidate_row" "$cols" && break
     fi
 
-    local -i right_budget=$(( cols - left_width - 2 ))
+    # The spare column zsh keeps, the gap this row actually owes, and — issue #279 — the cap the
+    # right side draws at its inner edge whatever the walk leaves standing. `_inzsh_layout_total`
+    # books neither the cap nor the gap, so both come off the budget here.
+    #
+    # Accepting a gap of 0 above is safe without re-deriving anything: `_inzsh_render_row_fits`
+    # MEASURES the candidate row, so a 0 that came from clamping a negative is refused there and
+    # falls through to this walk exactly as it did before.
+    local -i right_budget=$(( cols - left_width - 1 - min_gap - sep_right_width ))
     (( right_budget < 0 )) && right_budget=0
 
     _inzsh_render_fit_args "${right_list[@]}"
-    _inzsh_layout_fit "$right_budget" "$sep_width" "${reply[@]}"
+    _inzsh_layout_fit "$right_budget" "$sep_right_width" "${reply[@]}"
     (( ${#reply} == ${#right_list} )) && break
 
     right_list=("${reply[@]}")
