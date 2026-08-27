@@ -42,6 +42,16 @@ name the registry does know, `inzsh doctor` says so rather than staying silent a
 ignored       INZSH_SEPARATOR_STYL=round - probably INZSH_SEPARATOR_STYLE
 ```
 
+A name a past release *removed* is neither of those, and it is the case both rules above are
+structurally unable to catch: there is no spec left to refuse the value, and a deliberate old
+name looks nothing like the one that replaced it. The doctor keeps its own short list of them, so
+a retired knob names its replacement — and the value that means the same thing, where the old one
+had one:
+
+```
+ignored       INZSH_PROMPT_LINES=2 - retired, use INZSH_MARKER_ROW=own
+```
+
 A name that is not close to anything registered stays unreported — there is still no vocabulary
 to state for one this theme has never heard of — so `inzsh-knobs` in the
 [playground](../tools/playground.zsh) (`make play`) is where you check a name the doctor stayed
@@ -142,7 +152,8 @@ theme falls back to a safe value rather than drawing the broken result:
 `inline`, `2` was `own`. `v2.0.0` removed it outright rather than carrying two names for one
 fact indefinitely: it is no longer registered or read, so a `.zshrc` that still sets it draws
 exactly as if that line were not there at all, never an error or a wrong shape. Set
-`INZSH_MARKER_ROW` instead.
+`INZSH_MARKER_ROW` instead — and `inzsh doctor` names it and the value to use, so a line left
+behind is a row in the block rather than a setting that quietly stopped counting.
 
 ### Switching preset in a running shell — `inzsh preset`
 

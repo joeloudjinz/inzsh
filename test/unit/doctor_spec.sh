@@ -876,6 +876,147 @@ Describe 'inzsh doctor'
         The stderr should eq ''
       End
     End
+
+    # Issue #242. The third tail under `ignored`, and the one neither walk above can reach: a
+    # knob a release REMOVED. `_inzsh_doctor_ignored` needs the registry to recognise the name
+    # and deleting the registration is precisely what stops that, while
+    # `_inzsh_doctor_near_misses` needs it to resemble a name that still exists and a
+    # deliberate old name does not. Without this section a stale `INZSH_PROMPT_LINES` draws the
+    # right prompt and explains nothing, which is the one outcome §3.1 rules out.
+    Describe 'a knob a past release retired'
+      # The invariant the whole section rests on. If this ever fails, the name is back in the
+      # registry and `_inzsh_doctor_ignored` owns it again — the table in `doctor.zsh` would
+      # then be claiming a knob is dead while the theme is reading it.
+      It 'is genuinely gone from the registry'
+        gone() {
+          inzsh_spec_doctor_env
+          _inzsh_config_spec_of INZSH_PROMPT_LINES
+          print -r -- "[$REPLY]"
+        }
+        When call gone
+        The output should eq '[]'
+      End
+
+      # And genuinely out of reach of the near-miss walk too — not by assertion, by distance.
+      # 8 edits from the nearest registered name, well past the threshold of 2.
+      It 'is not close enough to any live name to be guessed at'
+        far() {
+          inzsh_spec_doctor_env
+          _inzsh_doctor_near_miss INZSH_PROMPT_LINES && print -r -- "guessed $REPLY"
+          print -r -- "status $?"
+        }
+        When call far
+        The output should eq 'status 1'
+      End
+
+      # The value the old knob accepted has an exact new spelling, so the row prints it. This
+      # is the difference between a reader looking the replacement up and pasting it.
+      Describe 'the matching value'
+        Parameters
+          1 inline
+          2 own
+        End
+
+        It "maps $1 onto INZSH_MARKER_ROW=$2"
+          mapped() {
+            inzsh_spec_doctor_env
+            local INZSH_PROMPT_LINES=$1
+            inzsh doctor
+          }
+          When call mapped "$1"
+          The output should include 'ignored'
+          The output should include "INZSH_PROMPT_LINES=$1 - retired, use INZSH_MARKER_ROW=$2"
+        End
+      End
+
+      # A value the retired knob never accepted was already falling through before the removal,
+      # so there is no old behaviour to name a new spelling for. The replacement NAME is the
+      # whole of what this file honestly knows, and inventing a value would be inventing an
+      # intent the user never expressed.
+      It 'names only the replacement for a value that never meant anything'
+        unmapped() {
+          inzsh_spec_doctor_env
+          local INZSH_PROMPT_LINES=9
+          inzsh doctor
+        }
+        When call unmapped
+        The output should include 'INZSH_PROMPT_LINES=9 - retired, use INZSH_MARKER_ROW'
+        The output should not include 'INZSH_MARKER_ROW='
+      End
+
+      # The same "set-but-empty is unset" rule the two walks above keep, for the third time.
+      It 'skips a retired knob whose value is empty'
+        blank() {
+          zsh -f -c '
+            TERM=xterm-256color COLORTERM=truecolor LC_ALL=en_US.UTF-8
+            source "$1/lib/core/config.zsh"
+            source "$1/lib/core/detect.zsh"
+            source "$1/lib/core/doctor.zsh"
+            INZSH_PROMPT_LINES=
+            inzsh doctor
+          ' inzsh-doctor-retired-blank "$SHELLSPEC_PROJECT_ROOT"
+        }
+        When call blank
+        The output should not include 'ignored'
+        The stderr should eq ''
+      End
+
+      # The drift guard. The table names knobs deleted from the registry; if the two ever
+      # disagree the registry is the one that decides what the theme actually READS, so a name
+      # it has taken back is not reported. Forced here rather than waited for, since a release
+      # as shipped cannot produce it.
+      It 'stays quiet about a name the registry has taken back'
+        readopted() {
+          zsh -f -c '
+            TERM=xterm-256color COLORTERM=truecolor LC_ALL=en_US.UTF-8
+            source "$1/lib/core/config.zsh"
+            source "$1/lib/core/detect.zsh"
+            source "$1/lib/core/doctor.zsh"
+            _inzsh_config_register INZSH_PROMPT_LINES '"'"'enum:1|2'"'"' 2
+            INZSH_PROMPT_LINES=2
+            _inzsh_doctor_retired
+            print -r -- "${reply[*]}"
+          ' inzsh-doctor-retired-readopted "$SHELLSPEC_PROJECT_ROOT"
+        }
+        When call readopted
+        The output should eq ''
+        The stderr should eq ''
+      End
+
+      # Ordering. Of the three tails this section prints, `retired` is the only one stating a
+      # fact rather than an inference, so it leads — a reader who has one never scans past two
+      # guesses to reach it.
+      It 'prints the retired row ahead of the inferred ones'
+        order() {
+          zsh -f -c '
+            TERM=xterm-256color COLORTERM=truecolor LC_ALL=en_US.UTF-8
+            source "$1/lib/core/config.zsh"
+            source "$1/lib/core/detect.zsh"
+            source "$1/lib/core/doctor.zsh"
+            INZSH_PROMPT_LINES=2
+            INZSH_SEPARATOR_STYLE=rounded
+            INZSH_SEPARATOR_STYL=round
+            inzsh doctor | grep ignored | sed -e "s/.*- //" -e "s/ .*//"
+          ' inzsh-doctor-retired-order "$SHELLSPEC_PROJECT_ROOT"
+        }
+        When call order
+        The line 1 of output should eq 'retired,'
+        The line 2 of output should eq 'accepts'
+        The line 3 of output should eq 'probably'
+      End
+
+      # The house rule this whole file keeps: a diagnostic that can fail is one nobody can run
+      # in the broken environment it exists for.
+      It 'returns success with nothing retired set at all'
+        status() {
+          inzsh_spec_doctor_env
+          _inzsh_doctor_retired
+          print $?
+        }
+        When call status
+        The output should eq '0'
+      End
+    End
   End
 
   # Issue #243. `_inzsh_doctor_ignored` cannot see a bad row-array entry — the family resolves and

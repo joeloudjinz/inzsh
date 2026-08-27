@@ -21,6 +21,19 @@
 # has heard of itself.
 typeset -g inzsh_spec_registry_skip='lib/core/config.zsh'
 
+# The names a release RETIRED, which are the one other thing in the tree that reads as a knob and
+# must not be registered. Issue #242: `lib/core/doctor.zsh` keeps a small table of them so a user
+# who still sets one is told it is dead and what replaced it, and that table spells the old name
+# out in live code — the scan below cannot tell it apart from a read, and should not try, because
+# a heuristic that quietly forgave one shape of `INZSH_` line would forgive a real undeclared knob
+# written the same way.
+#
+# So they are named here rather than the gate being widened, and naming them costs something on
+# purpose: the two examples at the foot of this file hold this list to the registry in one
+# direction and to `doctor.zsh` in the other, so an entry here cannot hide a knob that is still
+# live, and a knob retired tomorrow cannot be added to the doctor's table without appearing here.
+typeset -ga inzsh_spec_registry_retired=(INZSH_PROMPT_LINES)
+
 # Every `INZSH_` name the tree READS, one per line, with `*` standing in wherever the code
 # interpolates. `INZSH_${(U)1}_MINCOLS` comes back as `INZSH_*_MINCOLS`, which is the family
 # pattern it is a read of; a literal name comes back as itself.
@@ -122,6 +135,7 @@ Describe 'the registry covers the tree'
       declared=(${(f)"$(inzsh_spec_registry_names)"})
       (( ${#reads} )) || { print -r -- 'scanned nothing'; return }
       for token in $reads; do
+        (( ${inzsh_spec_registry_retired[(I)$token]} )) && continue
         for entry in $declared; do
           inzsh_spec_covers "$token" "$entry" && continue 2
         done
@@ -324,6 +338,97 @@ Describe 'defaults restated for a partial load'
     }
     When call agree
     The output should eq ''
+    The stderr should eq ''
+  End
+End
+
+# THE THIRD GATE, and the price of the exemption at the top of this file. Skipping a name from
+# the first gate is the same shape of hole the first gate exists to close, so the list that does
+# the skipping is itself held to both facts it claims — that the name is gone from the registry,
+# and that the doctor still knows about it.
+#
+# Without the first of these, `inzsh_spec_registry_retired` would be a way to silence the
+# undeclared-knob failure for any knob at all. Without the second, the list would rot the moment
+# a retirement was undone: the name would keep its exemption here while the doctor kept telling
+# users to stop setting a knob the theme had started reading again.
+Describe 'the retired names are retired'
+  # A retired name must be covered by nothing the registry holds — not a singleton, and not a
+  # family pattern either, since a family covers names nobody has written yet and could shadow
+  # one of these without anybody noticing.
+  It 'holds no registered spec for a name listed as retired'
+    still_live() {
+      local -a declared live=()
+      local knob entry
+      declared=(${(f)"$(inzsh_spec_registry_names)"})
+      (( ${#declared} )) || { print -r -- 'registry empty'; return }
+      for knob in $inzsh_spec_registry_retired; do
+        for entry in $declared; do
+          inzsh_spec_covers "$knob" "$entry" && { live+=$knob; break }
+        done
+      done
+      print -r -- "live=${live[*]}"
+    }
+    When call still_live
+    The output should eq 'live='
+  End
+
+  # And the other direction: this list and the doctor's table are the same set. Asked of the
+  # loaded table rather than grepped out of the file, so it is the data the diagnostic actually
+  # uses that answers, not the text it happens to be written in.
+  It 'lists exactly the names the doctor reports as retired'
+    same_set() {
+      local -a table
+      table=(${(f)"$(zsh -f -c '
+        source $1/lib/core/doctor.zsh
+        print -rl -- ${(ko)_inzsh_doctor_retired_replacement}
+      ' inzsh-retired "$SHELLSPEC_PROJECT_ROOT")"})
+      (( ${#table} )) || { print -r -- 'doctor table empty'; return }
+      # A VERDICT rather than the two sets side by side, so the expected value below is not a
+      # third copy of the list at the top of this file for the other two to drift against. The
+      # differences are named on failure, which is the half of this worth reading.
+      local -a only_spec=(${inzsh_spec_registry_retired:|table})
+      local -a only_table=(${table:|inzsh_spec_registry_retired})
+      if (( ${#only_spec} + ${#only_table} )); then
+        print -r -- "spec-only=${only_spec[*]} table-only=${only_table[*]}"
+      else
+        print -r -- agree
+      fi
+    }
+    When call same_set
+    The output should eq 'agree'
+  End
+
+  # The trap this section was written into. `_inzsh_config_absorb_all` walks
+  # `${(ko)parameters[(I)_inzsh_*_knobs]}` and treats everything it finds as a REGISTRATION
+  # TABLE, so that suffix is a reserved convention rather than a description — and the most
+  # natural name for a table of retired knobs lands squarely inside it. A table written to
+  # declare a name DEAD would then hand it back to the registry that just dropped it, which is
+  # the precise opposite of retiring one.
+  #
+  # It is caught today only by accident: absorb refuses the entry because `INZSH_MARKER_ROW` is
+  # not a valid spec string, and a replacement that happened to read as one — a bare word — would
+  # go through. So the assertion is that absorb SUCCEEDS over the loaded tree, which is the same
+  # thing as saying every `_inzsh_*_knobs` parameter in it really is a registration table. A
+  # non-zero status here means something has been named into that namespace that does not belong.
+  It 'keeps the _knobs namespace to real registration tables'
+    absorbs() {
+      zsh -f -c '
+        local root=$1 file
+        source $root/lib/core/config.zsh
+        for file in $root/lib/core/*.zsh $root/lib/segments/*.zsh $root/lib/salah/*.zsh; do
+          [[ $file == */config.zsh ]] && continue
+          source $file
+        done
+        _inzsh_config_absorb_all
+        print -r -- "absorb=$?"
+        # And the consequence the status is a proxy for, asserted directly: a retired name is
+        # still absent from the registry after the whole tree has been absorbed.
+        print -r -- "resurrected=${_inzsh_config_validators[INZSH_PROMPT_LINES]-}"
+      ' inzsh-absorb "$SHELLSPEC_PROJECT_ROOT"
+    }
+    When call absorbs
+    The line 1 of output should eq 'absorb=0'
+    The line 2 of output should eq 'resurrected='
     The stderr should eq ''
   End
 End
