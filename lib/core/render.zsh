@@ -992,10 +992,10 @@ _inzsh_render_fit_args() {
 # for a caller holding several rows of segment names rather than one pair of globals.
 #
 # Answers in `_inzsh_render_row_left` / `_inzsh_render_row_right` (the assembled strings, each
-# ready to concatenate), `_inzsh_render_row_left_width` / `_inzsh_render_row_right_width` (their
-# measured widths) and `_inzsh_render_row_left_list` / `_inzsh_render_row_right_list` (which
-# segments actually survived to be drawn, in order) — a caller that needs to know what changed
-# reads the last two rather than re-deriving them.
+# ready to concatenate) and `_inzsh_render_row_left_width` / `_inzsh_render_row_right_width`
+# (their measured widths) — nothing else. A caller that needs to know which segments survived
+# reads the strings themselves; publishing the survivor lists too was tried and dropped; nothing
+# ever read them, and an answer nobody reads is a second thing to keep correct for no reader.
 #
 # Three passes, in the order §4 of the design states:
 #   1. `_inzsh_layout_fit`, per side, against `COLUMNS - 1` — unchanged in behaviour from the
@@ -1023,7 +1023,6 @@ _inzsh_render_row() {
 
   typeset -g _inzsh_render_row_left='' _inzsh_render_row_right=''
   typeset -gi _inzsh_render_row_left_width=0 _inzsh_render_row_right_width=0
-  typeset -ga _inzsh_render_row_left_list=() _inzsh_render_row_right_list=()
 
   local -a left_list=("${(@P)left_name}")
   local -a right_list=("${(@P)right_name}")
@@ -1105,8 +1104,6 @@ _inzsh_render_row() {
   typeset -g _inzsh_render_row_right=$right_str
   typeset -gi _inzsh_render_row_left_width=$left_width
   typeset -gi _inzsh_render_row_right_width=$right_width
-  typeset -ga _inzsh_render_row_left_list=("${left_list[@]}")
-  typeset -ga _inzsh_render_row_right_list=("${right_list[@]}")
 
   return 0
 }
