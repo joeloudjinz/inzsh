@@ -247,7 +247,32 @@ twice. `marker` names the deprecated `INZSH_PROMPT_LINES` when that is where the
 came from — see its row above. `rows` is the row count `_inzsh_rows_resolve` gives the render
 right now, against the terminal you are looking at.
 
-Omitted whole when `lib/core/rows.zsh` and `lib/core/render.zsh` are not both loaded.
+```
+segment       DIR row=1 side=left rank=40 priority=20 mincols=0
+segment       GIT row=1 side=left rank=50 priority=40 mincols=0 - built no text this render
+segment       SALAH row=- side=- rank=-20 priority=90 mincols=120 - dropped by MINCOLS (120 > 80)
+segment       DATE row=- side=- rank=0 priority=85 mincols=0 - rank 0, not named in any row
+```
+
+**The `segment` rows**, one per segment the theme registers, whatever its rank: `row=`/`side=`
+are where it landed — `-` for one that landed nowhere — and `rank=`/`priority=`/`mincols=` are
+the numbers governing it, resolved through every override the same way the render reads them.
+Where a segment did not draw, one reason is appended, and they are not interchangeable:
+
+| Reason | Meaning |
+|---|---|
+| `rank 0, not named in any row` | The segment's resolved `INZSH_<SEGMENT>_RANK` is `0` and no `INZSH_ROW<N>_LEFT`/`_RIGHT` claimed it — the ordinary way a segment ships, or is switched off. |
+| `dropped by MINCOLS (N > cols)` | The segment would otherwise have drawn, but `INZSH_<SEGMENT>_MINCOLS` is wider than the terminal. |
+| `built no text this render` | The segment landed on a row but had nothing to say this time — a clean repository's `git`, an inactive `venv`. Not a placement problem at all. |
+| `dropped by the row's fit` | The segment landed on a row, built real text, and the row still could not hold it — the per-row priority walk, or the drop-walk that narrows the right side when a row cannot hold both sides at once. |
+
+A row array entry that could not be a variable name, or that named no segment this build has, is
+a different failure — silently dropped during entry validation, the way `INZSH_ROW1_LEFT` already
+documents above — and does not appear here at all: this section only ever sees the real,
+registered segments, so there is nothing it can say about a name the resolve never saw.
+
+Both sections are omitted whole when `lib/core/rows.zsh` and `lib/core/render.zsh` are not both
+loaded, the same way the two `salah` rows further down are omitted without that library.
 
 ## Secondary prompts and the title
 
