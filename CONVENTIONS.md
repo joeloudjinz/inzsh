@@ -57,9 +57,10 @@ couldn't already see. Anything a reader would have to guess at takes a named fla
 `inzsh salah --days 7`, never a bare `7`, since seven what is not recoverable from the digit
 alone.
 
-A test seam is not an excuse for a positional. `inzsh locate [now]` fails this today: the
-injected clock is opaque to a reader and sits in the one slot a real argument would want.
-Issue #251 moves it to `--now` in 2.0.0; noted here, not fixed here.
+A test seam is not an excuse for a positional. `inzsh locate --now <epoch>` and `inzsh salah
+--now <epoch>` both take the injected clock the pinned suites need this way, on purpose: the
+value is opaque to a reader, and a positional would put it in the one slot a real argument
+would want.
 
 A usage string owes the reader the same clarity as the command itself — every subcommand
 named, every flag spelled out, nothing left to be inferred from position.

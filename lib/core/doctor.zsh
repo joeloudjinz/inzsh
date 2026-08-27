@@ -983,18 +983,21 @@ _inzsh_doctor() {
   return 0
 }
 
-# `inzsh locate [--force] [now]` — refresh the stored position, on purpose. The public face of
-# `INZSH_SALAH_AUTOLOCATE` (issue #186): the knob PERMITS the theme's one network call, and this
-# command is the only shipped way to MAKE it. It is typed by a person — never reached from a
-# hook, the segment, or the render path — which is the whole safety story of
+# `inzsh locate [--force] [--now epoch]` — refresh the stored position, on purpose. The public
+# face of `INZSH_SALAH_AUTOLOCATE` (issue #186): the knob PERMITS the theme's one network call,
+# and this command is the only shipped way to MAKE it. It is typed by a person — never reached
+# from a hook, the segment, or the render path — which is the whole safety story of
 # `lib/salah/location.zsh` kept intact with a name you can find.
 #
 #   inzsh locate            look the position up if the stored one is older than the TTL
 #   inzsh locate --force    look it up now, whatever the stored one's age — for after you move
 #   (inzsh locate &!)       from `.zshrc`, detached, so login does not wait
 #
-# The trailing `[now]` is the injected clock every salah function takes, for the suite that
-# pins time; unset, the wall clock answers.
+# `--now <epoch>` is the injected clock every salah function takes, for the suite that pins
+# time; unset, the wall clock answers. Issue #251: this used to be a bare trailing positional,
+# which CONVENTIONS.md's Commands section rules out on sight — the digit names nothing a reader
+# could recover unaided. `--now` matches `inzsh salah`'s own flag of the same name, one idiom
+# for the same seam rather than two.
 #
 # The TTL gate is the same one `_inzsh_salah_locate_refresh` keeps, restated here for one
 # reason: the command has to be able to SAY which side of it you are on — "current, refreshed
@@ -1004,10 +1007,29 @@ _inzsh_locate() {
   emulate -L zsh
 
   local -i force=0
-  if [[ ${1-} == (-f|--force) ]]; then
-    force=1
-    shift
-  fi
+  local now=
+  while (( $# )); do
+    case $1 in
+      (-f|--force)
+        force=1
+        shift
+        ;;
+      (--now)
+        shift
+        if [[ ${1-} != <-> ]]; then
+          print -ru2 -- 'inzsh locate: --now wants an epoch - whole seconds since 1970'
+          return 1
+        fi
+        now=$1
+        shift
+        ;;
+      (*)
+        print -ru2 -- \
+          "inzsh locate: unknown argument '$1' - usage: inzsh locate [--force] [--now epoch]"
+        return 1
+        ;;
+    esac
+  done
 
   if ! (( ${+functions[_inzsh_salah_locate_fetch]} )); then
     print -ru2 -- 'inzsh locate: the prayer library is not loaded'
@@ -1019,7 +1041,7 @@ _inzsh_locate() {
     return 1
   fi
 
-  local now=${1:-${EPOCHSECONDS-}}
+  [[ -n $now ]] || now=${EPOCHSECONDS-}
   if [[ $now != <-> ]]; then
     print -ru2 -- 'inzsh locate: no clock to age the stored position against'
     return 1
@@ -1067,9 +1089,9 @@ _inzsh_locate() {
 # EVERY ARGUMENT IS A FLAG, on purpose. `--days 7` and not a bare `7`: CONVENTIONS.md's Commands
 # section states the rule outright — a positional is only allowed when the value names itself,
 # and "seven what" is not recoverable from the digit alone. `--now` gets the same treatment even
-# though it exists purely for a test seam: `inzsh locate [now]` is named in that same section as
-# the one place the repo currently breaks its own rule, fixed in 2.0.0 by #251 and not by this
-# command — this one is written the way #251 will leave that one, not the way it stands today.
+# though it exists purely for a test seam: `inzsh locate --now <epoch>` (issue #251) is the other
+# command with the identical seam, and the two share the flag rather than drifting into separate
+# idioms for the same clock.
 #
 # THE HEADER NAMES THE METHOD, THE ASR SCHOOL AND THE ZONE — never the position, and never
 # anything derived from it. The method and school are `inzsh doctor`'s own `recipe` line, read
@@ -1330,7 +1352,7 @@ inzsh() {
       ;;
     (*)
       print -ru2 -- \
-        'usage: inzsh doctor | inzsh locate [--force] | inzsh preset [name] | inzsh salah [--days N] [--now epoch]'
+        'usage: inzsh doctor | inzsh locate [--force] [--now epoch] | inzsh preset [name] | inzsh salah [--days N] [--now epoch]'
       return 1
       ;;
   esac
