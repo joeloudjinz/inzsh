@@ -174,7 +174,7 @@ Describe 'the glyph knob family'
         _inzsh_segment_text=(A one B two)
         _inzsh_left=(A B)
         _inzsh_right=()
-        _inzsh_render_build left
+        _inzsh_render_build left "${_inzsh_left[@]}"
         local built=$REPLY
         setopt local_options extended_glob
         built=${built//(%[KF]\{[^\}]#\}|%[fk])/}
@@ -193,7 +193,7 @@ Describe 'the glyph knob family'
         zsh -f -i -c '
           local root=$1 file
           unset -m "INZSH_*"
-          for file in config detect tokens-256 tokens layout engine render; do
+          for file in config detect tokens-256 tokens layout engine rows render; do
             source $root/lib/core/$file.zsh
           done
           typeset -g COLUMNS=80
@@ -317,7 +317,7 @@ Describe 'the glyph knob family'
         _inzsh_segment_text=(A one B two)
         _inzsh_left=(A B)
         _inzsh_right=()
-        _inzsh_render_build left
+        _inzsh_render_build left "${_inzsh_left[@]}"
         local -i tracked=$_inzsh_render_width
         _inzsh_width "$REPLY"
         [[ $tracked == $REPLY ]] && print -r -- "agree" || print -r -- "tracked=$tracked measured=$REPLY"

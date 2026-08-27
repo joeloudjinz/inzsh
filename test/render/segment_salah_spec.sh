@@ -101,7 +101,7 @@ inzsh_spec_salah_drawn() {
   _inzsh_segment_salah_build "$REPLY" inzsh_spec_salah_table
   _inzsh_left=()
   _inzsh_right=(SALAH)
-  _inzsh_render_build right
+  _inzsh_render_build right "${_inzsh_right[@]}"
   typeset -g inzsh_spec_drawn=$REPLY
 
   return 0
@@ -692,7 +692,7 @@ Describe 'the prayer-time segment'
         _inzsh_segment_salah_build 1780272000 inzsh_spec_salah_none
         _inzsh_left=()
         _inzsh_right=(SALAH)
-        _inzsh_render_build right
+        _inzsh_render_build right "${_inzsh_right[@]}"
         print -r -- "len=${#REPLY} width=$_inzsh_render_width"
       }
       When call nothing

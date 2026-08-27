@@ -35,7 +35,7 @@ inzsh_spec_jobs_drawn() {
   _inzsh_segment_jobs_build "$@"
   _inzsh_left=(JOBS)
   _inzsh_right=()
-  _inzsh_render_build left
+  _inzsh_render_build left "${_inzsh_left[@]}"
   typeset -g inzsh_spec_drawn=$REPLY
 
   return 0

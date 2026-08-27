@@ -444,6 +444,257 @@ _inzsh_doctor_age() {
   return 0
 }
 
+# The resolved SHAPE of the prompt — never the knob, the render's own answer to it. Issue #227:
+# `INZSH_SEPARATOR_STYLE=arrow` with no Nerd Font draws `divider`, and a row that printed `arrow`
+# because that is what the variable says would be describing a prompt nobody is looking at. Every
+# fact below is read the same way the render core reads it, at the moment doctor asks —
+# recompute-never-cache, the same rule every row above already keeps.
+#
+# Omitted whole when `lib/core/rows.zsh` and `lib/core/render.zsh` are not both loaded: a partial
+# load has nothing honest to compute a row count or a fit from, and `_inzsh_doctor_segments`
+# right below needs exactly the same two files, so the two sections share one guard.
+_inzsh_doctor_shape() {
+  emulate -L zsh
+  setopt extended_glob
+
+  (( ${+functions[_inzsh_rows_resolve]} && ${+functions[_inzsh_render_row]} )) || return 0
+
+  local -i cols=${COLUMNS:-0}
+  local value
+
+  # The separator. `sep_intended` is resolved through the identical case-match `_inzsh_sep_style`
+  # itself applies, BEFORE its own Nerd Font check — so the two can only ever disagree for the one
+  # reason that check exists, and the note below is never wrong about why.
+  local sep_raw=${INZSH_SEPARATOR_STYLE-}
+  (( ${+functions[_inzsh_config_get]} )) && { _inzsh_config_get INZSH_SEPARATOR_STYLE; sep_raw=$REPLY }
+  local sep_intended=arrow
+  case $sep_raw in (arrow|round|divider) sep_intended=$sep_raw ;; esac
+  _inzsh_sep_style
+  value=$_inzsh_sep_style_resolved
+  [[ $value != $sep_intended ]] && value+=" (would be $sep_intended with a Nerd Font)"
+  _inzsh_doctor_row shape "separator: $value"
+
+  # The surface mode. Nothing transforms it further the way the separator is, so the resolved
+  # value is the whole answer — an invalid `INZSH_SURFACE_MODE` already has its own row in the
+  # `ignored` section below, and repeating that note here would be the same fact said twice.
+  _inzsh_surface_mode
+  _inzsh_doctor_row shape "surface: $_inzsh_surface_mode_resolved"
+
+  # The marker row. `INZSH_PROMPT_LINES` is the deprecated alias — see `lib/core/rows.zsh` for
+  # the precedence — and a reader who only ever set the old knob deserves to know that is where
+  # the answer came from, not just what the answer is.
+  if (( ${+functions[_inzsh_marker_row_resolved]} )); then
+    _inzsh_marker_row_resolved
+    value=$REPLY
+    if [[ ${INZSH_MARKER_ROW-} != (inline|own) && ${INZSH_PROMPT_LINES-} == (1|2) ]]; then
+      value+=' (via the deprecated INZSH_PROMPT_LINES)'
+    fi
+    _inzsh_doctor_row shape "marker: $value"
+  fi
+
+  # The padding. Bounded by its own validator, so an out-of-range value already has an `ignored`
+  # row of its own — this is only ever the number actually spent on either side of a block.
+  _inzsh_render_pad
+  _inzsh_doctor_row shape "padding: $_inzsh_render_pad_resolved"
+
+  # The row count, resolved fresh against every registered segment and the terminal width right
+  # now — the same call `_inzsh_render` itself makes on every precmd, not a second opinion of it.
+  local -a shape_candidates=(${(ok)_inzsh_segment_defaults})
+  _inzsh_rows_resolve "$cols" "${shape_candidates[@]}"
+  _inzsh_doctor_row shape "rows: $_inzsh_row_count"
+
+  return 0
+}
+
+# `_inzsh_doctor_row_survivors <cols> <left-array-name> <right-array-name>` — the segments from
+# both sides that would actually be DRAWN if this row were rendered right now, in `reply`.
+#
+# Issue #227. `_inzsh_render_row` in `lib/core/render.zsh` is the one place that answers this for
+# real, and its own comment says outright that publishing a survivor list was tried and dropped —
+# nothing needed one until now. Calling it directly here was considered and rejected: its last
+# pass, `dir` truncation, calls the real `_inzsh_segment_dir_build` with a tightened budget, which
+# OVERWRITES `_inzsh_segment_text[DIR]`. That self-heals at the next real prompt — every candidate
+# segment is rebuilt from scratch on every precmd — but a doctor that changes what the NEXT prompt
+# draws, even harmlessly, is not the recompute-never-cache, side-effect-free diagnostic the rest
+# of this file is.
+#
+# So this mirrors `_inzsh_render_row`'s own first two passes — the per-side `_inzsh_layout_fit`
+# and the drop-walk that narrows the right side when the two sides together will not fit — and
+# stops exactly where its third pass, `dir` truncation, begins. That is a safe place to stop:
+# truncation only ever shortens `dir`'s own TEXT, it never adds or removes a segment from either
+# list, so leaving it out changes nothing about which segments this function reports as drawn.
+# If `_inzsh_render_row`'s first two passes ever change shape, this needs the same change.
+_inzsh_doctor_row_survivors() {
+  emulate -L zsh
+  setopt extended_glob
+
+  typeset -ga reply
+  reply=()
+
+  local -i cols=0
+  [[ $1 == <-> ]] && cols=$1
+  local left_name=$2 right_name=$3
+
+  local -a left_list=("${(@P)left_name}") right_list=("${(@P)right_name}")
+
+  # Without the render core this cannot answer at all, and "I could not check" reads as "assume
+  # it draws" — the same rule `_inzsh_render_row_fits` states for itself, so a partial load never
+  # invents an absence nobody here can prove.
+  (( ${+functions[_inzsh_render_row]} )) || {
+    reply=("${left_list[@]}" "${right_list[@]}")
+    return 0
+  }
+
+  local -i budget=$(( cols - 1 ))
+  local -i sep_width=0
+  if (( ${+functions[_inzsh_width]} )); then
+    _inzsh_separators
+    _inzsh_width "$_inzsh_sep_left"
+    (( sep_width = REPLY + 1 ))
+  fi
+
+  _inzsh_render_fit_args "${left_list[@]}"
+  _inzsh_layout_fit "$budget" "$sep_width" "${reply[@]}"
+  left_list=("${reply[@]}")
+
+  _inzsh_render_fit_args "${right_list[@]}"
+  _inzsh_layout_fit "$budget" "$sep_width" "${reply[@]}"
+  right_list=("${reply[@]}")
+
+  _inzsh_render_build right "${right_list[@]}"
+  local right_str=$REPLY
+  local -i right_width=$_inzsh_render_width
+
+  _inzsh_render_build left "${left_list[@]}"
+  local left_str=$REPLY
+  local -i left_width=$_inzsh_render_width
+
+  # The drop-walk, unchanged from `_inzsh_render_row`: propose a gap, accept it once the measured
+  # row fits, and otherwise narrow the right side by priority at a tighter budget and try again.
+  while (( ${#right_list} )); do
+    _inzsh_render_gap "$cols" "$left_width" "$right_width"
+    if (( REPLY >= 1 )); then
+      local candidate_row=$left_str${(l:REPLY:):-}$right_str
+      _inzsh_render_row_fits "$candidate_row" "$cols" && break
+    fi
+
+    local -i right_budget=$(( cols - left_width - 2 ))
+    (( right_budget < 0 )) && right_budget=0
+
+    _inzsh_render_fit_args "${right_list[@]}"
+    _inzsh_layout_fit "$right_budget" "$sep_width" "${reply[@]}"
+    (( ${#reply} == ${#right_list} )) && break
+
+    right_list=("${reply[@]}")
+    _inzsh_render_build right "${right_list[@]}"
+    right_str=$REPLY
+    right_width=$_inzsh_render_width
+  done
+
+  typeset -ga reply
+  reply=("${left_list[@]}" "${right_list[@]}")
+
+  return 0
+}
+
+# Per segment: where it landed, what governs its survival, and — when it did not survive — WHY.
+# Issue #227, covering #246 and #247. "Why is my segment not showing" is unanswerable from a
+# segment's own rank alone once rows exist: a segment can be placed and still not draw, for
+# reasons that live in three different files and are not interchangeable — naming the wrong one
+# sends a reader to fix something that was never broken.
+#
+# The four causes this reports, in the order they are actually checked, because each one can only
+# be asked once the ones before it are ruled out:
+#
+#   RANK 0, UNCLAIMED   `lib/core/rows.zsh` step 2's own drop — `_inzsh_rows_hidden` is exactly
+#                       this set, already computed by the resolve this function calls, so it is
+#                       read rather than re-derived.
+#   MINCOLS             the same resolve's step 3, over whatever stood after the rank check —
+#                       claimed or not. A candidate that is not in `_inzsh_rows_hidden` and still
+#                       did not land on any row can only have failed here: `_inzsh_rows_resolve`'s
+#                       own contract (see its header) has no third way off a row it draws.
+#   NO TEXT             a segment placed on a row that built nothing this render — a clean
+#                       repository's `git`, an inactive `venv`. Checked before the fit, because
+#                       `_inzsh_render_fit_args` already skips text-less segments on its own, and
+#                       asking the fit about a segment it never considered would misname this as
+#                       "dropped by the fit" instead.
+#   THE ROW'S FIT       placed, built real text, and still not among what `_inzsh_render_row`
+#                       would actually draw — the per-row priority walk, or the drop-walk when a
+#                       row could not hold both sides. One label for both:
+#                       `_inzsh_doctor_row_survivors` mirrors the MECHANISM, not which half of it
+#                       fired, and a reader who needs to know which can narrow the terminal and
+#                       watch which one moves.
+#
+# Entry-VALIDATION drops — a name that never became a candidate because it could not spell a
+# variable, or named no segment this build has — are issue #243's, not this one's: this function
+# only ever sees `${(k)_inzsh_segment_defaults}`, the real registered segments, so a typo in a row
+# array is invisible here exactly as `_inzsh_rows_entries` already made it invisible to the
+# resolve.
+_inzsh_doctor_segments() {
+  emulate -L zsh
+  setopt extended_glob
+
+  (( ${+functions[_inzsh_rows_resolve]} && ${+functions[_inzsh_render_row]} )) || return 0
+  (( ${#_inzsh_segment_defaults} )) || return 0
+
+  local -i cols=${COLUMNS:-0}
+  local -a candidates=(${(ok)_inzsh_segment_defaults})
+
+  _inzsh_rows_resolve "$cols" "${candidates[@]}"
+  local -i row_count=$_inzsh_row_count
+
+  local -A is_hidden=()
+  local h
+  for h in "${_inzsh_rows_hidden[@]}"; do is_hidden[$h]=1; done
+
+  local -A placed_row=() placed_side=() survives=()
+  local -i n
+  local seg lname rname
+  for (( n = 1; n <= row_count; n++ )); do
+    lname="_inzsh_row${n}_left"
+    rname="_inzsh_row${n}_right"
+
+    for seg in "${(@P)lname}"; do placed_row[$seg]=$n; placed_side[$seg]=left; done
+    for seg in "${(@P)rname}"; do placed_row[$seg]=$n; placed_side[$seg]=right; done
+
+    _inzsh_doctor_row_survivors "$cols" "$lname" "$rname"
+    for seg in "${reply[@]}"; do survives[$seg]=1; done
+  done
+
+  local -i rank priority mincols
+  local reason value
+  for seg in "${candidates[@]}"; do
+    _inzsh_rank_of "$seg"
+    rank=$REPLY
+    _inzsh_priority_of "$seg"
+    priority=$REPLY
+    _inzsh_mincols_of "$seg"
+    mincols=$REPLY
+
+    reason=
+    if (( ${+placed_row[$seg]} )); then
+      value="row=${placed_row[$seg]} side=${placed_side[$seg]} rank=$rank priority=$priority mincols=$mincols"
+      if [[ -z ${_inzsh_segment_text[$seg]-} ]]; then
+        reason='built no text this render'
+      elif (( ! ${+survives[$seg]} )); then
+        reason="dropped by the row's fit"
+      fi
+    else
+      value="row=- side=- rank=$rank priority=$priority mincols=$mincols"
+      if (( ${+is_hidden[$seg]} )); then
+        reason='rank 0, not named in any row'
+      else
+        reason="dropped by MINCOLS ($mincols > $cols)"
+      fi
+    fi
+
+    [[ -n $reason ]] && value+=" - $reason"
+    _inzsh_doctor_row segment "$seg $value"
+  done
+
+  return 0
+}
+
 # The block itself. Always status 0: a diagnostic that can fail is a diagnostic nobody can run
 # in the broken environment it exists for, so every line degrades to an honest word — `unknown`,
 # `none` — rather than to an error.
@@ -564,6 +815,13 @@ _inzsh_doctor() {
     (( ${#reply} )) && _inzsh_doctor_row invariants "${(j:, :)reply}"
   fi
 
+  # The resolved prompt shape, and where every registered segment landed and why — issue #227,
+  # covering #246 and #247. Both are omitted whole when `lib/core/rows.zsh` and
+  # `lib/core/render.zsh` are not loaded; see `_inzsh_doctor_shape`'s own header for why they
+  # share one guard.
+  _inzsh_doctor_shape
+  _inzsh_doctor_segments
+
   # What the user set and the theme is not using — one row per value, with the vocabulary it
   # should have used, rendered from the registered spec by `_inzsh_config_accepts` so the words
   # here and the words `inzsh-knobs` prints are the same words.
@@ -613,6 +871,45 @@ _inzsh_doctor() {
     (( ${#value} > 24 )) && value="${value[1,23]}…"
     _inzsh_doctor_row ignored "$knob=$value - probably $suggestion"
   done
+
+  # Issue #243. The `ignored` rows above cover a KNOB whose VALUE the registry recognised and
+  # refused; they cannot cover a row array, because `INZSH_ROW<N>_LEFT`/`_RIGHT` are registered as
+  # `any` purely so their names appear in the vocabulary, and `any` accepts whatever a segment name
+  # happens to be spelled as — the VALUE is not wrong, the NAME inside it is. `_inzsh_rows_diagnose`
+  # is where that question is actually answered — see its own header in `lib/core/rows.zsh` for
+  # why a typo here would otherwise be a segment that silently never draws.
+  #
+  # Guarded on the function existing, the same reason the `salah` rows below are: `tools/
+  # doctor.zsh` (`make doctor`) never sources `lib/core/rows.zsh`, and a partial load has nothing
+  # honest to report here either. `$COLUMNS` is read fresh, the same width the render path itself
+  # would see right now, rather than injected — this is the one caller of `_inzsh_rows_diagnose`
+  # that is not a unit test and has a real terminal to ask.
+  #
+  # Same flattening and clipping as the `ignored` rows above, and for the identical reason: an
+  # array entry is text a user typed, this block is pasted into a public issue, and a newline or
+  # an escape sequence in one must not end a row early, move a cursor, or forge a line that was
+  # never actually printed. An entry dropped for being unreadable as an identifier is exactly the
+  # kind of value most likely to hold one, so the flattening runs before it, never after.
+  if (( ${+functions[_inzsh_rows_diagnose]} )); then
+    local -a dropped
+    _inzsh_rows_diagnose "${COLUMNS:-0}"
+    dropped=("${reply[@]}")
+    local drow dside dentry dreason
+    local -i didx
+    for (( didx = 1; didx <= ${#dropped}; didx += 4 )); do
+      drow=${dropped[didx]}
+      dside=${dropped[didx + 1]}
+      dentry=${dropped[didx + 2]}
+      dreason=${dropped[didx + 3]}
+      value=${dentry//[[:cntrl:]]/ }
+      (( ${#value} > 24 )) && value="${value[1,23]}…"
+      if [[ -z $dentry ]]; then
+        _inzsh_doctor_row 'row entry' "INZSH_ROW${drow}_${(U)dside} - $dreason"
+      else
+        _inzsh_doctor_row 'row entry' "INZSH_ROW${drow}_${(U)dside}=$value - $dreason"
+      fi
+    done
+  fi
 
   # Where the prayer segment's position came from, and the state of the table computed from
   # it — never the numbers behind either. Omitted entirely when the salah library is not

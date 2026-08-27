@@ -23,7 +23,7 @@ inzsh_spec_transient() {
     unset -m "INZSH_*"
 
     local file
-    for file in config detect tokens-256 tokens layout engine render transient; do
+    for file in config detect tokens-256 tokens layout engine rows render transient; do
       source $root/lib/core/$file.zsh
     done
 

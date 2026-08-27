@@ -15,8 +15,9 @@ The claims, in the order they matter:
 * the same resize WITHOUT the redraw installed leaves a row too wide for its window, so it
   wraps and a two-row prompt becomes four. That is issue #190, reproduced;
 * a half-typed command line survives the redraw with its text intact;
-* the right side falls back beside the marker when the gap will no longer fit, which is
-  the agreed degradation and not a second bug;
+* the right side drops rather than relocates when the gap will no longer fit — `v1.3.0 ·
+  Prompt rows` removed the old fallback beside the marker, so a resize that narrows the
+  window past the gap loses that block rather than moving it;
 * the mechanism: a resize fires `TRAPWINCH` and does NOT fire `zle-line-pre-redraw`, which
   is why this is a trap and not a widget;
 * a window that changed only its height redraws nothing;
@@ -29,6 +30,7 @@ words nothing else on the grid contains.
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -40,7 +42,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CORE = REPO_ROOT / "lib" / "core"
 
 # One block on each side. Short enough that both fit at 40 columns and neither fits at 20,
-# so the same fixture reaches the padded row and its fallback.
+# so the same fixture reaches both the padded row and the width where the right one drops.
 LEFT = "LEFTBLOCK"
 RIGHT = "RIGHT9"
 
@@ -144,6 +146,222 @@ def printed(grid, label):
     raise AssertionError(f"no {label}= row on the grid\n" + excerpt(grid))
 
 
+def climbs(raw):
+    """Every cursor-up amount a resize actually emitted, in the order it was written.
+
+    `_inzsh_resize_winch` prints exactly `\\e[<n>A` immediately followed by `\\r\\e[J` — the
+    climb, then the erase — and nothing else in an ordinary session pairs the two, so anchoring
+    on both together is what tells this apart from zsh's own cursor movement during ordinary
+    line editing, which the plain escape alone cannot. Reading it back from the raw transcript
+    is what lets a test compare the SIZE of two climbs directly rather than only their visible
+    effect, which is the only way to say anything honest about a terminal that reflows — see
+    `ReflowTest` below.
+    """
+    return [int(n) for n in re.findall(rb"\x1b\[(\d+)A\r\x1b\[J", raw)]
+
+
+# Four short, distinct fixture segments for `INZSH_ROW<n>_LEFT` / `_RIGHT` (issue #223) — enough
+# to spread across three rows with a side to spare. `_inzsh_rows_resolve` claims them by NAME
+# (§2.3 of `.claude/docs/DESIGN-prompt-rows.md`), so which row and side each lands on is entirely
+# the prelude's own `INZSH_ROW*` assignment, never a rank.
+ROW_A = "ALFA"
+ROW_B = "BRAVO"
+ROW_C = "CHARLIE"
+ROW_D = "DELTA"
+
+ROWS_SETUP = """
+unset -m "INZSH_*"
+for _f in config detect tokens-256 tokens layout engine rows render hooks resize; do
+  source {core}/$_f.zsh
+done
+typeset -gA _inzsh_segment_defaults _inzsh_segment_text
+_inzsh_segment_defaults=(ALFA 1 BRAVO 1 CHARLIE 1 DELTA 1)
+_inzsh_segment_text=(ALFA {a} BRAVO {b} CHARLIE {c} DELTA {d})
+typeset -gi winch=0 redraw=0
+functions[_inzsh_resize_winch_orig]=$functions[_inzsh_resize_winch]
+_inzsh_resize_winch() {{
+  (( winch++ ))
+  local was=$_inzsh_render_cols
+  _inzsh_resize_winch_orig "$@"
+  [[ $_inzsh_render_cols == $was ]] || (( redraw++ ))
+}}
+_inzsh_hooks_install
+_inzsh_resize_install
+"""
+
+
+class RowsResizeSession:
+    """Like `ResizeSession`, but with `lib/core/rows.zsh` sourced too and four fixture
+    segments spread over up to three rows rather than the two-segment single-row fixture above.
+    `prelude` is where a test assigns `INZSH_ROW<n>_LEFT` / `_RIGHT` and `INZSH_MARKER_ROW`,
+    exactly as a `.zshrc` would.
+    """
+
+    def __init__(self, *, cols=100, lines=24, prelude=""):
+        handle, self.path = tempfile.mkstemp(suffix=".zsh", prefix="inzsh-rows-resize-")
+        script = ROWS_SETUP.format(core=CORE, a=ROW_A, b=ROW_B, c=ROW_C, d=ROW_D)
+        with os.fdopen(handle, "w") as fh:
+            fh.write(script + prelude)
+        self.session = Session(cols=cols, lines=lines)
+        self.session.send(f"source {self.path}")
+        self.session.send("clear")
+
+    def __enter__(self):
+        return self.session
+
+    def __exit__(self, *exc):
+        try:
+            if self.session._proc.poll() is None:  # noqa: SLF001 — teardown, not a read
+                self.session.finish()
+        finally:
+            os.unlink(self.path)
+
+
+class MultiRowShapeTest(unittest.TestCase):
+    """The multi-row climb, issue #223. `_inzsh_render` now records the drawn width of every
+    row in `_inzsh_render_row_widths` (one entry per row, the assembled row including its gap,
+    not one side), and `lib/core/resize.zsh` sums a reflow height over the whole array rather
+    than reading `_inzsh_render_width` — a slot the LAST row built happened to leave behind,
+    which on a single-row prompt is harmless and on a configured multi-row one is meaningless.
+    The default one-row shape is `ShapeTest` above and is untouched by any of this; everything
+    here needs at least two configured rows to exist as a claim at all.
+
+    Each case also pins the exact `\\e[<n>A` climb via `climbs()`, and that number is the part
+    that actually moved: on the pre-fix code every one of these narrows the SAME way regardless
+    of row count — `own` always climbed `1` and `inline` climbed `0` (nothing at all, since a
+    climb of 0 is not printed), because `rows` was hardcoded to `1` outside a reflowing
+    terminal. zsh's own line editor happens to paper over the resulting gap in the grid these
+    tests read back — nothing here is a visible artefact — so without pinning the climb itself
+    this class would pass on the old arithmetic too. The number is the fix; see the report for
+    the git-stash comparison that proves it.
+    """
+
+    def test_two_rows_under_own_climb_past_both_on_narrowing(self):
+        prelude = "INZSH_ROW1_LEFT=(ALFA) INZSH_ROW1_RIGHT=(BRAVO) INZSH_ROW2_LEFT=(CHARLIE)\n"
+        with RowsResizeSession(prelude=prelude) as session:
+            session.resize(44)
+            grid = session.grid()
+
+        # Row 1, row 2, the bare marker line below both — three physical rows, and nothing
+        # left over from the row built for 100 columns.
+        self.assertEqual(grid.rows_occupied(), 3, msg=excerpt(grid))
+        self.assertEqual(rows_with(grid, ROW_A), [0], msg=excerpt(grid))
+        self.assertEqual(rows_with(grid, ROW_B), [0], msg=excerpt(grid))
+        self.assertEqual(rows_with(grid, ROW_C), [1], msg=excerpt(grid))
+        self.assertLessEqual(widest(grid), 43, msg=excerpt(grid))
+        # `own`: above = rows(2) + lines(2) - 2 = 2 — one row per drawn row.
+        self.assertEqual(climbs(grid.raw)[-1], 2, msg=excerpt(grid))
+
+    def test_three_rows_under_own_climb_past_all_three_on_narrowing(self):
+        prelude = (
+            "INZSH_ROW1_LEFT=(ALFA) INZSH_ROW1_RIGHT=(BRAVO) "
+            "INZSH_ROW2_LEFT=(CHARLIE) INZSH_ROW3_LEFT=(DELTA)\n"
+        )
+        with RowsResizeSession(prelude=prelude) as session:
+            session.resize(44)
+            grid = session.grid()
+
+        self.assertEqual(grid.rows_occupied(), 4, msg=excerpt(grid))
+        self.assertEqual(rows_with(grid, ROW_A), [0], msg=excerpt(grid))
+        self.assertEqual(rows_with(grid, ROW_B), [0], msg=excerpt(grid))
+        self.assertEqual(rows_with(grid, ROW_C), [1], msg=excerpt(grid))
+        self.assertEqual(rows_with(grid, ROW_D), [2], msg=excerpt(grid))
+        self.assertLessEqual(widest(grid), 43, msg=excerpt(grid))
+        self.assertEqual(climbs(grid.raw)[-1], 3, msg=excerpt(grid))
+
+    def test_two_rows_under_inline_climb_past_the_merged_last_row(self):
+        prelude = (
+            "INZSH_ROW1_LEFT=(ALFA) INZSH_ROW1_RIGHT=(BRAVO) INZSH_ROW2_LEFT=(CHARLIE)\n"
+            "INZSH_MARKER_ROW=inline\n"
+        )
+        with RowsResizeSession(prelude=prelude) as session:
+            session.resize(44)
+            grid = session.grid()
+
+        # No bare marker line under `inline` — it terminates row 2 instead, so the prompt is
+        # one line shorter than the `own` case above over the same rows.
+        self.assertEqual(grid.rows_occupied(), 2, msg=excerpt(grid))
+        self.assertEqual(rows_with(grid, ROW_A), [0], msg=excerpt(grid))
+        self.assertEqual(rows_with(grid, ROW_C), [1], msg=excerpt(grid))
+        self.assertLessEqual(widest(grid), 43, msg=excerpt(grid))
+        # `inline`: above = rows(2) + lines(1) - 2 = 1 — one less than `own`, because the
+        # cursor already sits on the last drawn row rather than a bare line below it.
+        self.assertEqual(climbs(grid.raw)[-1], 1, msg=excerpt(grid))
+
+    def test_three_rows_under_inline_climb_past_the_merged_last_row(self):
+        prelude = (
+            "INZSH_ROW1_LEFT=(ALFA) INZSH_ROW1_RIGHT=(BRAVO) "
+            "INZSH_ROW2_LEFT=(CHARLIE) INZSH_ROW3_LEFT=(DELTA)\n"
+            "INZSH_MARKER_ROW=inline\n"
+        )
+        with RowsResizeSession(prelude=prelude) as session:
+            session.resize(44)
+            grid = session.grid()
+
+        self.assertEqual(grid.rows_occupied(), 3, msg=excerpt(grid))
+        self.assertEqual(rows_with(grid, ROW_A), [0], msg=excerpt(grid))
+        self.assertEqual(rows_with(grid, ROW_C), [1], msg=excerpt(grid))
+        self.assertEqual(rows_with(grid, ROW_D), [2], msg=excerpt(grid))
+        self.assertLessEqual(widest(grid), 43, msg=excerpt(grid))
+        # `inline` over three rows: above = rows(3) + lines(1) - 2 = 2.
+        self.assertEqual(climbs(grid.raw)[-1], 2, msg=excerpt(grid))
+
+    def test_widening_a_three_row_own_prompt_climbs_every_row_too(self):
+        """The climb runs identically on the way back up — nothing here special-cases the
+        direction of the resize, only the width it disagrees with `$COLUMNS` about."""
+        prelude = (
+            "INZSH_ROW1_LEFT=(ALFA) INZSH_ROW1_RIGHT=(BRAVO) "
+            "INZSH_ROW2_LEFT=(CHARLIE) INZSH_ROW3_LEFT=(DELTA)\n"
+        )
+        with RowsResizeSession(cols=44, prelude=prelude) as session:
+            session.resize(90)
+            grid = session.grid()
+
+        self.assertEqual(grid.rows_occupied(), 4, msg=excerpt(grid))
+        self.assertEqual(rows_with(grid, ROW_A), [0], msg=excerpt(grid))
+        self.assertEqual(rows_with(grid, ROW_B), [0], msg=excerpt(grid))
+        self.assertEqual(rows_with(grid, ROW_C), [1], msg=excerpt(grid))
+        self.assertEqual(rows_with(grid, ROW_D), [2], msg=excerpt(grid))
+        self.assertEqual(climbs(grid.raw)[-1], 3, msg=excerpt(grid))
+
+
+class ReflowTest(unittest.TestCase):
+    """`INZSH_RESIZE_REFLOW` (issue #215, adjacent). `pyte` — this whole harness's terminal —
+    does not itself re-wrap rows already on screen when it is resized (`Screen.resize` clips or
+    extends columns in place; nothing in it moves text between rows), so no assertion here can
+    honestly claim to show a reflowed SCREEN. What it can show, and what actually changed with
+    this fix, is the ARITHMETIC: `lib/core/resize.zsh` now sums `ceil(width / columns)` over
+    every row in `_inzsh_render_row_widths` when `_inzsh_resize_reflows` says yes, instead of
+    computing it from `_inzsh_render_width` — a single slot a multi-row prompt made meaningless.
+    Reading the actual `\\e[<n>A` escape back from the transcript is what lets the climb's SIZE
+    be compared directly, which is more than the visible grid alone could ever prove.
+    """
+
+    def test_a_reflowing_terminal_climbs_further_than_a_flat_one(self):
+        # Row 1 (ALFA/BRAVO, both sides) pads out to nearly the full 100 columns it was built
+        # for — `_inzsh_render_gap` always proposes filling the row up to `cols - 1` when there
+        # is room, regardless of how short the segments themselves are — so narrowing hard, to
+        # 20, makes it wrap several times over on a terminal that reflows and not at all on one
+        # that does not, however the fixture's own text is spelled.
+        prelude = "INZSH_ROW1_LEFT=(ALFA) INZSH_ROW1_RIGHT=(BRAVO) INZSH_ROW2_LEFT=(CHARLIE)\n"
+
+        with RowsResizeSession(prelude=prelude + "INZSH_RESIZE_REFLOW=0\n") as session:
+            session.resize(20)
+            flat = climbs(session.grid().raw)
+
+        with RowsResizeSession(prelude=prelude + "INZSH_RESIZE_REFLOW=1\n") as session:
+            session.resize(20)
+            reflowed = climbs(session.grid().raw)
+
+        self.assertTrue(flat, msg="no climb escape seen on the non-reflowing run")
+        self.assertTrue(reflowed, msg="no climb escape seen on the reflowing run")
+        # Two rows, neither reflowing: the climb is exactly the row count, `2`.
+        self.assertEqual(flat[-1], 2)
+        # The same two rows, `ROW1` alone now assumed to have wrapped `ceil(99 / 20) = 5`
+        # times: climbing past it costs strictly more than climbing past one physical row.
+        self.assertGreater(reflowed[-1], flat[-1])
+
+
 class ShapeTest(unittest.TestCase):
     """What the terminal shows after the window has changed size."""
 
@@ -209,16 +427,17 @@ class ShapeTest(unittest.TestCase):
         self.assertEqual(rows_with(grid, RIGHT), [0], msg=excerpt(grid))
         self.assertLessEqual(widest(grid), 49, msg=excerpt(grid))
 
-    def test_the_right_side_falls_back_beside_the_marker_when_the_gap_will_not_fit(self):
-        """The agreed degradation: row one while the gap fits, row two beside the marker
-        when it does not. A right prompt in the wrong place beats one that vanished."""
+    def test_the_right_side_drops_rather_than_relocates_when_the_gap_will_not_fit(self):
+        """`v1.3.0 · Prompt rows` removed the old fallback beside the marker: nothing
+        relocates between rows any more, so a block that will not fit its row drops by
+        priority instead. The marker row stays bare — RIGHT9 is nowhere on the grid."""
         with ResizeSession() as session:
             session.resize(20)
             grid = session.grid()
 
         self.assertEqual(grid.rows_occupied(), 2, msg=excerpt(grid))
         self.assertEqual(rows_with(grid, LEFT), [0], msg=excerpt(grid))
-        self.assertEqual(rows_with(grid, RIGHT), [1], msg=excerpt(grid))
+        self.assertEqual(rows_with(grid, RIGHT), [], msg=excerpt(grid))
         self.assertLessEqual(widest(grid), 19, msg=excerpt(grid))
 
     def test_a_half_typed_command_line_survives_the_resize(self):

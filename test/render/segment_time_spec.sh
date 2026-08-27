@@ -55,7 +55,7 @@ inzsh_spec_time_drawn() {
   _inzsh_segment_time_build "$@"
   _inzsh_left=()
   _inzsh_right=(TIME)
-  _inzsh_render_build right
+  _inzsh_render_build right "${_inzsh_right[@]}"
   typeset -g inzsh_spec_drawn=$REPLY
 
   return 0

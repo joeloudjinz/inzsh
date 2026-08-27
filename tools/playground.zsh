@@ -312,12 +312,13 @@ Type a setting, press return, and the next prompt uses it.
     narrow to fit everything. At a comfortable width nothing is being dropped,
     so the order is never asked for.
 
-    The clock and the prayer time are the last to feel it. Above roughly 22
-    columns they do not compete at all — when the row runs out of room they
-    simply move down beside the cursor, whole. Only below that does one of them
-    have to go, and only then does priority decide which.
+    The clock and the prayer time are the last to feel it — priority order
+    means the least important goes first, whatever their own width suggests.
+    Nothing ever moves to another row or beside the cursor to make room: a
+    block that will not fit its row drops, on that row, and the width where
+    it does is exactly what `INZSH_<SEGMENT>_PRIORITY` decides.
 
-    So: `inzsh-at 40 24 20 16`, and watch the right-hand end.
+    So: `inzsh-at 40 24 20 16`, and watch the right-hand end disappear.
 
   exit, or Ctrl-D, and none of this happened.
 HELP

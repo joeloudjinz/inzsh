@@ -1,13 +1,23 @@
 # InZsh — the resize redraw. What happens to the prompt already on screen when the window
 # stops being the width it was drawn for.
 #
-# THE PROBLEM. A prompt is measured once, at the moment it is built, against `$COLUMNS`. In the
-# two-line shape the right-hand side is not `RPROMPT` at all — `lib/core/render.zsh` pads it into
-# the segment row with LITERAL SPACES, because zsh draws a real `RPROMPT` on the LAST row of a
-# multi-line prompt, beside the marker, where a long command line writes over it. Literal padding
-# is the price of keeping the clock on the segment row, and the price is that the row is a fixed
-# string: narrow the window and a row built for 160 columns is still 159 wide, wraps, and is
-# redrawn as two rows of the same ribbon. Narrow it far enough and it is four.
+# THE PROBLEM. A prompt is measured once, at the moment it is built, against `$COLUMNS`. Under
+# `own` (still this file's whole model — see the note below) the right-hand side is not `RPROMPT`
+# at all — `lib/core/render.zsh` pads it into the segment row with LITERAL SPACES, because zsh
+# draws a real `RPROMPT` on the LAST row of a multi-line prompt, which under `own` is the bare
+# marker row, not a segment row, and a long command line would write over anything drawn there.
+# Literal padding is the price of keeping the clock on the segment row, and the price is that the
+# row is a fixed string: narrow the window and a row built for 160 columns is still 159 wide,
+# wraps, and is redrawn as two rows of the same ribbon. Narrow it far enough and it is four.
+#
+# THE ROW COUNT IS NOT ALWAYS ONE. `v1.3.0 · Prompt rows` (`lib/core/rows.zsh`,
+# `lib/core/render.zsh`) made `own` and `inline` draw anywhere from zero rows to eight, and the
+# climb below has to reach the top of all of them, not just the last one built. It still reads
+# `_inzsh_prompt_lines_resolved` — 1 or 2 — but only for what it always meant: whether the marker
+# gets a bare physical line of its own (`own`) or terminates the last drawn row (`inline`). The
+# per-row question is answered by `_inzsh_render_row_widths` (issue #223,
+# `.claude/docs/DESIGN-prompt-rows.md` §5.3.1) — one width per drawn row, summed below into a
+# reflow height instead of the single number a one-row prompt used to be measured by.
 #
 # So the row has to be rebuilt when the width changes, and there is exactly one moment the shell
 # is told that it did: SIGWINCH.
@@ -207,9 +217,13 @@ _inzsh_resize_winch() {
   # redraw would be a screen write for no information.
   [[ ${COLUMNS:-0} == ${_inzsh_render_cols-0} ]] && return 0
 
-  # The width of the row ALREADY ON SCREEN, read before the rebuild overwrites it. This is
-  # the only number that says how much room the stale prompt takes at the new width.
-  local -i was=${_inzsh_render_width:-0}
+  # The width of every row ALREADY ON SCREEN, read before the rebuild overwrites them — one
+  # entry per drawn row, each the assembled row including its gap
+  # (`lib/core/render.zsh`'s `_inzsh_render_row_widths`). This is the only record of how much
+  # room the stale prompt takes at the new width, row by row; `_inzsh_render_width` is not it —
+  # that slot is `_inzsh_render_build`'s own, one side at a time, and N rows leave it holding
+  # whichever build happened to run last.
+  local -a was_widths=("${_inzsh_render_row_widths[@]}")
 
   (( ${+functions[_inzsh_render]} )) || return 0
   _inzsh_render
@@ -233,21 +247,34 @@ _inzsh_resize_winch() {
   # HOW FAR UP DEPENDS ON WHETHER THE TERMINAL RE-WRAPPED WHAT IS ALREADY THERE, and the two
   # answers are one row apart in the common case:
   #
-  #   it does not reflow   the old row is still the one physical row it was drawn as, however
+  #   it does not reflow   every old row is still the one physical row it was drawn as, however
   #                        much narrower the window now is. Ghostty, Terminal.app. Climbing
   #                        past it would erase a line of the user's own output.
-  #   it reflows           the old row — padded to nearly the full width, which is what keeps
+  #   it reflows           each old row — padded to nearly the full width, which is what keeps
   #                        the clock beside the segments — has re-wrapped into
-  #                        ceil(width / columns) rows. VS Code and the rest of xterm.js.
-  #                        Climbing one row lands inside it and leaves its head on screen.
+  #                        ceil(width / columns) rows of its own. VS Code and the rest of
+  #                        xterm.js. Climbing past all of them lands inside the last and leaves
+  #                        its head on screen.
   #
-  # So the climb is `rows above the cursor within the prompt`: the segment row's height, plus
-  # the marker row when there is one, less the row the cursor is on.
+  # So the climb is `rows above the cursor within the prompt`: every drawn row's height, summed,
+  # plus the marker's own physical line when there is one, less the row the cursor is on.
+  # `_inzsh_prompt_lines_resolved` still answers only that last part — whether the marker spends
+  # a row of its own (`own`) or terminates the last one (`inline`) — exactly as it did when there
+  # was never more than one segment row to sum.
   local -i lines=${_inzsh_prompt_lines_resolved:-2}
-  local -i rows=1
-  if (( was > 0 && ${COLUMNS:-0} > 0 )) && _inzsh_resize_reflows; then
-    (( rows = (was + COLUMNS - 1) / COLUMNS ))
-    (( rows > 0 )) || rows=1
+  local -i rows=0 w
+  for w in "${was_widths[@]}"; do
+    (( w > 0 )) && (( rows++ ))
+  done
+  (( rows > 0 )) || rows=1
+
+  if (( ${COLUMNS:-0} > 0 )) && _inzsh_resize_reflows; then
+    local -i reflowed=0
+    for w in "${was_widths[@]}"; do
+      (( w > 0 )) || continue
+      (( reflowed += (w + COLUMNS - 1) / COLUMNS ))
+    done
+    (( reflowed > 0 )) && rows=$reflowed
   fi
 
   local -i above=$(( rows + lines - 2 ))

@@ -878,6 +878,213 @@ Describe 'inzsh doctor'
     End
   End
 
+  # Issue #243. `_inzsh_doctor_ignored` cannot see a bad row-array entry — the family resolves and
+  # `any` accepts whatever string the entry is spelled as, so the value is never wrong and that
+  # section never fires. `_inzsh_rows_diagnose`, in `lib/core/rows.zsh`, is the detector that
+  # answers it, and this section is the formatter reading it — the same split as every other
+  # `ignored` row in this file.
+  #
+  # This file's own `Include` list never loads `lib/core/layout.zsh`, `lib/core/engine.zsh` or
+  # `lib/core/rows.zsh` — on purpose, the same reason the near-miss salah examples above run their
+  # own `zsh -f -c`: it is what proves the guard around `_inzsh_rows_diagnose` in `_inzsh_doctor`
+  # actually holds rather than being covered by accident because the function happened to exist in
+  # every example already. Every example below sources the three files itself, over a small fixed
+  # segment table, and pins `COLUMNS` so a MINCOLS example is never at the mercy of the terminal
+  # the suite happens to run in.
+  Describe 'row entries (issue #243)'
+    It 'names an entry that resolves to no segment this build has'
+      unknown_segment() {
+        zsh -f -c '
+          TERM=xterm-256color COLORTERM=truecolor LC_ALL=en_US.UTF-8
+          source "$1/lib/core/config.zsh"
+          source "$1/lib/core/detect.zsh"
+          source "$1/lib/core/layout.zsh"
+          source "$1/lib/core/engine.zsh"
+          source "$1/lib/core/rows.zsh"
+          source "$1/lib/core/doctor.zsh"
+          typeset -gA _inzsh_segment_defaults=(DIR 40)
+          COLUMNS=200
+          INZSH_ROW2_LEFT=(GTI)
+          inzsh doctor
+        ' inzsh-doctor-rows-unknown "$SHELLSPEC_PROJECT_ROOT"
+      }
+      When call unknown_segment
+      The output should include 'row entry     INZSH_ROW2_LEFT=GTI - unknown segment'
+      The status should be success
+    End
+
+    It 'names an entry that cannot be a variable at all'
+      not_identifier() {
+        zsh -f -c '
+          TERM=xterm-256color COLORTERM=truecolor LC_ALL=en_US.UTF-8
+          source "$1/lib/core/config.zsh"
+          source "$1/lib/core/detect.zsh"
+          source "$1/lib/core/layout.zsh"
+          source "$1/lib/core/engine.zsh"
+          source "$1/lib/core/rows.zsh"
+          source "$1/lib/core/doctor.zsh"
+          typeset -gA _inzsh_segment_defaults=(DIR 40)
+          COLUMNS=200
+          INZSH_ROW1_LEFT=("a b")
+          inzsh doctor
+        ' inzsh-doctor-rows-not-identifier "$SHELLSPEC_PROJECT_ROOT"
+      }
+      When call not_identifier
+      The output should include 'row entry     INZSH_ROW1_LEFT=a b - not an identifier'
+      The status should be success
+    End
+
+    It 'names an entry an earlier row already claimed'
+      claimed() {
+        zsh -f -c '
+          TERM=xterm-256color COLORTERM=truecolor LC_ALL=en_US.UTF-8
+          source "$1/lib/core/config.zsh"
+          source "$1/lib/core/detect.zsh"
+          source "$1/lib/core/layout.zsh"
+          source "$1/lib/core/engine.zsh"
+          source "$1/lib/core/rows.zsh"
+          source "$1/lib/core/doctor.zsh"
+          typeset -gA _inzsh_segment_defaults=(DIR 40)
+          COLUMNS=200
+          INZSH_ROW1_LEFT=(DIR)
+          INZSH_ROW2_LEFT=(DIR)
+          inzsh doctor
+        ' inzsh-doctor-rows-claimed "$SHELLSPEC_PROJECT_ROOT"
+      }
+      When call claimed
+      The output should include 'row entry     INZSH_ROW2_LEFT=DIR - claimed elsewhere'
+      The output should not include 'INZSH_ROW1_LEFT=DIR'
+      The status should be success
+    End
+
+    It 'names a claimed entry the terminal has no room for'
+      mincols() {
+        zsh -f -c '
+          TERM=xterm-256color COLORTERM=truecolor LC_ALL=en_US.UTF-8
+          source "$1/lib/core/config.zsh"
+          source "$1/lib/core/detect.zsh"
+          source "$1/lib/core/layout.zsh"
+          source "$1/lib/core/engine.zsh"
+          source "$1/lib/core/rows.zsh"
+          source "$1/lib/core/doctor.zsh"
+          typeset -gA _inzsh_segment_defaults=(SALAH -20)
+          COLUMNS=10
+          INZSH_ROW1_LEFT=(SALAH)
+          INZSH_SALAH_MINCOLS=999
+          inzsh doctor
+        ' inzsh-doctor-rows-mincols "$SHELLSPEC_PROJECT_ROOT"
+      }
+      When call mincols
+      The output should include 'row entry     INZSH_ROW1_LEFT=SALAH - hidden by MINCOLS'
+      The status should be success
+    End
+
+    # Refused whole, never split — the same rule `_inzsh_rows_entries` states — and reported once
+    # for the side, with no entry to name.
+    It 'reports a scalar row knob as refused rather than examining it entry by entry'
+      scalar() {
+        zsh -f -c '
+          TERM=xterm-256color COLORTERM=truecolor LC_ALL=en_US.UTF-8
+          source "$1/lib/core/config.zsh"
+          source "$1/lib/core/detect.zsh"
+          source "$1/lib/core/layout.zsh"
+          source "$1/lib/core/engine.zsh"
+          source "$1/lib/core/rows.zsh"
+          source "$1/lib/core/doctor.zsh"
+          typeset -gA _inzsh_segment_defaults=(DIR 40)
+          COLUMNS=200
+          INZSH_ROW1_LEFT="TIME DIR"
+          inzsh doctor
+        ' inzsh-doctor-rows-scalar "$SHELLSPEC_PROJECT_ROOT"
+      }
+      When call scalar
+      The output should include 'row entry     INZSH_ROW1_LEFT - not an array'
+      The status should be success
+    End
+
+    # The block is pasted into a public issue. A newline in an entry must not end the row early
+    # and forge a second one, and a control character must not move a cursor — the same hazard
+    # issue #229 names for the salah recipe rows, and the same fix: flatten first, clip after.
+    It 'keeps one row per entry and never lets a hostile entry forge a line or an escape'
+      hostile() {
+        zsh -f -c '
+          TERM=xterm-256color COLORTERM=truecolor LC_ALL=en_US.UTF-8
+          source "$1/lib/core/config.zsh"
+          source "$1/lib/core/detect.zsh"
+          source "$1/lib/core/layout.zsh"
+          source "$1/lib/core/engine.zsh"
+          source "$1/lib/core/rows.zsh"
+          source "$1/lib/core/doctor.zsh"
+          typeset -gA _inzsh_segment_defaults=(DIR 40)
+          COLUMNS=200
+          INZSH_ROW1_LEFT=($'"'"'evil\nrow entry     INZSH_ROW9_LEFT=FORGED - unknown segment\e[31m'"'"')
+          local -a rows=(${(f)"$(inzsh doctor)"})
+          local -a entries=(${(M)rows:#*row entry*})
+          local -a wrong=()
+          (( ${#entries} == 1 )) || wrong+=count:${#entries}
+          for row in $entries; do
+            [[ $row == *[[:cntrl:]]* ]] && wrong+=control
+          done
+          print -r -- "${wrong[*]}"
+        ' inzsh-doctor-rows-hostile "$SHELLSPEC_PROJECT_ROOT"
+      }
+      When call hostile
+      The output should eq ''
+      The stderr should eq ''
+    End
+
+    # The house rule this whole file keeps: a diagnostic that can fail is one nobody can run in
+    # the broken environment it exists for — and a row knob holding something bizarre must produce
+    # a row, not a failure, whatever combination of bad entries it holds at once.
+    It 'returns success whatever combination of bad row entries it is given'
+      everything() {
+        zsh -f -c '
+          TERM=xterm-256color COLORTERM=truecolor LC_ALL=en_US.UTF-8
+          source "$1/lib/core/config.zsh"
+          source "$1/lib/core/detect.zsh"
+          source "$1/lib/core/layout.zsh"
+          source "$1/lib/core/engine.zsh"
+          source "$1/lib/core/rows.zsh"
+          source "$1/lib/core/doctor.zsh"
+          typeset -gA _inzsh_segment_defaults=(DIR 40 SALAH -20)
+          COLUMNS=10
+          INZSH_ROW1_LEFT=(GTI "a b" DIR)
+          INZSH_ROW2_RIGHT=(DIR)
+          INZSH_ROW3_LEFT=(SALAH)
+          INZSH_SALAH_MINCOLS=999
+          inzsh doctor >/dev/null
+          print $?
+        ' inzsh-doctor-rows-everything "$SHELLSPEC_PROJECT_ROOT"
+      }
+      When call everything
+      The output should eq '0'
+      The stderr should eq ''
+    End
+
+    # A row array that resolved cleanly grows no section at all — the same "nothing printed when
+    # nothing is wrong" rule the `ignored` rows above keep.
+    It 'says nothing when every row array resolved cleanly'
+      clean() {
+        zsh -f -c '
+          TERM=xterm-256color COLORTERM=truecolor LC_ALL=en_US.UTF-8
+          source "$1/lib/core/config.zsh"
+          source "$1/lib/core/detect.zsh"
+          source "$1/lib/core/layout.zsh"
+          source "$1/lib/core/engine.zsh"
+          source "$1/lib/core/rows.zsh"
+          source "$1/lib/core/doctor.zsh"
+          typeset -gA _inzsh_segment_defaults=(DIR 40)
+          COLUMNS=200
+          INZSH_ROW1_LEFT=(DIR)
+          inzsh doctor
+        ' inzsh-doctor-rows-clean "$SHELLSPEC_PROJECT_ROOT"
+      }
+      When call clean
+      The output should not include 'row entry'
+      The stderr should eq ''
+    End
+  End
+
   It 'reports where the location came from when coordinates are configured'
     provenance() {
       inzsh_spec_doctor_env
@@ -1250,6 +1457,7 @@ Describe 'inzsh doctor'
     When call standalone
     The output should include 'colour depth  truecolor'
     The output should not include 'location'
+    The output should not include 'row entry'
     The stderr should eq ''
   End
 End

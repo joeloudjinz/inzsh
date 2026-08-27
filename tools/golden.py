@@ -67,22 +67,38 @@ UPDATE_HINT = "run `make golden-update` and commit the result in the same PR"
 
 
 class Case(NamedTuple):
-    """One golden file: a preset, a shape, a width, a repository state."""
+    """One golden file: a preset, a shape, a width, a repository state.
+
+    `rows` and `variant` are additive — the `v1.3.0 · Prompt rows` cases below are the only
+    ones that set them. `lines` stays what every other case is named and driven by; a case
+    that sets `rows` still carries a `lines` value (harmlessly overridden — an explicit
+    `INZSH_MARKER_ROW` wins outright over `INZSH_PROMPT_LINES`, see `lib/core/rows.zsh`), so
+    the field is not renamed here. That rename, and the whole-set regeneration it forces, is
+    `v2.0.0`'s own commit (`.claude/docs/DESIGN-prompt-rows.md` §3.1) — not this one.
+    """
 
     preset: str | None  # None = base tokens; else a file in presets/
     lines: int  # INZSH_PROMPT_LINES
     cols: int
     state: str  # a fixture-repo.zsh state name
+    rows: tuple[tuple[str, str], ...] = ()  # extra INZSH_ROW*/INZSH_MARKER_ROW assignments
+    variant: str = ""  # replaces the "<n>line" name component when `rows` is used
 
     @property
     def name(self):
         preset = self.preset or "default"
-        return f"{preset}-{self.lines}line-{self.cols}col-{self.state}"
+        shape = self.variant or f"{self.lines}line"
+        return f"{preset}-{shape}-{self.cols}col-{self.state}"
 
 
 # The deliberate matrix: a handful, each earning its place. Both presets (token overlays
 # may legitimately change glyphs one day, and then the golden pins it), both prompt
 # shapes, one narrow width, and one state whose divergence arrows exercise the git text.
+#
+# The four `rows*` cases are `v1.3.0 · Prompt rows`': two-row and three-row layouts, each in
+# both marker modes, over the segments the `dirty` fixture already gives real text — no
+# segment here needs a rank set by hand, because naming one in a row array places it and
+# shows it regardless of the rank it shipped with (design §2.3).
 CASES = (
     Case(None, 2, 80, "dirty"),
     Case(None, 1, 80, "dirty"),
@@ -90,6 +106,56 @@ CASES = (
     Case(None, 2, 80, "diverged"),
     Case("sharp", 2, 80, "dirty"),
     Case("warm", 2, 80, "dirty"),
+    # `ROW2_RIGHT` carries HOST here specifically so the two marker modes are visibly
+    # different, not just structurally: under `own` it is a third block padded onto row two
+    # exactly like GIT is on row one; under `inline` it is the segment on the LAST drawn row,
+    # so it is what actually reaches a real `RPROMPT` rather than a literal pad — the one thing
+    # a golden file can show that a render-layer assertion states more precisely but a reader
+    # of this file cannot see.
+    Case(
+        None, 2, 80, "dirty",
+        rows=(
+            ("INZSH_MARKER_ROW", "own"),
+            ("INZSH_ROW1_LEFT", "(TIME DIR)"),
+            ("INZSH_ROW1_RIGHT", "(GIT)"),
+            ("INZSH_ROW2_LEFT", "(USER)"),
+            ("INZSH_ROW2_RIGHT", "(HOST)"),
+        ),
+        variant="rows2-own",
+    ),
+    Case(
+        None, 2, 80, "dirty",
+        rows=(
+            ("INZSH_MARKER_ROW", "inline"),
+            ("INZSH_ROW1_LEFT", "(TIME DIR)"),
+            ("INZSH_ROW1_RIGHT", "(GIT)"),
+            ("INZSH_ROW2_LEFT", "(USER)"),
+            ("INZSH_ROW2_RIGHT", "(HOST)"),
+        ),
+        variant="rows2-inline",
+    ),
+    Case(
+        None, 2, 80, "dirty",
+        rows=(
+            ("INZSH_MARKER_ROW", "own"),
+            ("INZSH_ROW1_LEFT", "(TIME DIR)"),
+            ("INZSH_ROW1_RIGHT", "(GIT)"),
+            ("INZSH_ROW2_LEFT", "(USER)"),
+            ("INZSH_ROW3_LEFT", "(HOST)"),
+        ),
+        variant="rows3-own",
+    ),
+    Case(
+        None, 2, 80, "dirty",
+        rows=(
+            ("INZSH_MARKER_ROW", "inline"),
+            ("INZSH_ROW1_LEFT", "(TIME DIR)"),
+            ("INZSH_ROW1_RIGHT", "(GIT)"),
+            ("INZSH_ROW2_LEFT", "(USER)"),
+            ("INZSH_ROW3_LEFT", "(HOST)"),
+        ),
+        variant="rows3-inline",
+    ),
 )
 
 
@@ -205,8 +271,15 @@ def snippet(case, work):
         "unset SSH_CONNECTION SSH_TTY SSH_CLIENT VIRTUAL_ENV",
         f"INZSH_PROMPT_LINES={case.lines}",
         "INZSH_HOST_ALWAYS=1",
-        f"source {shlex.quote(str(THEME))}",
     ]
+    # `case.rows` — the row arrays and (usually) an explicit `INZSH_MARKER_ROW` — are set
+    # BEFORE the theme is sourced, same as every other knob above: the registry reads whatever
+    # is already in the shell the moment `_inzsh_precmd` first runs, not what was true at
+    # `source` time. An explicit `INZSH_MARKER_ROW` wins outright over `INZSH_PROMPT_LINES`
+    # regardless of which line came first, so the ordering here is for readability only.
+    for knob, value in case.rows:
+        lines.append(f"{knob}={value}")
+    lines.append(f"source {shlex.quote(str(THEME))}")
     if case.preset:
         preset = PRESETS / f"inzsh-{case.preset}.zsh"
         lines.append(f"source {shlex.quote(str(preset))}")

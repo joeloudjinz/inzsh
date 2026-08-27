@@ -118,7 +118,7 @@ inzsh_spec_build() {
     _inzsh_left=("${order[@]}")
   fi
 
-  _inzsh_render_build "$side"
+  _inzsh_render_build "$side" "${order[@]}"
   typeset -g inzsh_spec_status=$?
   typeset -g inzsh_spec_built=$REPLY
   typeset -g inzsh_spec_width=$_inzsh_render_width
@@ -284,8 +284,9 @@ Describe 'render assembly'
     End
 
     Describe 'a side name that is neither'
-      # Config never breaks the render, and neither does a caller's typo. Both rank arrays are
-      # deliberately non-empty here, so a build that ignored its argument would draw something.
+      # Config never breaks the render, and neither does a caller's typo. The segment list is
+      # deliberately non-empty here, so a build that ignored its side argument and drew the list
+      # anyway would draw something.
       Parameters
         Left
         LEFT
@@ -299,9 +300,7 @@ Describe 'render assembly'
       It "builds nothing for the side '$1'"
         astray() {
           _inzsh_segment_text=(A one B two)
-          _inzsh_left=(A B)
-          _inzsh_right=(A B)
-          _inzsh_render_build "$1"
+          _inzsh_render_build "$1" A B
           print -r -- "status=$? len=${#REPLY} width=$_inzsh_render_width"
         }
         When call astray "$1"
@@ -318,12 +317,43 @@ Describe 'render assembly'
     It 'treats a set-but-empty entry as absent, the way every other layer does'
       blanked() {
         _inzsh_segment_text=(A '' B '')
-        _inzsh_left=(A B)
-        _inzsh_render_build left
+        _inzsh_render_build left A B
         print -r -- "len=${#REPLY} width=$_inzsh_render_width"
       }
       When call blanked
       The output should eq 'len=0 width=0'
+    End
+  End
+
+  # ------------------------------------------------------------------------------------------
+  # Issue #221. The list used to come from `_inzsh_left` / `_inzsh_right` alone; now it is an
+  # argument, and `_inzsh_render` passes exactly what those globals hold so that nothing about
+  # the drawn prompt moves. This is the assertion that makes that a fact rather than a claim: the
+  # same segments, built once by reading them off the globals and once by handing them over
+  # directly, must come back byte for byte the same string.
+  Describe 'built from an injected list'
+    It 'draws byte-identically whether the list is read off the globals or handed over directly'
+      parity() {
+        _inzsh_segment_text=(A one B two C three)
+        _inzsh_left=(A B C)
+        _inzsh_render_build left "${_inzsh_left[@]}"
+        local from_globals=$REPLY
+
+        # `_inzsh_left` is corrupted before the second call, on purpose: if the builder still
+        # read it under the hood this call would draw the corrupted order instead of the list it
+        # was actually handed, and the two strings would diverge.
+        _inzsh_left=(C)
+        _inzsh_render_build left A B C
+        local injected=$REPLY
+
+        if [[ $from_globals == $injected ]]; then
+          print -r -- identical
+        else
+          print -r -- "globals=$from_globals / injected=$injected"
+        fi
+      }
+      When call parity
+      The output should eq identical
     End
   End
 
@@ -504,7 +534,7 @@ Describe 'render assembly'
           local INZSH_DIR_RANK=$1 INZSH_GIT_RANK=$2 INZSH_CLOCK_RANK=$3
           _inzsh_segment_text=(DIR dir GIT git CLOCK clock)
           _inzsh_rank_split DIR GIT CLOCK
-          _inzsh_render_build left
+          _inzsh_render_build left "${_inzsh_left[@]}"
           typeset -g inzsh_spec_built=$REPLY
           inzsh_spec_bare
         }
@@ -520,7 +550,7 @@ Describe 'render assembly'
         local INZSH_A_RANK=-1 INZSH_B_RANK=-2 INZSH_C_RANK=-3
         _inzsh_segment_text=(A alpha B beta C gamma)
         _inzsh_rank_split A B C
-        _inzsh_render_build right
+        _inzsh_render_build right "${_inzsh_right[@]}"
         typeset -g inzsh_spec_built=$REPLY
         print -r -- "${_inzsh_right[*]} | $(inzsh_spec_bare)"
       }
@@ -533,7 +563,7 @@ Describe 'render assembly'
         local INZSH_A_RANK=1 INZSH_B_RANK=0 INZSH_C_RANK=2
         _inzsh_segment_text=(A alpha B beta C gamma)
         _inzsh_rank_split A B C
-        _inzsh_render_build left
+        _inzsh_render_build left "${_inzsh_left[@]}"
         inzsh_spec_shape "$REPLY"
         print -r -- "${_inzsh_hidden[*]} | $inzsh_spec_shaped"
       }
@@ -697,8 +727,7 @@ Describe 'render assembly'
           source "$1/lib/core/render.zsh"
           _inzsh_seg_color() { typeset -g REPLY=; return 1 }
           _inzsh_segment_text=(A one B two)
-          _inzsh_left=(A B)
-          _inzsh_render_build left
+          _inzsh_render_build left A B
           print -r -- "${REPLY//$_inzsh_sep_left/>}"
         ' inzsh-render-unresolvable "$SHELLSPEC_PROJECT_ROOT"
       }
@@ -808,8 +837,7 @@ Describe 'render assembly'
       # its separators and its status.
       unnameable() {
         _inzsh_segment_text=('a b' one ok two)
-        _inzsh_left=('a b' ok)
-        _inzsh_render_build left
+        _inzsh_render_build left 'a b' ok
         local -i rc=$?
         inzsh_spec_shape "$REPLY"
         print -r -- "status=$rc $inzsh_spec_shaped"
@@ -824,8 +852,7 @@ Describe 'render assembly'
       # boundary the builder drew, plus the one the segment carried.
       carried() {
         _inzsh_segment_text=(A "left${_inzsh_sep_left}right" B two)
-        _inzsh_left=(A B)
-        _inzsh_render_build left
+        _inzsh_render_build left A B
         local stripped=${REPLY//$_inzsh_sep_left/}
         print -r -- "$(( ${#REPLY} - ${#stripped} ))"
       }
@@ -848,7 +875,7 @@ Describe 'render assembly'
         # shorten the array and the second prompt would differ from the first.
         inzsh_spec_build left A one B - C three
         local first=$inzsh_spec_built after=${_inzsh_left[*]}
-        _inzsh_render_build left
+        _inzsh_render_build left "${_inzsh_left[@]}"
         [[ $first == $REPLY ]] || print -r -- 'unstable'
         print -r -- "$after / ${_inzsh_left[*]}"
       }
@@ -899,8 +926,7 @@ Describe 'render assembly'
           source "$1/lib/core/render.zsh"
           local before="${PROMPT-unset}|${RPROMPT-unset}"
           _inzsh_segment_text=(A one)
-          _inzsh_left=(A)
-          _inzsh_render_build left
+          _inzsh_render_build left A
           _inzsh_render_build right
           local after="${PROMPT-unset}|${RPROMPT-unset}"
           [[ $before == $after ]] && print -r -- same || print -r -- "$before / $after"
@@ -917,11 +943,13 @@ Describe 'render assembly'
     # the prompt is being written from somewhere that does not know whether the shell is
     # interactive — which is the whole reason the draw is a separate function.
     #
-    # The counts are what the two shapes cost. One line assigns both parameters once. Two
-    # lines assigns RPROMPT once and PROMPT twice, because a segment row with nothing on it
-    # is not drawn at all and the marker-only prompt is its own arm. Five in total, none of
-    # them anywhere else, and the numbers are pinned rather than bounded so that a sixth has
-    # to be argued for here before it can be written there.
+    # PROMPT is assigned exactly ONCE now — every row, of however many there are, is joined by
+    # `${(F)physical_rows}` before a single assignment, which is what N rows bought over the old
+    # two-line shape's separate arms for "a row" and "no row at all": there is no longer a second
+    # arm to assign from, only a different `physical_rows`. RPROMPT is still assigned twice, one
+    # per marker mode — `inline`'s last row or nothing at all. Three in total, none of them
+    # anywhere else, and the numbers are pinned rather than bounded so that a fourth has to be
+    # argued for here before it can be written there.
     It 'assigns the prompt only inside the draw, and never touches PS1'
       grepped() {
         setopt local_options extended_glob
@@ -944,7 +972,7 @@ Describe 'render assembly'
         print -r -- "prompt=$n_left rprompt=$n_right ps1=$n_ps1 outside=$n_outside"
       }
       When call grepped
-      The output should eq 'prompt=3 rprompt=2 ps1=0 outside=0'
+      The output should eq 'prompt=1 rprompt=2 ps1=0 outside=0'
     End
   End
 End

@@ -39,7 +39,7 @@ inzsh_spec_shape() {
     unset -m "INZSH_*"
 
     local file
-    for file in config detect tokens-256 tokens layout engine render; do
+    for file in config detect tokens-256 tokens layout engine rows render; do
       source $root/lib/core/$file.zsh
     done
 
@@ -177,10 +177,11 @@ Describe 'the prompt shape'
       The stderr should eq ''
     End
 
-    # Where the two sides cannot both fit, the right one is not thrown away — it goes back to
-    # `RPROMPT` and lands beside the marker. A right prompt in the wrong place still says the
-    # time; a right prompt that vanished says nothing.
-    It 'falls back to RPROMPT when the two sides cannot both fit on the row'
+    # Where the two sides cannot both fit, the right one is not thrown away to `RPROMPT` any
+    # more — nothing relocates between rows in this design. It drops by priority instead, on the
+    # row it was placed on, exactly like any other block that will not fit; `RPROMPT` stays empty
+    # because this is the default row, `own`'s marker row, never the last physical line.
+    It 'drops the right side by priority when the two sides cannot both fit on the row'
       narrow() {
         inzsh_spec_shape '
           typeset -g COLUMNS=20
@@ -189,8 +190,9 @@ Describe 'the prompt shape'
           inzsh_shape_text "${rows[1]}"
           local -a wrong=()
           (( ${#rows} == 2 ))      || wrong+=rows:${#rows}
-          [[ $REPLY != *charlie* ]] || wrong+=padded-anyway
-          [[ -n $RPROMPT ]]         || wrong+=rprompt-empty
+          [[ $REPLY != *charlie* ]] || wrong+=drawn-anyway
+          [[ $PROMPT != *charlie* ]] || wrong+=carried-somewhere-in-prompt
+          [[ -z $RPROMPT ]]         || wrong+=rprompt-carried-something
           print -r -- "${wrong[*]}"
         '
       }
@@ -200,17 +202,19 @@ Describe 'the prompt shape'
     End
 
     # An unknown terminal width is the same case as a terminal too narrow to hold both: there is
-    # no arithmetic that can right-align against a width nobody knows.
-    It 'falls back to RPROMPT when the terminal width is unknown'
+    # no arithmetic that can right-align against a width nobody knows, so the right side is
+    # dropped rather than relocated — the same outcome the narrow terminal above gets, for the
+    # same reason.
+    It 'drops the right side when the terminal width is unknown'
       unknown() {
         inzsh_spec_shape '
           typeset -g COLUMNS=0
           _inzsh_render
-          [[ -n $RPROMPT ]] && print -r -- fell-back || print -r -- padded
+          [[ -z $RPROMPT ]] && print -r -- dropped || print -r -- "fell-back=<$RPROMPT>"
         '
       }
       When call unknown
-      The output should eq 'fell-back'
+      The output should eq 'dropped'
       The stderr should eq ''
     End
   End
@@ -485,8 +489,12 @@ Describe 'the prompt shape'
     # block or a separator that stopped being accounted for would leave the gap arithmetic
     # confidently wrong and every check made of the NUMBERS agreeing with it. Here the accounting
     # is silenced outright, which is the extreme of that: both sides come back as 0 wide, the gap
-    # comes out as nearly the whole terminal, and only measuring the finished row can tell.
-    It 'falls back to RPROMPT when the accounting under-reports the row'
+    # comes out as nearly the whole terminal, and only measuring the finished row can tell —
+    # `_inzsh_render_row_fits` still catches it even though the arithmetic that proposed the pad
+    # cannot, and the row never wraps. `RPROMPT` stays empty regardless: it is not where a row
+    # this file could not vouch for goes any more, on this row or any other but the last under
+    # `inline`.
+    It 'never wraps and never falls back to RPROMPT when the accounting under-reports the row'
       lied() {
         inzsh_spec_shape '
           _inzsh_width_add() { : }
@@ -496,11 +504,158 @@ Describe 'the prompt shape'
           inzsh_shape_width "${rows[1]}"
           local -a wrong=()
           (( REPLY_WIDTH < 80 ))    || wrong+=overflowed:$REPLY_WIDTH
-          [[ -n $RPROMPT ]]         || wrong+=rprompt-empty
+          [[ -z $RPROMPT ]]         || wrong+=rprompt-carried-something
           print -r -- "${wrong[*]}"
         '
       }
       When call lied
+      The output should eq ''
+      The stderr should eq ''
+    End
+  End
+
+  # -------------------------------------------------------------------------------------------
+  # `v1.3.0 · Prompt rows`. `_inzsh_rows_resolve` (issue #220) decides WHICH segment sits on
+  # WHICH row; this group is about what `_inzsh_render` does with that answer — newline count
+  # and position, marker placement per `INZSH_MARKER_ROW`, and whether `RPROMPT` carries
+  # anything. The row arrays claim ALFA/BRAVO/CHARLIE explicitly rather than leaning on their
+  # fixture ranks, which is what lets a row's LEFT and RIGHT be chosen independently of which
+  # side each segment would otherwise have derived onto.
+  Describe 'multiple resolved rows'
+    # `own`: every drawn row gets its right side padded in — including a row that is not the
+    # last one, which is the case this fixture is built to exercise — and the marker always
+    # gets a bare line below all of them. `RPROMPT` carries nothing at all.
+    It 'draws every resolved row on its own line, padded, under own — plus a bare marker line'
+      own_rows() {
+        inzsh_spec_shape '
+          INZSH_ROW1_LEFT=(ALFA) INZSH_ROW1_RIGHT=(CHARLIE) INZSH_ROW2_LEFT=(BRAVO)
+          INZSH_MARKER_ROW=own
+          _inzsh_render
+          local -a rows=("${(f)PROMPT}")
+          local -a wrong=()
+          (( ${#rows} == 3 )) || wrong+=rows:${#rows}
+          inzsh_shape_text "${rows[1]}"
+          [[ $REPLY == *alfa*charlie* ]]        || wrong+=row1:$REPLY
+          inzsh_shape_text "${rows[2]}"
+          [[ $REPLY == *bravo* && $REPLY != *charlie* ]] || wrong+=row2:$REPLY
+          inzsh_shape_text "${rows[3]}"
+          [[ $REPLY == "${_inzsh_glyph[prompt]} " ]]     || wrong+=row3:$REPLY
+          [[ -z $RPROMPT ]]                              || wrong+=rprompt:$RPROMPT
+          print -r -- "${wrong[*]}"
+        '
+      }
+      When call own_rows
+      The output should eq ''
+      The stderr should eq ''
+    End
+
+    # `inline`: the LAST drawn row terminates with the marker instead of taking a row of its
+    # own, so the prompt is one line shorter than `own` over the same rows — but every EARLIER
+    # row still gets its right side padded in exactly as `own` would, which is the half of the
+    # rule that is easy to get wrong by assuming `inline` means "never pad".
+    It 'pads every row but the last under inline, and shortens the prompt by the marker row'
+      inline_rows() {
+        inzsh_spec_shape '
+          INZSH_ROW1_LEFT=(ALFA) INZSH_ROW1_RIGHT=(CHARLIE) INZSH_ROW2_LEFT=(BRAVO)
+          INZSH_MARKER_ROW=inline
+          _inzsh_render
+          local -a rows=("${(f)PROMPT}")
+          local -a wrong=()
+          (( ${#rows} == 2 )) || wrong+=rows:${#rows}
+          inzsh_shape_text "${rows[1]}"
+          [[ $REPLY == *alfa*charlie* ]] || wrong+=row1:$REPLY
+          inzsh_shape_text "${rows[2]}"
+          [[ $REPLY == *bravo*"${_inzsh_glyph[prompt]} " ]] || wrong+=row2:$REPLY
+          [[ -z $RPROMPT ]]                                 || wrong+=rprompt:$RPROMPT
+          print -r -- "${wrong[*]}"
+        '
+      }
+      When call inline_rows
+      The output should eq ''
+      The stderr should eq ''
+    End
+
+    # The other half of the same rule: when the LAST drawn row does have a right side, `inline`
+    # hands it to a real `RPROMPT` rather than padding it in — the one row `RPROMPT` is ever
+    # assigned something on. `test/ui/test_prompt_shape.py` is what settles WHERE zsh actually
+    # draws it; this only settles that this file put it there and nowhere else.
+    It "puts the last row's right side in RPROMPT under inline, not padded into the row"
+      inline_last_right() {
+        inzsh_spec_shape '
+          INZSH_ROW1_LEFT=(ALFA) INZSH_ROW2_LEFT=(BRAVO) INZSH_ROW2_RIGHT=(CHARLIE)
+          INZSH_MARKER_ROW=inline
+          _inzsh_render
+          local -a rows=("${(f)PROMPT}")
+          local -a wrong=()
+          (( ${#rows} == 2 ))      || wrong+=rows:${#rows}
+          inzsh_shape_text "${rows[1]}"
+          [[ $REPLY != *charlie* ]] || wrong+=row1-carried-charlie:$REPLY
+          inzsh_shape_text "${rows[2]}"
+          [[ $REPLY == *bravo* && $REPLY != *charlie* ]] || wrong+=row2:$REPLY
+          inzsh_shape_text "$RPROMPT"
+          [[ $REPLY == *charlie* ]] || wrong+=rprompt:$REPLY
+          print -r -- "${wrong[*]}"
+        '
+      }
+      When call inline_last_right
+      The output should eq ''
+      The stderr should eq ''
+    End
+
+    # A row whose every segment turned out to have no text is not a row at all, at any
+    # position — not only the single row the pre-rows renderer ever had to worry about. The
+    # gap does not leave a blank line: what was row three renumbers into the second physical
+    # line the moment the middle one draws nothing.
+    It 'drops a row whose segments have no text, without leaving a blank line behind'
+      empty_middle_row() {
+        inzsh_spec_shape '
+          _inzsh_segment_text=(ALFA alfa CHARLIE charlie)
+          INZSH_ROW1_LEFT=(ALFA) INZSH_ROW2_LEFT=(BRAVO) INZSH_ROW3_LEFT=(CHARLIE)
+          INZSH_MARKER_ROW=own
+          _inzsh_render
+          local -a rows=("${(f)PROMPT}")
+          local -a wrong=()
+          (( ${#rows} == 3 )) || wrong+=rows:${#rows}
+          inzsh_shape_text "${rows[1]}"
+          [[ $REPLY == *alfa* ]] || wrong+=row1:$REPLY
+          inzsh_shape_text "${rows[2]}"
+          [[ $REPLY == *charlie* ]] || wrong+=row2:$REPLY
+          inzsh_shape_text "${rows[3]}"
+          [[ $REPLY == "${_inzsh_glyph[prompt]} " ]] || wrong+=row3:$REPLY
+          print -r -- "${wrong[*]}"
+        '
+      }
+      When call empty_middle_row
+      The output should eq ''
+      The stderr should eq ''
+    End
+
+    # A RIGHT-ONLY row — legitimate under "override is per side" (§2.3) — has no left content
+    # to pad away from. `_inzsh_render_gap` demands a gap of at least one column because with
+    # content on BOTH sides a gap of zero would run them together; with nothing on the left
+    # there is no collision to avoid, and the width below (11, with `charlie` filling all but
+    # one column) is exactly the case where the gap comes out to precisely zero rather than
+    # negative — the one width previously joined as an EMPTY STRING instead of the row's own
+    # content, leaving a blank physical line.
+    #
+    # `${(f)PROMPT}` is deliberately NOT used to count rows here: zsh drops an empty field from
+    # a `(f)` split, so a genuine `$'\n\n'` in the raw string reads back as one fewer line than
+    # it draws — which is exactly how this bug passed the newline-count style of every other
+    # example in this file. Newline BYTES in the raw string are counted instead.
+    It "draws a right-only row bare rather than as a blank line, at the width its gap is exactly zero"
+      right_only_row() {
+        inzsh_spec_shape '
+          typeset -g COLUMNS=11
+          INZSH_ROW1_LEFT=(ALFA) INZSH_ROW2_RIGHT=(CHARLIE)
+          INZSH_MARKER_ROW=own
+          _inzsh_render
+          local -a wrong=()
+          [[ $PROMPT == *$'"'"'\n'"'"'$'"'"'\n'"'"'* ]] && wrong+=blank-line-present
+          [[ $PROMPT == *charlie* ]]                    || wrong+=charlie-missing
+          print -r -- "${wrong[*]}"
+        '
+      }
+      When call right_only_row
       The output should eq ''
       The stderr should eq ''
     End
@@ -527,20 +682,25 @@ Describe 'the prompt shape'
       The stderr should eq ''
     End
 
-    # The one-line fallback for a prompt with nothing at all to say. It predates this shape and
-    # it is asserted unchanged: `%#` is zsh's own marker, and a blank PROMPT reads as a broken
-    # shell rather than a calm one.
-    It 'still falls back to %# on one row when there is nothing to draw'
+    # A prompt may never come back empty, under either marker setting — with nothing drawn at
+    # all, the marker itself is the whole prompt. This used to fall back to zsh's own `%#`
+    # instead: that was a property of `PROMPT_LINES=1` never drawing this theme's own marker at
+    # all when there was content on the row, and inline is no longer that shape — it draws the
+    # same marker `own` does, just on the row rather than below it, and a row with nothing on it
+    # is exactly the case with nothing to append it to.
+    It 'still falls back to the marker alone on one row when there is nothing to draw'
       one_line_bare() {
         inzsh_spec_shape '
           INZSH_PROMPT_LINES=1
           _inzsh_segment_text=()
           _inzsh_render
-          print -r -- "<$PROMPT>"
+          inzsh_shape_text "$PROMPT"
+          [[ $REPLY == "${_inzsh_glyph[prompt]} " ]] && print -r -- exact ||
+            print -r -- "got=<$REPLY>"
         '
       }
       When call one_line_bare
-      The output should eq '<%# >'
+      The output should eq 'exact'
       The stderr should eq ''
     End
 

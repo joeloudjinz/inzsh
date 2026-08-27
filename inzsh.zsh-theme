@@ -41,6 +41,7 @@ source $_inzsh_theme_root/lib/core/tokens-256.zsh
 source $_inzsh_theme_root/lib/core/tokens.zsh
 source $_inzsh_theme_root/lib/core/layout.zsh
 source $_inzsh_theme_root/lib/core/engine.zsh
+source $_inzsh_theme_root/lib/core/rows.zsh
 source $_inzsh_theme_root/lib/core/render.zsh
 source $_inzsh_theme_root/lib/core/prompts.zsh
 source $_inzsh_theme_root/lib/core/transient.zsh
