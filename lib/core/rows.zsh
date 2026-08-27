@@ -334,3 +334,122 @@ _inzsh_rows_resolve() {
 
   return 0
 }
+
+# `_inzsh_rows_diagnose <cols>` — every row-array entry `_inzsh_rows_resolve` would drop, and why,
+# in `reply` as flat quadruples: row, side, entry, reason. Nothing here draws anything or prints
+# anything; `inzsh doctor`'s own formatter, in `lib/core/doctor.zsh`, is what turns this into a
+# pasteable line.
+#
+# WHY THIS EXISTS. `_inzsh_rows_entries` and `_inzsh_rows_resolve` both drop a bad entry ON
+# PURPOSE — a typo in a row array must never take the prompt down with it — and a row whose every
+# entry was dropped is simply not drawn, the same as a row nobody ever configured. That silence is
+# the feature working as designed, and `_inzsh_doctor_ignored` cannot fill the gap it leaves:
+# `INZSH_ROW2_LEFT=(GTI)` passes every filter that section runs — the family resolves, and `any`
+# accepts whatever string an entry happens to be — because the VALUE is not wrong, the NAME inside
+# it is. Without this function the failure mode of the whole row feature is a segment that
+# silently does not appear, and nothing in the shell says so.
+#
+# THE REASONS, in the order they are tested, mirror the two decisions `_inzsh_rows_resolve` makes
+# rather than inventing a third telling of them:
+#
+#   not an array        the knob holds a scalar — `INZSH_ROW1_LEFT="TIME DIR"` — refused whole,
+#                        never split on whitespace, exactly as `_inzsh_rows_entries` refuses it.
+#                        Reported once for the side, with no entry to name.
+#   not an identifier    an element of the array cannot be read with `${(P)}` as a variable at
+#                        all — empty, or carrying anything outside `[A-Za-z_][A-Za-z0-9_]*`.
+#   unknown segment      a legal identifier, but not a name `_inzsh_segment_defaults` has ever
+#                        heard of in this build.
+#   claimed elsewhere    a real segment, but an earlier row, an earlier side, or an earlier entry
+#                        in this very array claimed it first — `_inzsh_rows_resolve`'s claim walk
+#                        keeps the first mention and drops every later one, wherever it sits, and a
+#                        duplicate inside one array is dropped the identical way.
+#   hidden by MINCOLS    claimed, and by nobody else, but the terminal is narrower than the
+#                        segment's own `INZSH_<SEG>_MINCOLS` floor — the placement stands, the
+#                        width does not (§2.4).
+#
+# RANK NEVER APPEARS HERE. A row array bypasses rank entirely, including a registered `0` (issue
+# #185) — that is the whole point of naming a segment explicitly — so an entry that reaches the
+# claim step below is never dropped for its rank, and step 2 of `_inzsh_rows_resolve` (drop rank-0
+# among the UNCLAIMED) has nothing to say about a named entry at all. This function therefore
+# never asks `_inzsh_rank_of`, and never needs the candidate list `_inzsh_rows_resolve` takes —
+# every fact it reports is intrinsic to the entry itself or to the claim order among row arrays,
+# neither of which depends on what else the theme happens to be drawing.
+#
+# MINCOLS is checked in a second pass, once every claim is settled, and in ONE call rather than
+# one per entry: `_inzsh_layout_filter`'s own per-name decision reads nothing about a segment's
+# neighbours, so every claimed name can be handed to it together without reconstructing the
+# "claimed ∪ unclaimed" list `_inzsh_rows_resolve`'s own width step stands on.
+#
+# THE ENTRY COMES BACK RAW, NEVER SANITISED HERE. An array element is arbitrary text a user typed,
+# and this function is not the block that gets pasted into an issue — `inzsh doctor`'s own
+# formatter is, and it flattens and clips exactly the way `_inzsh_doctor_ignored` already does
+# before a byte of it reaches `_inzsh_doctor_row`. Doing that here too would be a second place to
+# keep agreeing with the first.
+_inzsh_rows_diagnose() {
+  emulate -L zsh
+  setopt local_options extended_glob
+
+  typeset -ga reply
+  reply=()
+
+  local -i cols=0
+  [[ $1 == <-> ]] && cols=$1
+
+  local -a diag=()
+  local -A claimed=()
+  local -a claimed_names=()
+
+  local -i n
+  local side name entry
+  local -a raw
+  for (( n = 1; n <= 8; n++ )); do
+    for side in left right; do
+      name="INZSH_ROW${n}_${(U)side}"
+
+      (( ${+parameters[$name]} )) || continue
+      if [[ ${(Pt)name} != array* ]]; then
+        diag+=("$n" "$side" '' 'not an array')
+        continue
+      fi
+
+      raw=("${(@P)name}")
+      for entry in "${raw[@]}"; do
+        if [[ -z $entry || $entry != [A-Za-z_][A-Za-z0-9_]# ]]; then
+          diag+=("$n" "$side" "$entry" 'not an identifier')
+          continue
+        fi
+        if (( ! ${+_inzsh_segment_defaults[$entry]} )); then
+          diag+=("$n" "$side" "$entry" 'unknown segment')
+          continue
+        fi
+        if (( ${+claimed[$entry]} )); then
+          diag+=("$n" "$side" "$entry" 'claimed elsewhere')
+          continue
+        fi
+        claimed[$entry]="${n}:${side}"
+        claimed_names+=("$entry")
+      done
+    done
+  done
+
+  if (( ${#claimed_names} )); then
+    _inzsh_layout_filter "$cols" "${claimed_names[@]}"
+    local -A survives=()
+    local seg
+    for seg in "${reply[@]}"; do
+      survives[$seg]=1
+    done
+
+    local pos
+    for seg in "${claimed_names[@]}"; do
+      (( ${+survives[$seg]} )) && continue
+      pos=${claimed[$seg]}
+      diag+=("${pos%%:*}" "${pos##*:}" "$seg" 'hidden by MINCOLS')
+    done
+  fi
+
+  typeset -ga reply
+  reply=("${diag[@]}")
+
+  return 0
+}
