@@ -193,7 +193,7 @@ Describe 'the glyph knob family'
         zsh -f -i -c '
           local root=$1 file
           unset -m "INZSH_*"
-          for file in config detect tokens-256 tokens layout engine render; do
+          for file in config detect tokens-256 tokens layout engine rows render; do
             source $root/lib/core/$file.zsh
           done
           typeset -g COLUMNS=80

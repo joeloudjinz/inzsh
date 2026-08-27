@@ -943,11 +943,13 @@ Describe 'render assembly'
     # the prompt is being written from somewhere that does not know whether the shell is
     # interactive — which is the whole reason the draw is a separate function.
     #
-    # The counts are what the two shapes cost. One line assigns both parameters once. Two
-    # lines assigns RPROMPT once and PROMPT twice, because a segment row with nothing on it
-    # is not drawn at all and the marker-only prompt is its own arm. Five in total, none of
-    # them anywhere else, and the numbers are pinned rather than bounded so that a sixth has
-    # to be argued for here before it can be written there.
+    # PROMPT is assigned exactly ONCE now — every row, of however many there are, is joined by
+    # `${(F)physical_rows}` before a single assignment, which is what N rows bought over the old
+    # two-line shape's separate arms for "a row" and "no row at all": there is no longer a second
+    # arm to assign from, only a different `physical_rows`. RPROMPT is still assigned twice, one
+    # per marker mode — `inline`'s last row or nothing at all. Three in total, none of them
+    # anywhere else, and the numbers are pinned rather than bounded so that a fourth has to be
+    # argued for here before it can be written there.
     It 'assigns the prompt only inside the draw, and never touches PS1'
       grepped() {
         setopt local_options extended_glob
@@ -970,7 +972,7 @@ Describe 'render assembly'
         print -r -- "prompt=$n_left rprompt=$n_right ps1=$n_ps1 outside=$n_outside"
       }
       When call grepped
-      The output should eq 'prompt=3 rprompt=2 ps1=0 outside=0'
+      The output should eq 'prompt=1 rprompt=2 ps1=0 outside=0'
     End
   End
 End

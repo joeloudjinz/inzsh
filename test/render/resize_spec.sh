@@ -21,7 +21,7 @@ inzsh_spec_resize() {
     unset -m "INZSH_*"
 
     local file
-    for file in config detect tokens-256 tokens layout engine render resize; do
+    for file in config detect tokens-256 tokens layout engine rows render resize; do
       source $root/lib/core/$file.zsh
     done
 
