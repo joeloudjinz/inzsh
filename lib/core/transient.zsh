@@ -94,9 +94,10 @@ _inzsh_transient_enabled() {
 #
 # Nothing else is offered, and a free-form template is refused on purpose: a format string that
 # could hold anything would let the collapsed prompt grow back into the prompt it replaced, and
-# the knob would then be the feature's own undoing. The marker is shared with the second line of
-# the two-line shape — the same mark, the same status colouring — so a collapsed prompt reads as
-# the prompt it came from rather than as a different thing that appeared.
+# the knob would then be the feature's own undoing. The marker is shared with `_inzsh_render`'s
+# own — the same mark, the same status colouring, wherever it was actually drawn — so a
+# collapsed prompt reads as the prompt it came from rather than as a different thing that
+# appeared.
 #
 # `_inzsh_render_marker` is looked up at call time, never at source time, so this file stays
 # independently sourceable and the dependency stays one way. Without it the marker is one ASCII

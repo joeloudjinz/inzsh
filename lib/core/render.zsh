@@ -810,9 +810,13 @@ _inzsh_render_lines() {
 # `lib/core/layout.zsh` gives it — and both widths must be non-negative integers. A `local -i`
 # would silently turn `abc` into 0 and pad the row to the full width of the terminal.
 #
-# A gap of 0 is not a failure. `_inzsh_render` has the degradation for it — the right side goes
-# to `RPROMPT` and lands beside the marker on row two, which is a right prompt in the wrong place
-# rather than one that vanished. Always status 0.
+# A gap of 0 is not a failure. It means "these two, one immediately after the other, still fit
+# with the one spare column kept" — a real, drawable answer, not a refusal — and it is what
+# `_inzsh_render`'s join step falls through to bare when the LEFT side is empty (nothing to
+# separate the right side FROM). Where the left side is not empty, 0 IS treated as "do not pad"
+# there, because running two blocks together with no gap at all would look like one broken block:
+# `_inzsh_render_row`'s own fit runs before this ever executes and drops right-hand content by
+# priority so that case does not arise. Always status 0.
 _inzsh_render_gap() {
   emulate -L zsh
 
@@ -886,7 +890,9 @@ _inzsh_render_paint() {
 # marker that cannot degrade to one ASCII column is a marker that breaks a single-byte locale.
 typeset -g _inzsh_render_marker_ascii='>'
 
-# The second line's marker, in REPLY, coloured and ready to concatenate.
+# The marker, in REPLY, coloured and ready to concatenate — on its own bare line under `own`,
+# whatever line that ends up being over N drawn rows, or terminating the last drawn row under
+# `inline`. Where it goes is `_inzsh_render`'s decision; this only resolves what it says.
 #
 # WHAT IT SIGNALS, and what it deliberately does not. The marker takes the `negative` role when
 # the last command failed and `accent` when it did not — and it changes NOTHING ELSE. The glyph

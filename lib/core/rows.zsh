@@ -15,10 +15,11 @@
 # `lib/salah/calc.zsh` has with its injected clock. Nothing here fetches segment text, reads the
 # terminal or assigns a prompt parameter; it only decides where a name goes.
 #
-# NOTHING CONSUMES THIS YET. `render.zsh` still builds one row from `_inzsh_left` /
-# `_inzsh_right` exactly as it always has — wiring the renderer to draw N rows is later work.
-# Landing the resolution layer on its own, before anything reads it, is what makes it reviewable
-# by itself and keeps this change byte-identical in every prompt anyone sees.
+# `render.zsh` NOW CONSUMES THIS — `v1.3.0 · Prompt rows` wired `_inzsh_render` to call
+# `_inzsh_rows_resolve` and draw every row it answers. This file stayed the pure resolution layer
+# it was landed as, byte-identical in what it decides; only the caller changed. The paragraph
+# below is kept for what it still explains — why this file unit-tests with no prompt at all — not
+# because nothing reads its answer any more.
 #
 # ---------------------------------------------------------------------------------------------
 # The row knobs — read outside the config registry, on purpose
