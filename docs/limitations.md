@@ -34,12 +34,6 @@ altogether and leaves a stale prompt until the next Enter, which is untidy in on
 than many. Native terminals — Ghostty, Terminal.app, kitty, iTerm2, Alacritty, WezTerm — are
 unaffected.
 
-**Resizing a configured multi-row prompt.** `INZSH_ROW<N>_LEFT`/`_RIGHT` can draw a prompt of
-more than one segment row (`v1.3.0 · Prompt rows`), but the resize redraw still climbs the
-cursor assuming the single row every prompt drew before that knob existed. Narrowing or
-widening the window leaves stale rows behind on a genuinely multi-row prompt — the default
-shape, one segment row plus the marker, is unaffected. Tracked as issue #223.
-
 **tmux.** Full colour requires RGB passthrough (`set -sa terminal-features ',*:RGB'`).
 Without it colours are downgraded to what tmux forwards.
 
