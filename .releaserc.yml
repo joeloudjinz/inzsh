@@ -19,8 +19,23 @@ plugins:
   # "The version constant" in docs/releasing.md. `nextRelease.gitTag` is the tag
   # `tagFormat` above just computed, reused rather than re-derived, so the stamp cannot
   # disagree with it.
+  # The notes guard rides in front of the bundle rather than in a step of its own.
+  # Issue #289: an incompatible preset version emits a body of nothing but the compare
+  # header and does not fail, so five releases shipped with no notes and nothing in the
+  # pipeline noticed. `###` is the section heading conventional-changelog writes for
+  # every group it renders — no section means no commit was rendered, which is the bug's
+  # exact signature. `indexOf` rather than a line count because the exec plugin compiles
+  # these through lodash templates, which do NOT process escapes: `split('\n')` lands a
+  # real newline inside a JS string literal and throws.
+  #
+  # `prepare` is the right step for it. It runs after the notes exist and before `tag()`,
+  # so a bad release aborts without leaving a tag behind — the same property the bundle
+  # build relies on, described under "How a release happens" in docs/releasing.md.
   - - "@semantic-release/exec"
-    - prepareCmd: "INZSH_BUNDLE_VERSION=${nextRelease.gitTag} make bundle"
+    - prepareCmd: >-
+        test ${nextRelease.notes.indexOf('###')} -ge 0
+        || { echo 'release notes have no sections - see issue #289' >&2; exit 1; };
+        INZSH_BUNDLE_VERSION=${nextRelease.gitTag} make bundle
   - - "@semantic-release/github"
     - assets:
         - path: dist/inzsh.zsh-theme

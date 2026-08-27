@@ -50,6 +50,20 @@
 
 zmodload -i zsh/datetime
 
+# `$sysparams[pid]` for the two temporary names this file builds — issue #266, the same defect
+# `lib/salah/cache.zsh` fixed for the day cache under #265, and the full reasoning lives in that
+# file's `_inzsh_salah_cache_write` header rather than being restated here. In one line: `$$` is
+# the pid of the shell that was FIRST started, so every subshell forked from one parent reports
+# the same number, and a fork inherits the parent's `$RANDOM` state so the first draw after the
+# fork matches too — `$$.$RANDOM` names siblings identically by construction, not by bad luck.
+#
+# Loaded here rather than leaned on from `cache.zsh`, which happens to be sourced first by the
+# entry point and sets the same flag. Two files that both need the module both ask for it; the
+# declaration is re-run and the detection immediately re-establishes it, so the duplicate is
+# idempotent and this file keeps working when a spec includes it on its own.
+typeset -gi _inzsh_salah_zsys=0
+zmodload -i zsh/system 2>/dev/null && _inzsh_salah_zsys=1
+
 # The default endpoint. A free IP-geolocation service that needs no key and answers with JSON
 # holding `latitude` and `longitude`. Held in a variable so the registered default and the value
 # this file falls back to when the config layer is not loaded cannot disagree.
@@ -250,7 +264,15 @@ _inzsh_salah_location_write() {
   _inzsh_salah_location_path || return 1
   local file=$REPLY
 
-  local tmp=$file.$$.$RANDOM.tmp
+  # Issue #266. Named from `$sysparams[pid]`, never `$$` — see the module load at the top of this
+  # file. `(inzsh locate &!)` in a `.zshrc` is documented usage, so the forked-siblings case this
+  # avoids is one the reference tells people to write.
+  local tmp
+  if (( _inzsh_salah_zsys )); then
+    tmp=$file.${sysparams[pid]}.tmp
+  else
+    tmp=$file.$$.$EPOCHREALTIME.$RANDOM.tmp
+  fi
   local tab=$'\t'
 
   {
@@ -391,7 +413,16 @@ _inzsh_salah_locate_fetch() {
   local now=${1:-${EPOCHSECONDS-}}
   [[ $now == <-> ]] || return 1
 
-  local body=$target.$$.$RANDOM.raw
+  # Issue #266, and the exposure here is the wider of the two in this file: the body is written by
+  # `curl` or `wget`, so two writers agreeing on a name means one client's response landing in the
+  # other's file — a position read from somebody else's request rather than a corrupt one that
+  # fails a parse.
+  local body
+  if (( _inzsh_salah_zsys )); then
+    body=$target.${sysparams[pid]}.raw
+  else
+    body=$target.$$.$EPOCHREALTIME.$RANDOM.raw
+  fi
   local -i fetched=1
 
   if (( ${+commands[curl]} )); then

@@ -812,4 +812,112 @@ Describe 'where you are'
       The output should include 'lib/salah/location.zsh: command wget'
     End
   End
+
+  # Issue #266. The same defect `lib/salah/cache.zsh` carried under #265, in the two temporaries
+  # THIS file builds. `$$` is the pid of the shell that was first started, so every subshell
+  # forked from one parent reports it unchanged, and a fork inherits the parent's `$RANDOM` state
+  # so the first draw after the fork matches across siblings too — `$$.$RANDOM` gave twenty
+  # writers ONE name, deterministically, every run rather than occasionally.
+  #
+  # Both examples ask the question DIRECTLY, as the cache spec's equivalent does: capture the name
+  # each of twenty concurrently forked writers actually picks, and require all twenty to differ.
+  # Nothing here depends on the scheduler interleaving two writers closely enough to corrupt
+  # something — a race test can pass with a shared name purely because the timing never lined up,
+  # which is exactly the reassurance this class of bug does not deserve.
+  #
+  # `(inzsh locate &!)` in a `.zshrc` is documented usage, so forked siblings racing here is the
+  # shape the reference actively tells people to write, not a contrived one.
+  Describe 'a temporary name no two forked writers can share (issue #266)'
+    It 'gives every writer of the stored position its own temporary'
+      uniq_write() {
+        inzsh_spec_salah_env || return 1
+
+        local -i n
+        for (( n = 1; n <= 20; n++ )); do
+          (
+            local out="$inzsh_spec_salah_cache/name.$n"
+            # Stood in for the duration of the fork, so the name is recorded rather than
+            # inferred. `${@[-2]}` is the SOURCE of the rename — the temporary itself.
+            _inzsh_salah_mv() {
+              print -r -- "${@[-2]}" > "$out"
+              command mv "$@" 2>/dev/null
+            }
+            _inzsh_salah_location_write 21.4225 39.8262 $inzsh_spec_salah_now
+          ) &
+        done
+        wait
+
+        local -a bad=()
+        local -a collected=("$inzsh_spec_salah_cache"/name.<->(N))
+        (( ${#collected} == 20 )) || bad+="collected=${#collected}"
+
+        local -a names=()
+        local f
+        for f in "${collected[@]}"; do
+          names+="$(<$f)"
+        done
+        local -i distinct=${#${(u)names}}
+        (( distinct == 20 )) || bad+="distinct=$distinct"
+
+        print -rl -- $bad
+        inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+      }
+      When call uniq_write
+      The output should eq ''
+    End
+
+    # The downloaded body, which is the wider exposure of the two: this file does not write it —
+    # `curl` does, to whatever path it was handed. Two writers agreeing on a name here means one
+    # client's response landing in the other's file, so the loser reads a position from somebody
+    # else's request rather than reading a corrupt file and failing the parse.
+    #
+    # A stub `curl` sits at the FRONT of `PATH` inside each fork. That keeps the example offline
+    # in the strict sense this file requires — no request is made at all — and it is also the only
+    # way to reach the name: with neither client present the function returns before it is built.
+    It 'gives every fetch its own temporary for the downloaded body'
+      uniq_fetch() {
+        inzsh_spec_salah_env || return 1
+        typeset -g INZSH_SALAH_AUTOLOCATE=1
+
+        local bin="$inzsh_spec_salah_cache/bin"
+        mkdir -p "$bin"
+        # Writes nothing and asks nothing of the network. The fetch is allowed to "succeed" so
+        # that the code path reaches the removal below, where the name is captured.
+        print -rl -- '#!/bin/sh' 'exit 0' > "$bin/curl"
+        chmod +x "$bin/curl"
+
+        local -i n
+        for (( n = 1; n <= 20; n++ )); do
+          (
+            local out="$inzsh_spec_salah_cache/body.$n"
+            path=("$bin" $path)
+            # The removal runs however the fetch ends, so this records the name on every path
+            # through the function rather than only the successful one.
+            _inzsh_salah_rm() {
+              print -r -- "${@[-1]}" > "$out"
+            }
+            _inzsh_salah_locate_fetch $inzsh_spec_salah_now
+          ) &
+        done
+        wait
+
+        local -a bad=()
+        local -a collected=("$inzsh_spec_salah_cache"/body.<->(N))
+        (( ${#collected} == 20 )) || bad+="collected=${#collected}"
+
+        local -a names=()
+        local f
+        for f in "${collected[@]}"; do
+          names+="$(<$f)"
+        done
+        local -i distinct=${#${(u)names}}
+        (( distinct == 20 )) || bad+="distinct=$distinct"
+
+        print -rl -- $bad
+        inzsh_spec_salah_clean "$inzsh_spec_salah_cache"
+      }
+      When call uniq_fetch
+      The output should eq ''
+    End
+  End
 End

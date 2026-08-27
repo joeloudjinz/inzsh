@@ -1359,4 +1359,78 @@ Describe 'the git status worker'
       The output should eq ''
     End
   End
+  # Issue #266. The job token names three files — `.tmp`, `.raw` and `.pid` — so two jobs that
+  # agree on one are two jobs writing over each other's working state, in the repository's only
+  # async path. The fork collision below is the defect; the second example guards the fix itself,
+  # since the obvious repair reintroduces the problem one step over.
+  Describe 'a job token no two jobs can share (issue #266)'
+    # ACROSS FORKS. `$$` is the pid of the shell that was FIRST started, so it is identical in
+    # every subshell forked from one parent, and a fork inherits the parent's `$RANDOM` state so
+    # the first draw after the fork matches too. Twenty siblings therefore agreed on one token by
+    # construction rather than by chance. `$sysparams[pid]` is read from the kernel per reference
+    # and is the half that fixes this.
+    It 'gives every forked shell its own token'
+      forks() {
+        inzsh_spec_git_shell '
+          # Stubbed so no git runs and no watchdog is left behind: this asks what NAME the start
+          # picks, which is decided before the job is ever launched.
+          _inzsh_git_async_job() { : }
+
+          local -i n
+          for (( n = 1; n <= 20; n++ )); do
+            (
+              _inzsh_git_async_start "$INZSH_GIT_CACHE_DIR" >/dev/null 2>&1
+              print -r -- "$_inzsh_git_job_token" > "$INZSH_GIT_CACHE_DIR/token.$n"
+            ) &
+          done
+          wait
+
+          local -a collected=("$INZSH_GIT_CACHE_DIR"/token.<->(N))
+          local -a names=()
+          local f
+          for f in "${collected[@]}"; do names+="$(<$f)"; done
+          local -i distinct=${#${(u)names}}
+          print -r -- "collected=${#collected} distinct=$distinct"
+        '
+      }
+      When call forks
+      The output should eq 'collected=20 distinct=20'
+    End
+
+    # WITHIN ONE PROCESS. This is a REGRESSION GUARD rather than a second old bug: the old token
+    # handled this case correctly, because `$RANDOM` does advance between two draws inside one
+    # process even though a fork inherits its state. The fix is what puts it at risk — a pid is
+    # constant for the life of a process, so `${sysparams[pid]}` ALONE would give two jobs started
+    # by one shell the same token, trading the fork collision for a sequential one. Not a
+    # contrived sequence either: `precmd` fires on every accepted line, an empty one included.
+    #
+    # Verified to bite: with the token reduced to the bare pid this example fails with
+    # `same=<pid>`, while the forks example above still passes — which is exactly the half-fix
+    # a single test would have let through.
+    It 'gives a second job in the same second a different token'
+      same_second() {
+        inzsh_spec_git_shell '
+          _inzsh_git_async_job() { : }
+
+          _inzsh_git_async_start "$INZSH_GIT_CACHE_DIR" >/dev/null 2>&1
+          local first=$_inzsh_git_job_token
+          # Closes the descriptor and clears the job state, so the second start is not refused by
+          # the one-at-a-time guard. Nothing else about the token is reset by it.
+          _inzsh_git_async_reap
+          _inzsh_git_async_start "$INZSH_GIT_CACHE_DIR" >/dev/null 2>&1
+          local second=$_inzsh_git_job_token
+          _inzsh_git_async_reap
+
+          local -a bad=()
+          [[ -n $first && -n $second ]] || bad+=empty
+          [[ $first != $second ]] || bad+="same=$first"
+          # The premise: both really did land in the same second, or this example proved nothing.
+          [[ ${first%%.*} == ${second%%.*} ]] || bad+=different-seconds
+          print -rl -- $bad
+        '
+      }
+      When call same_second
+      The output should eq ''
+    End
+  End
 End

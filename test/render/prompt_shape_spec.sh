@@ -659,6 +659,101 @@ Describe 'the prompt shape'
       The output should eq ''
       The stderr should eq ''
     End
+
+    # Issue #279. What a side COSTS is `sum + sep*(n-1) + cap`, and `_inzsh_layout_total` books
+    # only the first two — it says so itself, because the cap is drawn once whatever `n` is.
+    # `_inzsh_render_row` was not booking it, and what stood in for it was a separator width
+    # inflated by one, which spreads a fixed cost over `n-1` boundaries and so is only right at
+    # `n == 2`: one column under at `n == 1`, one further over per block after that.
+    #
+    # The visible half was the under-book. A row whose blocks came to exactly the terminal width
+    # was booked as fitting and drawn full-width, eating the column zsh keeps for `RPROMPT` and
+    # the cursor — the one `test/ui/test_prompt_shape.py` pins from the other side. The over-book
+    # had no golden to catch it because it only ever dropped blocks from rows wide enough that
+    # nobody noticed the room.
+    Describe 'a row never consumes the spare column (issue #279)'
+      # A SWEEP, not one width. The defect is a single-column window, so an example that pins one
+      # terminal size proves almost nothing about the arithmetic that produced it — the width it
+      # opens at moves with the glyph, the padding and the number of blocks. Five row shapes
+      # across forty-two widths, asserting the one invariant that has to hold for all of them.
+      #
+      # `1234567` is chosen so the block lands exactly on a terminal edge at a width inside the
+      # sweep: seven columns of text, two of padding and one cap glyph is ten, so `cols=10` is
+      # where a row that books itself one column short draws over the edge. Against `dev` this
+      # example reports four overflows, every one of them at that width.
+      It 'books what it draws, at every width and every shape'
+        sweep() {
+          inzsh_spec_shape '
+            typeset -gA _inzsh_segment_defaults _inzsh_segment_text
+            _inzsh_segment_defaults=(A 1 B 2 C -1)
+            _inzsh_segment_text=(A 1234567 B abcd C xyz)
+
+            local -a bad=()
+            local -i c total
+            local shape
+            for shape in "A:" "A B:" ":C" "A:C" "A B:C"; do
+              typeset -ga L=(${=shape%%:*}) R=(${=shape##*:})
+              for (( c = 4; c <= 45; c++ )); do
+                _inzsh_render_row $c L R
+                (( total = _inzsh_render_row_left_width + _inzsh_render_row_right_width ))
+                # A row that drew nothing is not an overflow — at a width this narrow the
+                # correct answer is often to draw no blocks at all.
+                (( total == 0 || total <= c - 1 )) || bad+="$shape@$c:$total"
+              done
+            done
+            print -r -- "${bad[*]}"
+          '
+        }
+        When call sweep
+        The output should eq ''
+        The stderr should eq ''
+      End
+
+      # THE COST MODEL, pinned separately — and it does NOT fail against `dev`, which is worth
+      # stating plainly rather than leaving for someone to discover. `_inzsh_layout_total` and
+      # `_inzsh_render_build` were both correct all along; the defect was entirely in how
+      # `_inzsh_render_row` combined them, and the example above is what covers that.
+      #
+      # This one guards the other direction. `_inzsh_render_row`'s arithmetic is only right for
+      # as long as `sum + sep*(n-1) + cap` remains what a side actually costs, and nothing else
+      # in the tree asserts that relationship — a build that started drawing a second cap, or a
+      # total that quietly folded one in, would put the row back where #279 found it while every
+      # example above still passed. Cheap to state, and the sweep depends on it holding at widths
+      # it never visits.
+      It 'books exactly the width the build draws, for any number of blocks'
+        booking() {
+          inzsh_spec_shape '
+            typeset -gA _inzsh_segment_defaults _inzsh_segment_text
+            _inzsh_segment_defaults=(A 1 B 2 C 3 D 4)
+            _inzsh_segment_text=(A ab B cd C ef D gh)
+
+            _inzsh_separators
+            _inzsh_width "$_inzsh_sep_left"
+            local -i cap=$REPLY
+
+            local -a bad=() names=()
+            local -i n i booked drawn
+            local -a widths
+            for (( n = 1; n <= 4; n++ )); do
+              names=(A B C D)
+              names=("${names[@]:0:$n}")
+              _inzsh_render_fit_args "${names[@]}"
+              widths=()
+              for (( i = 2; i <= ${#reply}; i += 2 )); do widths+=${reply[i]}; done
+              _inzsh_layout_total $cap "${widths[@]}"
+              (( booked = REPLY + cap ))
+              _inzsh_render_build left "${names[@]}"
+              (( drawn = _inzsh_render_width ))
+              (( booked == drawn )) || bad+="n=$n booked=$booked drawn=$drawn"
+            done
+            print -r -- "${bad[*]}"
+          '
+        }
+        When call booking
+        The output should eq ''
+        The stderr should eq ''
+      End
+    End
   End
 
   # -------------------------------------------------------------------------------------------
