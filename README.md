@@ -98,9 +98,20 @@ the second with the clock at the end of it.
 <img src="docs/assets/shot-rows.png" alt="The prompt across two rows, identity and clock on the second" width="800">
 
 Every still and recording here is generated from fixtures and written straight into
-`docs/assets` — `make shots` rebuilds the five stills, `make demo` rebuilds the recordings and
-publishes the showcase. Nothing is hand-edited or hand-copied. `SCALE=2` on either renders the
-same tapes at twice the size for a high-DPI screen.
+`docs/assets` — `make shots` rebuilds the stills, `make demo` rebuilds the recordings and
+publishes the two the docs embed. Nothing is hand-edited or hand-copied.
+
+**Each capture is published at two sizes, and both are real renders.** An animated GIF cannot
+go through a website's image pipeline — that pipeline decodes one frame and re-encodes it as a
+still — so the only sizes a browser can be offered are the ones rendered here. The bare name is
+the size that was published first (2000px wide for the recordings, 1000px for the stills) and
+the other rung carries its rendered width: `showcase-1000.gif`, `shot-sharp-2000.png`. Neither
+is resampled from the other. `SCALE=2` still applies to the tapes that only land in `demo-out/`.
+
+Renders are reproducible in geometry and content, not byte for byte: the tapes drive a live
+pty, so the exact frame a still is cut from — and the frame timing inside a GIF — vary a little
+between runs. Two renders of the same tape compare at SSIM 0.9999, which is the cursor blink
+landing differently, not the prompt drawing differently.
 
 ## Supported terminals
 
