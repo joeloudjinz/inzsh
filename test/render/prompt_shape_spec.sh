@@ -754,6 +754,118 @@ Describe 'the prompt shape'
         The stderr should eq ''
       End
     End
+
+    # Issue #182. Rank, priority and MINCOLS are worked out once and kept until a knob changes,
+    # which is most of what a warm render used to cost. The whole safety of that rests on one
+    # claim: a prompt drawn from the cache is the prompt that would have been drawn without it.
+    #
+    # So it is asserted as a DIFFERENTIAL rather than by testing the cache's own bookkeeping.
+    # Each permutation is rendered twice — once normally, and once with the generation counter
+    # forced to 0, which is the documented "do not cache" mode the resolvers already honour — and
+    # the two prompt strings must match byte for byte. Nothing here trusts the invalidation logic
+    # to report on itself; the reference render simply does not use it.
+    #
+    # The permutations run SEQUENTIALLY IN ONE SHELL on purpose. That is what makes this a test of
+    # invalidation and not just of a cold cache: by the time the last one runs, the caches have
+    # been filled and thrown away several times over, and any knob whose change failed to clear
+    # them shows up as a mismatch against its own uncached reference.
+    Describe 'the resolver cache (issue #182)'
+      inzsh_spec_cache_differential() {
+        inzsh_spec_shape '
+          # The reference: caching off, by the same switch a partial load uses.
+          uncached() {
+            local -i saved=$_inzsh_config_generation
+            functions[_inzsh_config_refresh_saved]=$functions[_inzsh_config_refresh]
+            _inzsh_config_refresh() { : }
+            typeset -gi _inzsh_config_generation=0
+            _inzsh_render
+            typeset -g REPLY=$PROMPT$RPROMPT
+            functions[_inzsh_config_refresh]=$functions[_inzsh_config_refresh_saved]
+            typeset -gi _inzsh_config_generation=$saved
+          }
+
+          local -a bad=()
+          local -i n=0
+          # Each entry is a knob assignment applied on top of the ones before it, so the shell
+          # walks a real configuration history rather than a set of independent starts.
+          local change
+          for change in \
+            ":" \
+            "INZSH_ALFA_RANK=3" \
+            "INZSH_ALFA_RANK=9" \
+            "INZSH_CHARLIE_PRIORITY=-4" \
+            "INZSH_BRAVO_MINCOLS=200" \
+            "INZSH_BRAVO_MINCOLS=0" \
+            "INZSH_SEPARATOR_STYLE=round" \
+            "INZSH_SEPARATOR_STYLE=divider" \
+            "INZSH_SURFACE_MODE=flat" \
+            "INZSH_SEGMENT_PAD=0" \
+            "INZSH_SEGMENT_PAD=3" \
+            "INZSH_MARKER_ROW=inline" \
+            "unset INZSH_ALFA_RANK" \
+            "unset INZSH_SEPARATOR_STYLE" \
+            "INZSH_ALFA_RANK=-2"
+          do
+            (( n++ ))
+            eval "$change"
+            _inzsh_render
+            local cached=$PROMPT$RPROMPT
+            uncached
+            [[ $cached == $REPLY ]] || bad+="$n:$change"
+          done
+          print -r -- "${bad[*]}"
+        '
+      }
+
+      It 'draws exactly what an uncached render would, through a run of knob changes'
+        When call inzsh_spec_cache_differential
+        The output should eq ''
+        The stderr should eq ''
+      End
+
+      # The counter is what the caches key on, so it has to move when — and only when — the
+      # configuration does. A counter that never moved would serve a stale prompt for the life of
+      # the shell; one that moved every render would make the caches pure overhead.
+      It 'bumps the generation on a change and holds it steady otherwise'
+        generation() {
+          inzsh_spec_shape '
+            local -a seen=()
+            _inzsh_render; seen+=$_inzsh_config_generation
+            _inzsh_render; seen+=$_inzsh_config_generation
+            _inzsh_render; seen+=$_inzsh_config_generation
+            INZSH_ALFA_RANK=4
+            _inzsh_render; seen+=$_inzsh_config_generation
+            _inzsh_render; seen+=$_inzsh_config_generation
+            unset INZSH_ALFA_RANK
+            _inzsh_render; seen+=$_inzsh_config_generation
+            print -r -- "${seen[*]}"
+          '
+        }
+        When call generation
+        The output should eq '1 1 1 2 2 3'
+      End
+
+      # A layer sourced without the config file has no counter, and must therefore do no caching
+      # at all — otherwise a caller that never renders (several `test/ui/` files source
+      # `lib/core/layout.zsh` and nothing else) would hold one answer for the life of the process
+      # with nothing able to invalidate it.
+      It 'does no caching at all with no generation established'
+        no_generation() {
+          zsh -f -c '
+            source "$1/lib/core/layout.zsh"
+            typeset -gA _inzsh_segment_priority=(DIR 20)
+            _inzsh_priority_of DIR
+            local first=$REPLY
+            INZSH_DIR_PRIORITY=6
+            _inzsh_priority_of DIR
+            print -r -- "gen=${_inzsh_config_generation:-0} first=$first then=$REPLY cached=${#_inzsh_priority_cache}"
+          ' inzsh-no-generation "$SHELLSPEC_PROJECT_ROOT"
+        }
+        When call no_generation
+        The output should eq 'gen=0 first=20 then=6 cached=0'
+        The stderr should eq ''
+      End
+    End
   End
 
   # -------------------------------------------------------------------------------------------
