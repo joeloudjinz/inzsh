@@ -91,8 +91,14 @@ hand-tuned for this case and holds the theme's shape, but it is close rather tha
 
 <img src="docs/assets/shot-salah.png" alt="The prayer-times segment in a one-line prompt" width="800">
 
+**Rows** — rank places a block along a row; `INZSH_ROW<N>_LEFT` and `INZSH_ROW<N>_RIGHT` say
+which row it draws on. Here the path and the branch keep the first row, and who you are takes
+the second with the clock at the end of it.
+
+<img src="docs/assets/shot-rows.png" alt="The prompt across two rows, identity and clock on the second" width="800">
+
 Every still and recording here is generated from fixtures and written straight into
-`docs/assets` — `make shots` rebuilds the four stills, `make demo` rebuilds the recordings and
+`docs/assets` — `make shots` rebuilds the five stills, `make demo` rebuilds the recordings and
 publishes the showcase. Nothing is hand-edited or hand-copied. `SCALE=2` on either renders the
 same tapes at twice the size for a high-DPI screen.
 
