@@ -202,11 +202,27 @@ _inzsh_layout_fits() {
 # keeps behaving exactly as it did before this file existed. Anything that is not a non-negative
 # integer resolves to 0 as well: a typo'd MINCOLS shows a segment that should have hidden, which
 # is a cosmetic wrong, where obeying it could hide the prompt.
+# Issue #182. Same cache, same generation, same reason as the two resolvers above it.
+typeset -gA _inzsh_mincols_cache
+typeset -gi _inzsh_mincols_cache_gen=0
+
 _inzsh_mincols_of() {
   emulate -L zsh
   setopt extended_glob
 
   typeset -g REPLY=0
+
+  local -i gen=${_inzsh_config_generation:-0}
+  if (( gen )); then
+    if (( _inzsh_mincols_cache_gen != gen )); then
+      _inzsh_mincols_cache=()
+      typeset -gi _inzsh_mincols_cache_gen=$gen
+    fi
+    if (( ${+_inzsh_mincols_cache[$1]} )); then
+      typeset -g REPLY=${_inzsh_mincols_cache[$1]}
+      return 0
+    fi
+  fi
 
   # The name is checked as the VARIABLE it builds, not as a segment name in the abstract —
   # `${(P)}` on something that is not an identifier is an error, and an error here is a broken
@@ -230,6 +246,8 @@ _inzsh_mincols_of() {
   local -i resolved=0
   [[ $value == (|+)<-> ]] && resolved=$value
   REPLY=$resolved
+
+  (( gen )) && _inzsh_mincols_cache[$1]=$resolved
 
   return 0
 }
@@ -295,6 +313,18 @@ typeset -gi _inzsh_priority_unknown=99999
 # sourced on its own, rather than depending on the render layer having been loaded first.
 typeset -gA _inzsh_segment_priority
 
+# Issue #182, and the same arrangement `_inzsh_rank_of` keeps: held between prompts, thrown away
+# the moment any knob changes, and switched off entirely until something establishes a generation
+# — see the counter's own header in `lib/core/config.zsh`.
+#
+# THE REGISTRATION TABLE IS LOAD-TIME DATA and is deliberately not fingerprinted. A segment's own
+# `_inzsh_segment_priority` entry is written when the segment file is sourced and never after, so
+# there is nothing for a per-prompt check to notice. A caller that rewrites that table in a
+# running shell — specs do, the theme does not — must either do it before the first render or not
+# rely on the cache, which is exactly what generation 0 gives a spec that never renders at all.
+typeset -gA _inzsh_priority_cache
+typeset -gi _inzsh_priority_cache_gen=0
+
 _inzsh_priority_of() {
   emulate -L zsh
   setopt extended_glob
@@ -303,6 +333,18 @@ _inzsh_priority_of() {
   # place for a stranger in a survival order is the end of it — being wrong there costs a
   # segment nobody configured, where being wrong at the front costs one they did.
   typeset -g REPLY=$_inzsh_priority_unknown
+
+  local -i gen=${_inzsh_config_generation:-0}
+  if (( gen )); then
+    if (( _inzsh_priority_cache_gen != gen )); then
+      _inzsh_priority_cache=()
+      typeset -gi _inzsh_priority_cache_gen=$gen
+    fi
+    if (( ${+_inzsh_priority_cache[$1]} )); then
+      typeset -g REPLY=${_inzsh_priority_cache[$1]}
+      return 0
+    fi
+  fi
 
   local var=INZSH_${(U)1}_PRIORITY
   [[ $var == [A-Za-z_][A-Za-z0-9_]# ]] || return 0
@@ -337,6 +379,8 @@ _inzsh_priority_of() {
   elif [[ ${_inzsh_segment_priority[$1]-} == (|-|+)<-> ]]; then
     (( REPLY = _inzsh_segment_priority[$1] ))
   fi
+
+  (( gen )) && _inzsh_priority_cache[$1]=$REPLY
 
   return 0
 }
