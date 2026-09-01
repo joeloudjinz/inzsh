@@ -1,6 +1,11 @@
 # InZsh — the showcase. One shareable recording: both registers, the transient collapse,
-# the path and git panels, a failure state, the hue surfaces, and the prayer segment —
-# greeted and signed off from the Sahara. Emojis are sparse and mirror the words.
+# the path and git panels, a failure state, the hue surfaces, the prayer segment, and the
+# row axis — greeted and signed off from the Sahara. Emojis are sparse and mirror the words.
+#
+# The row beat comes last, in the warm register, and it is deliberately after the `exec`
+# that flips the preset: `tools/tape-env.zsh` carries only a keep-list of `INZSH_` names
+# across that restart, and the row arrays are not on it. Setting them before the flip would
+# record a shape that vanishes halfway through the recording.
 #
 # Same pins as every tape: fixture repository, clock 978352440 shown in Mecca's zone,
 # identity spec/spec-host. The one Sleep-as-sync below is documented where it happens.
@@ -81,6 +86,17 @@ Type "INZSH_SEPARATOR_STYLE=round; echo 'the same curves, sunlit 🌞'"
 Enter
 Wait+Screen /sunlit/
 Sleep 1.6s
+
+# The row axis. Rank says where a block sits along a row; these say which row it sits on.
+Type "INZSH_ROW2_LEFT=(USER HOST); echo 'who you are, on a row of its own'"
+Enter
+Wait+Screen /on a row of its own/
+Sleep 1.8s
+
+Type "INZSH_ROW2_RIGHT=(TIME); echo 'and the clock at the end of it 🕰'"
+Enter
+Wait+Screen /at the end of it/
+Sleep 2s
 
 Type "echo 'bslama — from the Sahara, with salam'"
 Enter

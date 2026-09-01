@@ -73,12 +73,12 @@ demo: ## render the VHS tapes to demo-out/ and publish the showcase (SCALE=2 for
 # The stills the readme shows, and the one command that rebuilds them. `shots` writes into
 # docs/assets directly — what is committed is what the tape drew.
 shots: ## regenerate the README screenshots from fixtures into docs/assets (SCALE=2 for high-DPI)
-	@for s in sharp warm 256 salah; do \
+	@for s in sharp warm 256 salah rows; do \
 	  SCALE=$(SCALE) zsh tools/tape-run.zsh test/tapes/shot-$$s.tape; \
 	  ffmpeg -y -loglevel error -i demo-out/shot-$$s.gif -filter_complex "[0]reverse[r]" \
 	    -map "[r]" -frames:v 1 docs/assets/shot-$$s.png; \
 	done
-	@print -- "shots: docs/assets/shot-{sharp,warm,256,salah}.png"
+	@print -- "shots: docs/assets/shot-{sharp,warm,256,salah,rows}.png"
 
 watch: ## re-render on save
 	@echo "make watch: not implemented — use 'make shots' or 'make demo' to rebuild captures"
