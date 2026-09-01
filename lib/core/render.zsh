@@ -1220,6 +1220,22 @@ _inzsh_render() {
   # happen is a draw for the width it is happening at.
   typeset -g _inzsh_render_cols=${COLUMNS:-0}
 
+  # Issue #182. Before anything is resolved, ask whether the configuration is the one the last
+  # draw was built from. `_inzsh_config_refresh` compares a raw read of every `INZSH_` variable
+  # against the last, and bumps a counter when they differ; the rank, priority and MINCOLS caches
+  # in `lib/core/engine.zsh` and `lib/core/layout.zsh` throw themselves away when that counter
+  # moves. Working those three out again for every segment on every prompt was most of what a
+  # warm render cost, and the answers only change when a knob does.
+  #
+  # It runs unconditionally and it is the reason the caches are allowed to exist at all: 0.026 ms
+  # to ask, against the ~1.5 ms it saves. Cheap enough that nothing has to decide when to ask,
+  # which is the kind of decision that goes wrong quietly — a knob edited at a prompt takes
+  # effect on the very next one, exactly as it did before any of this was cached.
+  #
+  # Guarded because this file is independently sourceable. Without the config layer there is no
+  # counter, it stays 0, and the resolvers read everything fresh the way they always did.
+  (( ${+functions[_inzsh_config_refresh]} )) && _inzsh_config_refresh
+
   # The glyph table, re-resolved before anything reads it, so the `INZSH_GLYPH_*` overrides are
   # whatever the user's shell says right now — the rule every knob in this tree follows, applied
   # to the one table every mark is read from. Guarded: this file is independently sourceable.

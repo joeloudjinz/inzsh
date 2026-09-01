@@ -61,10 +61,33 @@ _inzsh_rank_valid() {
 # Unreadable at any level falls through to the next, so an invalid default is no more fatal
 # than an invalid variable. REPLY is always set and the status is always 0; `+3` and `007`
 # come back normalised to 3 and 7. No command substitution — this runs on the render path.
+# Issue #182. Kept between prompts, and cleared the moment any knob changes — see the generation
+# counter in `lib/core/config.zsh` for what makes that safe. The key carries `$2` as well as the
+# segment, because the caller's default is the second rung of the ladder below: the same segment
+# asked with a different default is a different question and must not read the first one's answer.
+typeset -gA _inzsh_rank_cache
+typeset -gi _inzsh_rank_cache_gen=0
+
 _inzsh_rank_of() {
   emulate -L zsh
 
   typeset -g REPLY=0
+
+  # The cache is live only once something has established a generation — the render path, or the
+  # doctor. Generation 0 means nobody is promising to invalidate, so nothing is stored or served.
+  local -i gen=${_inzsh_config_generation:-0}
+  local key=
+  if (( gen )); then
+    if (( _inzsh_rank_cache_gen != gen )); then
+      _inzsh_rank_cache=()
+      typeset -gi _inzsh_rank_cache_gen=$gen
+    fi
+    key="$1|$2"
+    if (( ${+_inzsh_rank_cache[$key]} )); then
+      typeset -g REPLY=${_inzsh_rank_cache[$key]}
+      return 0
+    fi
+  fi
 
   local segment=${(U)1}
   local var=INZSH_${segment}_RANK
@@ -102,9 +125,15 @@ _inzsh_rank_of() {
     if _inzsh_rank_valid "$candidate"; then
       rank=$candidate
       REPLY=$rank
+      [[ -n $key ]] && _inzsh_rank_cache[$key]=$rank
       return 0
     fi
   done
+
+  # Rung 4, and it is cached like any other answer: "no rung matched" is as stable a fact about
+  # this generation as a number would have been, and leaving it out would make the segments that
+  # fall through here the only ones paying the full ladder on every prompt.
+  [[ -n $key ]] && _inzsh_rank_cache[$key]=$REPLY
 
   return 0
 }

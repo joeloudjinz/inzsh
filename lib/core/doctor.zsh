@@ -789,6 +789,14 @@ _inzsh_doctor_segments() {
 _inzsh_doctor() {
   emulate -L zsh
 
+  # Issue #182. The block reports where every segment landed, which asks the same rank, priority
+  # and MINCOLS resolvers the render path does — and those now answer from a cache keyed on a
+  # generation the RENDER path bumps. A person can reach this function with the configuration
+  # already changed since the last prompt was drawn (`INZSH_GIT_RANK=1 inzsh doctor` is one
+  # keystroke), and a diagnostic reporting the shape of the previous prompt rather than the one
+  # it is being asked about is the worst possible thing for it to do. So it refreshes for itself.
+  (( ${+functions[_inzsh_config_refresh]} )) && _inzsh_config_refresh
+
   local now=${1:-${EPOCHSECONDS-}}
   # A malformed clock is not the fixture seam misused, it is `inzsh doctor` reachable through
   # `inzsh()`'s `"$@"` forwarding from anyone who types a second word — and the wall clock is the

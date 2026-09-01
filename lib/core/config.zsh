@@ -17,10 +17,16 @@
 #   that habit written down once so every later knob inherits it for free. Silent is not secret:
 #   `inzsh doctor` reads this registry back and lists every value that was set and dropped.
 #
-#   Read at render time.  Nothing here caches a user's value. `_inzsh_config_get` reads the
-#   live variable on every call, so `INZSH_SURFACE_MODE=flat` at a prompt takes effect at the
-#   NEXT prompt, with no re-source and no new shell. The registry is the only thing built at
-#   source time, and it holds no user data.
+#   Read at render time.  `_inzsh_config_get` reads the live variable on every call, so
+#   `INZSH_SURFACE_MODE=flat` at a prompt takes effect at the NEXT prompt, with no re-source and
+#   no new shell. The registry is the only thing built at source time, and it holds no user data.
+#
+#   What IS kept between prompts is what the layers above work OUT from these values — a
+#   segment's rank, priority and MINCOLS (issue #182), which cost most of a warm render and
+#   change only when a knob does. The generation counter further down is how they know, and the
+#   promise above is what it exists to protect: the counter is re-read on every render, from
+#   every `INZSH_` variable, so a cached answer and a freshly resolved one can never disagree.
+#   The rule is unchanged, in other words; only the amount of work behind it is.
 #
 # The precedence rule, everywhere: per-segment override → semantic role → default.
 # `_inzsh_config_resolve` is that sentence as code. It generalises what `_inzsh_seg_color`
@@ -452,6 +458,51 @@ _inzsh_config_absorb_all() {
   done
 
   (( failed == 0 ))
+}
+
+# --------------------------------------------------------------------------------------------
+# The generation counter
+#
+# Issue #182. Working out a segment's rank, priority and MINCOLS is most of what a warm render
+# costs, and the answers only change when a knob changes — so they are worth keeping between
+# prompts. What makes that safe rather than merely fast is knowing, cheaply and exactly, when a
+# knob HAS changed. This is that knowledge, in one place, so `lib/core/engine.zsh` and
+# `lib/core/layout.zsh` cannot disagree about when their caches went out of date.
+#
+# The fingerprint is every `INZSH_` variable that is set, with its value, joined. No validation,
+# no registry walk, no family resolution — it is not answering what a knob MEANS, only whether
+# anything about it is different from last time. That is why it can afford to run on every
+# render: 0.026 ms against the ~1.5 ms it saves. It reads the parameter table rather than a list
+# of known names on purpose, so a knob added tomorrow is covered without this function moving,
+# and so is a name the registry has never heard of — if the user typed it, a change to it counts.
+#
+# THE COUNTER STARTS AT 0 AND 0 MEANS "DO NOT CACHE". Nothing here calls this function; the
+# render path does, once per draw, and so does `inzsh doctor`. A caller that uses the resolvers
+# WITHOUT either — `test/ui/test_layout_widths.py` sources `lib/core/layout.zsh` and nothing else
+# — never bumps the generation past 0, and the resolvers then behave exactly as they did before
+# this existed, reading every value fresh. A cache that is never invalidated is worse than no
+# cache, so the layer that cannot promise invalidation does not get one.
+typeset -g  _inzsh_config_fingerprint=
+typeset -gi _inzsh_config_generation=0
+
+# Re-read the fingerprint; bump the generation if anything changed. Always status 0.
+_inzsh_config_refresh() {
+  emulate -L zsh
+
+  local -a seen
+  local knob
+  for knob in ${(ko)parameters[(I)INZSH_*]}; do
+    seen+="$knob=${(P)knob}"
+  done
+
+  local now="${(j:|:)seen}"
+  # The first call always bumps: the generation leaves 0, which is what switches caching on.
+  if [[ $now != $_inzsh_config_fingerprint || $_inzsh_config_generation -eq 0 ]]; then
+    typeset -g _inzsh_config_fingerprint=$now
+    (( _inzsh_config_generation++ ))
+  fi
+
+  return 0
 }
 
 # --------------------------------------------------------------------------------------------
