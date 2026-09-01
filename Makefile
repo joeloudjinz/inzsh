@@ -62,23 +62,52 @@ play: ## a live prompt in a throwaway shell — every knob takes effect as you t
 
 # Local generation only, by design: no CI job renders these. Each tape runs inside the
 # pinned fixture environment (tools/tape-env.zsh); output lands in demo-out/, gitignored.
-demo: ## render the VHS tapes to demo-out/ and publish the showcase (SCALE=2 for high-DPI)
+# TWO RUNGS PER PUBLISHED RECORDING, BOTH REAL RENDERS. The project page embeds these GIFs,
+# and an animated GIF cannot go through a site's image pipeline — that pipeline decodes one
+# frame and re-encodes it as a still, so it can neither resize nor re-emit the animation. The
+# only sizes a browser can be offered are the ones this repo has actually rendered. So each
+# published recording is rendered at both scales rather than resampled from one: `<name>.gif`
+# is the 2x file the readme's <img> points at, `<name>-1000.gif` the 1x rung beside it, named
+# by its rendered width so a third rung later is an addition and nothing has to be renamed.
+#
+# `$(SCALE)` still applies to every OTHER tape — those go to demo-out/ for looking at, and
+# one size is enough for that. The two published ones ignore it, because what they publish is
+# fixed by what the page needs rather than by how the command was invoked.
+demo: ## render the tapes to demo-out/ and publish both rungs of the two the docs embed
 	@for tape in test/tapes/*.tape; do \
 	  [[ $${tape:t} == shot-* ]] && continue; \
+	  [[ $${tape:t} == showcase.tape || $${tape:t} == rows.tape ]] && continue; \
 	  SCALE=$(SCALE) zsh tools/tape-run.zsh $$tape; \
 	done
-	@cp demo-out/gifs/showcase.gif docs/assets/showcase.gif
-	@print -- "demo: published docs/assets/showcase.gif"
+	@for r in showcase rows; do \
+	  SCALE=1 zsh tools/tape-run.zsh test/tapes/$$r.tape; \
+	  cp demo-out/gifs/$$r.gif docs/assets/$$r-1000.gif; \
+	  SCALE=2 zsh tools/tape-run.zsh test/tapes/$$r.tape; \
+	  cp demo-out/gifs/$$r.gif docs/assets/$$r.gif; \
+	done
+	@print -- "demo: published docs/assets/{showcase,rows}.gif and their -1000 rungs"
 
 # The stills the readme shows, and the one command that rebuilds them. `shots` writes into
 # docs/assets directly — what is committed is what the tape drew.
-shots: ## regenerate the README screenshots from fixtures into docs/assets (SCALE=2 for high-DPI)
+# Both rungs here too, for the reason above — the page serves these stills as well, and a
+# repo that publishes one rung leaves the site to render the other, which is the drift the
+# next refresh pays for. A still COULD be resampled safely, unlike a GIF; rendering it
+# instead keeps one rule for every capture rather than one rule per file type.
+#
+# The 1x file keeps the bare name, because that is what the readme already points at, and
+# the 2x rung carries its rendered width. That is the opposite way round from the recordings
+# above, and it is not an inconsistency to tidy: in both cases the bare name is the one that
+# was published first, and renaming either would break a document that already links it.
+shots: ## regenerate the README screenshots from fixtures into docs/assets, both rungs
 	@for s in sharp warm 256 salah rows; do \
-	  SCALE=$(SCALE) zsh tools/tape-run.zsh test/tapes/shot-$$s.tape; \
+	  SCALE=1 zsh tools/tape-run.zsh test/tapes/shot-$$s.tape; \
 	  ffmpeg -y -loglevel error -i demo-out/shot-$$s.gif -filter_complex "[0]reverse[r]" \
 	    -map "[r]" -frames:v 1 docs/assets/shot-$$s.png; \
+	  SCALE=2 zsh tools/tape-run.zsh test/tapes/shot-$$s.tape; \
+	  ffmpeg -y -loglevel error -i demo-out/shot-$$s.gif -filter_complex "[0]reverse[r]" \
+	    -map "[r]" -frames:v 1 docs/assets/shot-$$s-2000.png; \
 	done
-	@print -- "shots: docs/assets/shot-{sharp,warm,256,salah,rows}.png"
+	@print -- "shots: docs/assets/shot-{sharp,warm,256,salah,rows}{,-2000}.png"
 
 watch: ## re-render on save
 	@echo "make watch: not implemented — use 'make shots' or 'make demo' to rebuild captures"
